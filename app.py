@@ -1,11 +1,17 @@
+import os
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+from dotenv import load_dotenv
 from kenpom_client import KenpomClient
+
+load_dotenv()
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
-API_KEY = "c778f2c8af554d059b4c9413fc7ea44a7d45da806a19985421c4dd311816ef6e"
+API_KEY = os.getenv('KENPOM_API_KEY')
+if not API_KEY:
+    raise ValueError("KENPOM_API_KEY environment variable is required")
 client = KenpomClient(api_key=API_KEY)
 
 
