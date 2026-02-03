@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kenpom College Basketball Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .tab-active { border-bottom: 3px solid #f97316; color: #f97316; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .clickable-row:hover { background: rgba(249, 115, 22, 0.1); cursor: pointer; }
+        .rank-badge { min-width: 2.5rem; }
+        .modal { display: none; }
+        .modal.active { display: flex; }
+        .sub-tab-active { background: #f97316; color: white; }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { color: #f97316; }
+        .sort-asc::after { content: ' ▲'; font-size: 0.7em; }
+        .sort-desc::after { content: ' ▼'; font-size: 0.7em; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- Header -->
+        <header class="text-center mb-6">
+            <h1 class="text-3xl font-bold text-orange-500 mb-1">
+                <i class="fas fa-basketball-ball mr-2"></i>Kenpom College Basketball
+            </h1>
+            <p class="text-gray-400 text-sm">Click any team name to view detailed stats</p>
+        </header>
+
+        <!-- Global Search -->
+        <div class="max-w-md mx-auto mb-6">
+            <div class="relative">
+                <input type="text" id="team-search" placeholder="Search teams..." 
+                    class="w-full px-4 py-3 pl-10 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none"
+                    oninput="filterTeams(this.value)">
+                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+            </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex justify-center mb-6 border-b border-gray-700 flex-wrap gap-1">
+            <button onclick="switchTab('ratings')" id="tab-ratings" class="px-3 py-2 text-sm font-medium tab-active transition-all">
+                <i class="fas fa-chart-line mr-1"></i>Ratings
+            </button>
+            <button onclick="switchTab('fourfactors')" id="tab-fourfactors" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-th-large mr-1"></i>Four Factors
+            </button>
+            <button onclick="switchTab('height')" id="tab-height" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-ruler-vertical mr-1"></i>Height/Exp
+            </button>
+            <button onclick="switchTab('pointdist')" id="tab-pointdist" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-chart-pie mr-1"></i>Scoring
+            </button>
+            <button onclick="switchTab('miscstats')" id="tab-miscstats" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-percentage mr-1"></i>Shooting
+            </button>
+            <button onclick="switchTab('conferences')" id="tab-conferences" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-trophy mr-1"></i>Conferences
+            </button>
+            <button onclick="switchTab('games')" id="tab-games" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-calendar mr-1"></i>Games
+            </button>
+            <button onclick="switchTab('archive')" id="tab-archive" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-history mr-1"></i>Archive
+            </button>
+        </nav>
+
+        <!-- Filter Bar -->
+        <div class="flex gap-3 flex-wrap justify-center items-end mb-6 bg-gray-800/50 p-4 rounded-lg">
+            <div>
+                <label class="block text-gray-400 text-xs mb-1">Season</label>
+                <input type="number" id="global-year" value="2025" 
+                    class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-20 text-sm">
+            </div>
+            <div>
+                <label class="block text-gray-400 text-xs mb-1">Conference</label>
+                <select id="global-conference" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-36 text-sm">
+                    <option value="">All</option>
+                </select>
+            </div>
+            <div id="date-filter" class="hidden">
+                <label class="block text-gray-400 text-xs mb-1">Date</label>
+                <input type="date" id="global-date" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none text-sm">
+            </div>
+            <button onclick="loadCurrentTab()" class="bg-orange-500 hover:bg-orange-600 px-4 py-2 rounded font-medium text-sm transition-all">
+                <i class="fas fa-sync-alt mr-1"></i>Load Data
+            </button>
+        </div>
+
+        <!-- Content Sections -->
+        <section id="section-ratings" class="tab-section">
+            <div id="ratings-results" class="overflow-x-auto"></div>
+        </section>
+
+        <section id="section-fourfactors" class="tab-section hidden">
+            <div id="fourfactors-results" class="overflow-x-auto"></div>
+        </section>
+
+        <section id="section-height" class="tab-section hidden">
+            <div id="height-results" class="overflow-x-auto"></div>
+        </section>
+
+        <section id="section-pointdist" class="tab-section hidden">
+            <div id="pointdist-results" class="overflow-x-auto"></div>
+        </section>
+
+        <section id="section-miscstats" class="tab-section hidden">
+            <div id="miscstats-results" class="overflow-x-auto"></div>
+        </section>
+
+        <section id="section-conferences" class="tab-section hidden">
+            <div id="conferences-results" class="max-w-4xl mx-auto"></div>
+        </section>
+
+        <section id="section-games" class="tab-section hidden">
+            <div id="games-results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </section>
+
+        <section id="section-archive" class="tab-section hidden">
+            <div class="text-center mb-4">
+                <p class="text-gray-400 text-sm">View historical ratings from any date during the season</p>
+            </div>
+            <div id="archive-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Team Detail Modal -->
+        <div id="team-modal" class="modal fixed inset-0 bg-black/80 items-center justify-center z-50 p-4">
+            <div class="bg-gray-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="sticky top-0 bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h2 id="modal-team-name" class="text-xl font-bold text-orange-500"></h2>
+                    <button onclick="closeModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div class="p-4">
+                    <!-- Sub-tabs for team detail -->
+                    <div class="flex gap-2 mb-4 flex-wrap">
+                        <button onclick="loadTeamTab('ratings')" id="team-tab-ratings" class="px-3 py-1 rounded text-sm sub-tab-active">Ratings</button>
+                        <button onclick="loadTeamTab('fourfactors')" id="team-tab-fourfactors" class="px-3 py-1 rounded text-sm bg-gray-700">Four Factors</button>
+                        <button onclick="loadTeamTab('height')" id="team-tab-height" class="px-3 py-1 rounded text-sm bg-gray-700">Height/Exp</button>
+                        <button onclick="loadTeamTab('pointdist')" id="team-tab-pointdist" class="px-3 py-1 rounded text-sm bg-gray-700">Scoring</button>
+                        <button onclick="loadTeamTab('miscstats')" id="team-tab-miscstats" class="px-3 py-1 rounded text-sm bg-gray-700">Shooting</button>
+                    </div>
+                    <div id="team-detail-content"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 px-6 py-4 rounded-xl flex items-center gap-3">
+                <i class="fas fa-basketball-ball text-orange-500 text-2xl animate-spin"></i>
+                <span>Loading...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5001/api';
+        let currentTab = 'ratings';
+        let currentTeamId = null;
+        let allTeamsCache = [];
+        let currentSortColumn = null;
+        let currentSortDir = 'desc';
+        let currentDataCache = {};
+
+        function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
+        function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+
+        // Sorting functionality
+        function sortTable(tableId, column, dataKey) {
+            const table = document.getElementById(tableId) || document.querySelector(`#${currentTab}-results table`);
+            if (!table) return;
+            
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            
+            // Toggle sort direction
+            if (currentSortColumn === column) {
+                currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSortColumn = column;
+                currentSortDir = 'desc';
+            }
+            
+            // Update header styles
+            table.querySelectorAll('th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+            const clickedTh = table.querySelector(`th[data-col="${column}"]`);
+            if (clickedTh) {
+                clickedTh.classList.add(currentSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+            
+            // Sort rows
+            rows.sort((a, b) => {
+                const aVal = parseFloat(a.dataset[dataKey] || a.cells[column]?.textContent) || 0;
+                const bVal = parseFloat(b.dataset[dataKey] || b.cells[column]?.textContent) || 0;
+                return currentSortDir === 'asc' ? aVal - bVal : bVal - aVal;
+            });
+            
+            // Re-append sorted rows
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        function makeSortableHeader(text, colIndex, dataKey, extraClasses = '') {
+            return `<th class="px-2 py-2 text-center sortable ${extraClasses}" data-col="${colIndex}" onclick="sortTable(null, ${colIndex}, '${dataKey}')">${text}</th>`;
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-section').forEach(s => s.classList.add('hidden'));
+            document.querySelectorAll('nav button').forEach(b => {
+                b.classList.remove('tab-active');
+                b.classList.add('text-gray-400');
+            });
+            
+            document.getElementById(`section-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('tab-active');
+            document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
+            
+            // Show/hide date filter
+            document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive');
+        }
+
+        async function fetchAPI(endpoint) {
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                return Array.isArray(data) ? data : (data.data || data);
+            } catch (error) {
+                console.error('Error:', error);
+                return { error: error.message };
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function getFilters() {
+            return {
+                year: document.getElementById('global-year').value,
+                conference: document.getElementById('global-conference').value,
+                date: document.getElementById('global-date').value
+            };
+        }
+
+        function filterTeams(query) {
+            const rows = document.querySelectorAll('tbody tr[data-team]');
+            query = query.toLowerCase();
+            rows.forEach(row => {
+                const teamName = row.dataset.team.toLowerCase();
+                row.style.display = teamName.includes(query) ? '' : 'none';
+            });
+        }
+
+        async function loadCurrentTab() {
+            const loaders = {
+                ratings: loadRatings,
+                fourfactors: loadFourFactors,
+                height: loadHeight,
+                pointdist: loadPointDist,
+                miscstats: loadMiscStats,
+                conferences: loadConferences,
+                games: loadGames,
+                archive: loadArchive
+            };
+            if (loaders[currentTab]) await loaders[currentTab]();
+        }
+
+        async function loadConferenceOptions() {
+            const data = await fetchAPI('/conferences?year=2025');
+            if (data.error || !Array.isArray(data)) return;
+            const options = data.map(c => `<option value="${c.ConfShort}">${c.ConfLong || c.ConfShort}</option>`).join('');
+            document.getElementById('global-conference').innerHTML = '<option value="">All</option>' + options;
+        }
+
+        function teamLink(name, teamId) {
+            return `<span class="text-orange-400 hover:text-orange-300 cursor-pointer" onclick="openTeamModal('${name}', ${teamId})">${name}</span>`;
+        }
+
+        async function loadRatings() {
+            const { year, conference } = getFilters();
+            let endpoint = `/ratings?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('ratings-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            
+            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            allTeamsCache = teams;
+            
+            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-sm">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left sortable" data-col="0" onclick="sortTable(null, 0, 'rank')">Rk</th>
+                            <th class="px-2 py-2 text-left">Team</th>
+                            <th class="px-2 py-2 text-center">Conf</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="3" onclick="sortTable(null, 3, 'wins')">W-L</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="4" onclick="sortTable(null, 4, 'adjem')">AdjEM</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="5" onclick="sortTable(null, 5, 'adjo')">AdjO</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="6" onclick="sortTable(null, 6, 'adjd')">AdjD</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="7" onclick="sortTable(null, 7, 'adjt')">AdjT</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="8" onclick="sortTable(null, 8, 'luck')">Luck</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="9" onclick="sortTable(null, 9, 'sos')">SOS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(t => `
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-rank="${t.RankAdjEM || 999}" data-wins="${t.Wins || 0}" data-adjem="${t.AdjEM || 0}" data-adjo="${t.AdjOE || 0}" data-adjd="${t.AdjDE || 0}" data-adjt="${t.AdjTempo || 0}" data-luck="${t.Luck || 0}" data-sos="${t.SOS || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                                <td class="px-2 py-1"><span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-1 text-xs font-bold">${t.RankAdjEM || '-'}</span></td>
+                                <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
+                                <td class="px-2 py-1 text-center text-gray-400 text-xs">${t.ConfShort || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.Wins || 0}-${t.Losses || 0}</td>
+                                <td class="px-2 py-1 text-center font-semibold ${(t.AdjEM || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.AdjEM?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.AdjOE?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.AdjDE?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.AdjTempo?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs ${(t.Luck || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.Luck?.toFixed(3) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.SOS?.toFixed(2) || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        async function loadFourFactors() {
+            const { year, conference } = getFilters();
+            let endpoint = `/four-factors?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('fourfactors-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left">Team</th>
+                            <th class="px-2 py-2 text-center" colspan="5">Offense</th>
+                            <th class="px-2 py-2 text-center" colspan="5">Defense</th>
+                        </tr>
+                        <tr class="bg-gray-600">
+                            <th></th>
+                            <th class="px-1 py-1 sortable" data-col="1" onclick="sortTable(null, 1, 'adjo')">AdjOE</th>
+                            <th class="px-1 py-1 sortable" data-col="2" onclick="sortTable(null, 2, 'efg')">eFG%</th>
+                            <th class="px-1 py-1 sortable" data-col="3" onclick="sortTable(null, 3, 'to')">TO%</th>
+                            <th class="px-1 py-1 sortable" data-col="4" onclick="sortTable(null, 4, 'or')">OR%</th>
+                            <th class="px-1 py-1 sortable" data-col="5" onclick="sortTable(null, 5, 'ftr')">FTR</th>
+                            <th class="px-1 py-1 sortable" data-col="6" onclick="sortTable(null, 6, 'adjd')">AdjDE</th>
+                            <th class="px-1 py-1 sortable" data-col="7" onclick="sortTable(null, 7, 'defg')">eFG%</th>
+                            <th class="px-1 py-1 sortable" data-col="8" onclick="sortTable(null, 8, 'dto')">TO%</th>
+                            <th class="px-1 py-1 sortable" data-col="9" onclick="sortTable(null, 9, 'dor')">OR%</th>
+                            <th class="px-1 py-1 sortable" data-col="10" onclick="sortTable(null, 10, 'dftr')">FTR</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(t => `
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-adjo="${t.AdjOE || 0}" data-efg="${t.eFG_Pct || 0}" data-to="${t.TO_Pct || 0}" data-or="${t.OR_Pct || 0}" data-ftr="${t.FT_Rate || 0}" data-adjd="${t.AdjDE || 0}" data-defg="${t.DeFG_Pct || 0}" data-dto="${t.DTO_Pct || 0}" data-dor="${t.DOR_Pct || 0}" data-dftr="${t.DFT_Rate || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                                <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
+                                <td class="px-1 py-1 text-center text-green-400 font-semibold">${t.AdjOE?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.eFG_Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.TO_Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.OR_Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.FT_Rate?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center text-red-400 font-semibold">${t.AdjDE?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.DeFG_Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.DTO_Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.DOR_Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.DFT_Rate?.toFixed(1) || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        async function loadHeight() {
+            const { year, conference } = getFilters();
+            let endpoint = `/height?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('height-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left">Team</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="1" onclick="sortTable(null, 1, 'avghgt')">Avg Hgt</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="2" onclick="sortTable(null, 2, 'hgteff')">Eff Hgt</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="3" onclick="sortTable(null, 3, 'exp')">Experience</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="4" onclick="sortTable(null, 4, 'bench')">Bench</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="5" onclick="sortTable(null, 5, 'cont')">Continuity</th>
+                            <th class="px-2 py-2 text-center">C</th>
+                            <th class="px-2 py-2 text-center">PF</th>
+                            <th class="px-2 py-2 text-center">SF</th>
+                            <th class="px-2 py-2 text-center">SG</th>
+                            <th class="px-2 py-2 text-center">PG</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(t => `
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-avghgt="${t.AvgHgtRank || 999}" data-hgteff="${t.HgtEffRank || 999}" data-exp="${t.Exp || 0}" data-bench="${t.Bench || 0}" data-cont="${t.Continuity || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                                <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
+                                <td class="px-2 py-1 text-center">${t.AvgHgt || '-'} <span class="text-gray-500">(${t.AvgHgtRank || '-'})</span></td>
+                                <td class="px-2 py-1 text-center">${t.HgtEff || '-'} <span class="text-gray-500">(${t.HgtEffRank || '-'})</span></td>
+                                <td class="px-2 py-1 text-center">${t.Exp?.toFixed(2) || '-'} <span class="text-gray-500">(${t.ExpRank || '-'})</span></td>
+                                <td class="px-2 py-1 text-center">${t.Bench?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center">${t.Continuity?.toFixed(1) || '-'}%</td>
+                                <td class="px-2 py-1 text-center">${t.Hgt5 || '-'}</td>
+                                <td class="px-2 py-1 text-center">${t.Hgt4 || '-'}</td>
+                                <td class="px-2 py-1 text-center">${t.Hgt3 || '-'}</td>
+                                <td class="px-2 py-1 text-center">${t.Hgt2 || '-'}</td>
+                                <td class="px-2 py-1 text-center">${t.Hgt1 || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        async function loadPointDist() {
+            const { year, conference } = getFilters();
+            let endpoint = `/pointdist?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('pointdist-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left">Team</th>
+                            <th class="px-2 py-2 text-center" colspan="3">Offense (% of points)</th>
+                            <th class="px-2 py-2 text-center" colspan="3">Defense (% of opp points)</th>
+                        </tr>
+                        <tr class="bg-gray-600">
+                            <th></th>
+                            <th class="px-1 py-1 sortable" data-col="1" onclick="sortTable(null, 1, 'offft')">FT</th>
+                            <th class="px-1 py-1 sortable" data-col="2" onclick="sortTable(null, 2, 'off2pt')">2PT</th>
+                            <th class="px-1 py-1 sortable" data-col="3" onclick="sortTable(null, 3, 'off3pt')">3PT</th>
+                            <th class="px-1 py-1 sortable" data-col="4" onclick="sortTable(null, 4, 'defft')">FT</th>
+                            <th class="px-1 py-1 sortable" data-col="5" onclick="sortTable(null, 5, 'def2pt')">2PT</th>
+                            <th class="px-1 py-1 sortable" data-col="6" onclick="sortTable(null, 6, 'def3pt')">3PT</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(t => `
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-offft="${t.OffFt || 0}" data-off2pt="${t.OffFg2 || 0}" data-off3pt="${t.OffFg3 || 0}" data-defft="${t.DefFt || 0}" data-def2pt="${t.DefFg2 || 0}" data-def3pt="${t.DefFg3 || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                                <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
+                                <td class="px-1 py-1 text-center">${t.OffFt?.toFixed(1) || '-'}%</td>
+                                <td class="px-1 py-1 text-center">${t.OffFg2?.toFixed(1) || '-'}%</td>
+                                <td class="px-1 py-1 text-center text-blue-400">${t.OffFg3?.toFixed(1) || '-'}%</td>
+                                <td class="px-1 py-1 text-center">${t.DefFt?.toFixed(1) || '-'}%</td>
+                                <td class="px-1 py-1 text-center">${t.DefFg2?.toFixed(1) || '-'}%</td>
+                                <td class="px-1 py-1 text-center text-blue-400">${t.DefFg3?.toFixed(1) || '-'}%</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        async function loadMiscStats() {
+            const { year, conference } = getFilters();
+            let endpoint = `/misc-stats?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('miscstats-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left">Team</th>
+                            <th class="px-2 py-2 text-center" colspan="5">Offense</th>
+                            <th class="px-2 py-2 text-center" colspan="5">Defense</th>
+                        </tr>
+                        <tr class="bg-gray-600">
+                            <th></th>
+                            <th class="px-1 py-1 sortable" data-col="1" onclick="sortTable(null, 1, 'fg3')">3P%</th>
+                            <th class="px-1 py-1 sortable" data-col="2" onclick="sortTable(null, 2, 'fg2')">2P%</th>
+                            <th class="px-1 py-1 sortable" data-col="3" onclick="sortTable(null, 3, 'ft')">FT%</th>
+                            <th class="px-1 py-1 sortable" data-col="4" onclick="sortTable(null, 4, 'blk')">Blk%</th>
+                            <th class="px-1 py-1 sortable" data-col="5" onclick="sortTable(null, 5, 'stl')">Stl%</th>
+                            <th class="px-1 py-1 sortable" data-col="6" onclick="sortTable(null, 6, 'ofg3')">3P%</th>
+                            <th class="px-1 py-1 sortable" data-col="7" onclick="sortTable(null, 7, 'ofg2')">2P%</th>
+                            <th class="px-1 py-1 sortable" data-col="8" onclick="sortTable(null, 8, 'oft')">FT%</th>
+                            <th class="px-1 py-1 sortable" data-col="9" onclick="sortTable(null, 9, 'oblk')">Blk%</th>
+                            <th class="px-1 py-1 sortable" data-col="10" onclick="sortTable(null, 10, 'ostl')">Stl%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(t => `
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-fg3="${t.FG3Pct || 0}" data-fg2="${t.FG2Pct || 0}" data-ft="${t.FTPct || 0}" data-blk="${t.BlockPct || 0}" data-stl="${t.StlRate || 0}" data-ofg3="${t.OppFG3Pct || 0}" data-ofg2="${t.OppFG2Pct || 0}" data-oft="${t.OppFTPct || 0}" data-oblk="${t.OppBlockPct || 0}" data-ostl="${t.OppStlRate || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                                <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
+                                <td class="px-1 py-1 text-center">${t.FG3Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.FG2Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.FTPct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.BlockPct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.StlRate?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.OppFG3Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.OppFG2Pct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.OppFTPct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.OppBlockPct?.toFixed(1) || '-'}</td>
+                                <td class="px-1 py-1 text-center">${t.OppStlRate?.toFixed(1) || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        async function loadConferences() {
+            const { year } = getFilters();
+            const data = await fetchAPI(`/conf-ratings?year=${year}`);
+            const container = document.getElementById('conferences-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            
+            let conferences = Array.isArray(data) ? data : [];
+            const seen = new Set();
+            conferences = conferences.filter(c => {
+                const key = c.ConfShort || c.ConfLong;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            }).slice(0, 50);
+            
+            if (conferences.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="px-4 py-3 text-left">Rank</th>
+                            <th class="px-4 py-3 text-left">Conference</th>
+                            <th class="px-4 py-3 text-center">Rating</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${conferences.map(c => `
+                            <tr class="border-t border-gray-700 hover:bg-gray-700/50 cursor-pointer" onclick="document.getElementById('global-conference').value='${c.ConfShort}'; switchTab('ratings'); loadRatings();">
+                                <td class="px-4 py-3"><span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-2 py-1 font-bold">${c.Rank || '-'}</span></td>
+                                <td class="px-4 py-3 font-medium">${c.ConfLong || c.ConfShort || 'N/A'}</td>
+                                <td class="px-4 py-3 text-center font-semibold ${(c.Rating || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${c.Rating?.toFixed(2) || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        async function loadGames() {
+            const { date } = getFilters();
+            if (!date) { document.getElementById('games-results').innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">Select a date to view games</div>'; return; }
+            
+            const data = await fetchAPI(`/fanmatch?date=${date}`);
+            const container = document.getElementById('games-results');
+            
+            if (data.error) { container.innerHTML = `<div class="col-span-full text-center text-red-400 py-8">${data.error}</div>`; return; }
+            if (!Array.isArray(data) || data.length === 0) { container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">No games found</div>'; return; }
+            
+            container.innerHTML = data.slice(0, 50).map(g => `
+                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="text-center flex-1">
+                            <p class="text-xs text-gray-500">#${g.VisitorRank || '?'}</p>
+                            <p class="font-bold text-sm">${g.Visitor || 'TBD'}</p>
+                            <p class="text-xl font-bold mt-1">${g.VisitorPred?.toFixed(0) || '-'}</p>
+                        </div>
+                        <div class="px-2 text-center">
+                            <span class="text-gray-500 text-sm">@</span>
+                            <p class="text-xs text-gray-500 mt-1">${g.PredTempo?.toFixed(0) || '-'} tempo</p>
+                        </div>
+                        <div class="text-center flex-1">
+                            <p class="text-xs text-gray-500">#${g.HomeRank || '?'}</p>
+                            <p class="font-bold text-sm text-orange-400">${g.Home || 'TBD'}</p>
+                            <p class="text-xl font-bold mt-1 text-orange-400">${g.HomePred?.toFixed(0) || '-'}</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-xs border-t border-gray-700 pt-2">
+                        <span>Win: <span class="${(g.HomeWP || 0) > 0.5 ? 'text-green-400' : 'text-red-400'}">${((g.HomeWP || 0) * 100).toFixed(0)}%</span></span>
+                        <span>Thrill: ${g.ThrillScore?.toFixed(1) || '-'}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadArchive() {
+            const { year, conference, date } = getFilters();
+            if (!date) { document.getElementById('archive-results').innerHTML = '<div class="text-center text-gray-400 py-8">Select a date to view historical ratings</div>'; return; }
+            
+            let endpoint = `/archive?date=${date}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('archive-results');
+            
+            if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
+            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No archive data found</div>'; return; }
+            
+            container.innerHTML = `
+                <p class="text-center text-gray-400 text-sm mb-4">Ratings as of ${date}</p>
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-sm">
+                    <thead class="bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-2 text-left">Rk</th>
+                            <th class="px-2 py-2 text-left">Team</th>
+                            <th class="px-2 py-2 text-center">Conf</th>
+                            <th class="px-2 py-2 text-center">AdjEM</th>
+                            <th class="px-2 py-2 text-center">AdjO</th>
+                            <th class="px-2 py-2 text-center">AdjD</th>
+                            <th class="px-2 py-2 text-center">AdjT</th>
+                            <th class="px-2 py-2 text-center">Rk Chg</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(t => `
+                            <tr class="border-t border-gray-700 hover:bg-gray-700/50" data-team="${t.TeamName || ''}">
+                                <td class="px-2 py-1"><span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-1 text-xs font-bold">${t.RankAdjEM || '-'}</span></td>
+                                <td class="px-2 py-1 font-medium">${t.TeamName || 'N/A'}</td>
+                                <td class="px-2 py-1 text-center text-gray-400 text-xs">${t.ConfShort || '-'}</td>
+                                <td class="px-2 py-1 text-center font-semibold ${(t.AdjEM || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.AdjEM?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.AdjOE?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.AdjDE?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs">${t.AdjTempo?.toFixed(1) || '-'}</td>
+                                <td class="px-2 py-1 text-center text-xs ${(t.RankChg || 0) > 0 ? 'text-green-400' : (t.RankChg || 0) < 0 ? 'text-red-400' : ''}">${t.RankChg > 0 ? '+' : ''}${t.RankChg || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>`;
+        }
+
+        // Team Modal Functions
+        function openTeamModal(teamName, teamId) {
+            currentTeamId = teamId;
+            document.getElementById('modal-team-name').textContent = teamName;
+            document.getElementById('team-modal').classList.add('active');
+            loadTeamTab('ratings');
+        }
+
+        function closeModal() {
+            document.getElementById('team-modal').classList.remove('active');
+            currentTeamId = null;
+        }
+
+        async function loadTeamTab(tab) {
+            document.querySelectorAll('[id^="team-tab-"]').forEach(b => {
+                b.classList.remove('sub-tab-active');
+                b.classList.add('bg-gray-700');
+            });
+            document.getElementById(`team-tab-${tab}`).classList.add('sub-tab-active');
+            document.getElementById(`team-tab-${tab}`).classList.remove('bg-gray-700');
+            
+            const { year } = getFilters();
+            const container = document.getElementById('team-detail-content');
+            
+            const endpoints = {
+                ratings: `/ratings?year=${year}&team_id=${currentTeamId}`,
+                fourfactors: `/four-factors?year=${year}&team_id=${currentTeamId}`,
+                height: `/height?year=${year}&team_id=${currentTeamId}`,
+                pointdist: `/pointdist?year=${year}&team_id=${currentTeamId}`,
+                miscstats: `/misc-stats?year=${year}&team_id=${currentTeamId}`
+            };
+            
+            const data = await fetchAPI(endpoints[tab]);
+            if (data.error) { container.innerHTML = `<div class="text-red-400">${data.error}</div>`; return; }
+            
+            const team = Array.isArray(data) ? data[0] : data;
+            if (!team) { container.innerHTML = '<div class="text-gray-400">No data found</div>'; return; }
+            
+            const formatters = {
+                ratings: t => `
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Rank</p>
+                            <p class="text-2xl font-bold text-orange-400">#${t.RankAdjEM || '-'}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Record</p>
+                            <p class="text-2xl font-bold">${t.Wins || 0}-${t.Losses || 0}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">AdjEM</p>
+                            <p class="text-2xl font-bold ${(t.AdjEM || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.AdjEM?.toFixed(2) || '-'}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Conference</p>
+                            <p class="text-xl font-bold">${t.ConfShort || '-'}</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+                        <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">AdjO:</span> <span class="font-semibold">${t.AdjOE?.toFixed(1) || '-'}</span> <span class="text-gray-500 text-xs">(#${t.RankAdjOE})</span></div>
+                        <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">AdjD:</span> <span class="font-semibold">${t.AdjDE?.toFixed(1) || '-'}</span> <span class="text-gray-500 text-xs">(#${t.RankAdjDE})</span></div>
+                        <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">AdjT:</span> <span class="font-semibold">${t.AdjTempo?.toFixed(1) || '-'}</span> <span class="text-gray-500 text-xs">(#${t.RankAdjTempo})</span></div>
+                        <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">Luck:</span> <span class="font-semibold ${(t.Luck || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.Luck?.toFixed(3) || '-'}</span></div>
+                        <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">SOS:</span> <span class="font-semibold">${t.SOS?.toFixed(2) || '-'}</span> <span class="text-gray-500 text-xs">(#${t.RankSOS})</span></div>
+                    </div>
+                    <div class="mt-4 text-sm text-gray-400">
+                        <p><strong>Coach:</strong> ${t.Coach || 'N/A'}</p>
+                    </div>`,
+                fourfactors: t => `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-green-900/30 rounded-lg p-4">
+                            <h4 class="font-bold text-green-400 mb-3">Offense</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between"><span>AdjOE:</span><span class="font-bold">${t.AdjOE?.toFixed(1) || '-'}</span></div>
+                                <div class="flex justify-between"><span>eFG%:</span><span>${t.eFG_Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>TO%:</span><span>${t.TO_Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>OR%:</span><span>${t.OR_Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>FT Rate:</span><span>${t.FT_Rate?.toFixed(1) || '-'}%</span></div>
+                            </div>
+                        </div>
+                        <div class="bg-red-900/30 rounded-lg p-4">
+                            <h4 class="font-bold text-red-400 mb-3">Defense</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between"><span>AdjDE:</span><span class="font-bold">${t.AdjDE?.toFixed(1) || '-'}</span></div>
+                                <div class="flex justify-between"><span>Opp eFG%:</span><span>${t.DeFG_Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp TO%:</span><span>${t.DTO_Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp OR%:</span><span>${t.DOR_Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp FT Rate:</span><span>${t.DFT_Rate?.toFixed(1) || '-'}%</span></div>
+                            </div>
+                        </div>
+                    </div>`,
+                height: t => `
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Avg Height</p>
+                            <p class="text-xl font-bold">${t.AvgHgt || '-'}</p>
+                            <p class="text-gray-500 text-xs">Rank #${t.AvgHgtRank || '-'}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Eff Height</p>
+                            <p class="text-xl font-bold">${t.HgtEff || '-'}</p>
+                            <p class="text-gray-500 text-xs">Rank #${t.HgtEffRank || '-'}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Experience</p>
+                            <p class="text-xl font-bold">${t.Exp?.toFixed(2) || '-'}</p>
+                            <p class="text-gray-500 text-xs">Rank #${t.ExpRank || '-'}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Bench</p>
+                            <p class="text-xl font-bold">${t.Bench?.toFixed(1) || '-'}</p>
+                        </div>
+                        <div class="bg-gray-700 rounded-lg p-3 text-center">
+                            <p class="text-gray-400 text-xs">Continuity</p>
+                            <p class="text-xl font-bold">${t.Continuity?.toFixed(1) || '-'}%</p>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <h4 class="text-sm text-gray-400 mb-2">Position Heights</h4>
+                        <div class="flex gap-2 flex-wrap">
+                            <span class="bg-gray-700 px-3 py-1 rounded text-sm">PG: ${t.Hgt1 || '-'}</span>
+                            <span class="bg-gray-700 px-3 py-1 rounded text-sm">SG: ${t.Hgt2 || '-'}</span>
+                            <span class="bg-gray-700 px-3 py-1 rounded text-sm">SF: ${t.Hgt3 || '-'}</span>
+                            <span class="bg-gray-700 px-3 py-1 rounded text-sm">PF: ${t.Hgt4 || '-'}</span>
+                            <span class="bg-gray-700 px-3 py-1 rounded text-sm">C: ${t.Hgt5 || '-'}</span>
+                        </div>
+                    </div>`,
+                pointdist: t => `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-green-900/30 rounded-lg p-4">
+                            <h4 class="font-bold text-green-400 mb-3">Offensive Scoring Distribution</h4>
+                            <div class="space-y-3">
+                                <div><span class="text-gray-400">Free Throws:</span> <span class="font-bold">${t.OffFt?.toFixed(1) || '-'}%</span></div>
+                                <div><span class="text-gray-400">2-Pointers:</span> <span class="font-bold">${t.OffFg2?.toFixed(1) || '-'}%</span></div>
+                                <div><span class="text-gray-400">3-Pointers:</span> <span class="font-bold text-blue-400">${t.OffFg3?.toFixed(1) || '-'}%</span></div>
+                            </div>
+                        </div>
+                        <div class="bg-red-900/30 rounded-lg p-4">
+                            <h4 class="font-bold text-red-400 mb-3">Defensive (Opponent Scoring)</h4>
+                            <div class="space-y-3">
+                                <div><span class="text-gray-400">Free Throws:</span> <span class="font-bold">${t.DefFt?.toFixed(1) || '-'}%</span></div>
+                                <div><span class="text-gray-400">2-Pointers:</span> <span class="font-bold">${t.DefFg2?.toFixed(1) || '-'}%</span></div>
+                                <div><span class="text-gray-400">3-Pointers:</span> <span class="font-bold text-blue-400">${t.DefFg3?.toFixed(1) || '-'}%</span></div>
+                            </div>
+                        </div>
+                    </div>`,
+                miscstats: t => `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-green-900/30 rounded-lg p-4">
+                            <h4 class="font-bold text-green-400 mb-3">Offensive Shooting</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between"><span>3P%:</span><span>${t.FG3Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>2P%:</span><span>${t.FG2Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>FT%:</span><span>${t.FTPct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Block%:</span><span>${t.BlockPct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Steal Rate:</span><span>${t.StlRate?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Assist Rate:</span><span>${t.ARate?.toFixed(1) || '-'}%</span></div>
+                            </div>
+                        </div>
+                        <div class="bg-red-900/30 rounded-lg p-4">
+                            <h4 class="font-bold text-red-400 mb-3">Defensive (Opponent)</h4>
+                            <div class="space-y-2 text-sm">
+                                <div class="flex justify-between"><span>Opp 3P%:</span><span>${t.OppFG3Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp 2P%:</span><span>${t.OppFG2Pct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp FT%:</span><span>${t.OppFTPct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp Block%:</span><span>${t.OppBlockPct?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp Steal Rate:</span><span>${t.OppStlRate?.toFixed(1) || '-'}%</span></div>
+                                <div class="flex justify-between"><span>Opp Assist Rate:</span><span>${t.OppARate?.toFixed(1) || '-'}%</span></div>
+                            </div>
+                        </div>
+                    </div>`
+            };
+            
+            container.innerHTML = formatters[tab](team);
+        }
+
+        // Close modal on outside click
+        document.getElementById('team-modal').addEventListener('click', e => {
+            if (e.target.id === 'team-modal') closeModal();
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('global-date').value = today;
+            loadConferenceOptions();
+            loadRatings();
+        });
+    </script>
+</body>
+</html>

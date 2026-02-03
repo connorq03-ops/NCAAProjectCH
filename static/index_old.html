@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kenpom College Basketball Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        .tab-active { border-bottom: 3px solid #f97316; color: #f97316; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .loading { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .rank-badge { min-width: 2.5rem; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-bold text-orange-500 mb-2">
+                <i class="fas fa-basketball-ball mr-3"></i>Kenpom College Basketball
+            </h1>
+            <p class="text-gray-400">Advanced analytics for college basketball</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex justify-center mb-8 border-b border-gray-700 flex-wrap">
+            <button onclick="switchTab('ratings')" id="tab-ratings" class="px-4 py-3 text-md font-medium tab-active transition-all">
+                <i class="fas fa-chart-line mr-2"></i>Ratings
+            </button>
+            <button onclick="switchTab('teams')" id="tab-teams" class="px-4 py-3 text-md font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-users mr-2"></i>Teams
+            </button>
+            <button onclick="switchTab('conferences')" id="tab-conferences" class="px-4 py-3 text-md font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-trophy mr-2"></i>Conferences
+            </button>
+            <button onclick="switchTab('games')" id="tab-games" class="px-4 py-3 text-md font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-calendar mr-2"></i>Games
+            </button>
+            <button onclick="switchTab('fourfactors')" id="tab-fourfactors" class="px-4 py-3 text-md font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-th-large mr-2"></i>Four Factors
+            </button>
+        </nav>
+
+        <!-- Ratings Section -->
+        <section id="section-ratings" class="tab-section">
+            <div class="max-w-2xl mx-auto mb-8">
+                <div class="flex gap-4 flex-wrap justify-center items-end">
+                    <div>
+                        <label class="block text-gray-400 mb-2">Season Year</label>
+                        <input type="number" id="ratings-year" placeholder="2025" value="2025" 
+                            class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-28">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 mb-2">Conference (optional)</label>
+                        <select id="ratings-conference" class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-40">
+                            <option value="">All Conferences</option>
+                        </select>
+                    </div>
+                    <button onclick="loadRatings()" class="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg font-medium transition-all">
+                        <i class="fas fa-search mr-2"></i>Load Ratings
+                    </button>
+                </div>
+            </div>
+            <div id="ratings-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Teams Section -->
+        <section id="section-teams" class="tab-section hidden">
+            <div class="max-w-2xl mx-auto mb-8">
+                <div class="flex gap-4 flex-wrap justify-center items-end">
+                    <div>
+                        <label class="block text-gray-400 mb-2">Season Year</label>
+                        <input type="number" id="teams-year" placeholder="2025" value="2025" 
+                            class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-28">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 mb-2">Conference (optional)</label>
+                        <select id="teams-conference" class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-40">
+                            <option value="">All Conferences</option>
+                        </select>
+                    </div>
+                    <button onclick="loadTeams()" class="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg font-medium transition-all">
+                        <i class="fas fa-sync-alt mr-2"></i>Load Teams
+                    </button>
+                </div>
+            </div>
+            <div id="teams-results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+        </section>
+
+        <!-- Conferences Section -->
+        <section id="section-conferences" class="tab-section hidden">
+            <div class="max-w-xl mx-auto mb-8">
+                <div class="flex gap-4 flex-wrap justify-center items-end">
+                    <div>
+                        <label class="block text-gray-400 mb-2">Season Year</label>
+                        <input type="number" id="conf-year" placeholder="2025" value="2025" 
+                            class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-28">
+                    </div>
+                    <button onclick="loadConferences()" class="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg font-medium transition-all">
+                        <i class="fas fa-trophy mr-2"></i>Load Conference Ratings
+                    </button>
+                </div>
+            </div>
+            <div id="conferences-results" class="max-w-4xl mx-auto"></div>
+        </section>
+
+        <!-- Games/Fanmatch Section -->
+        <section id="section-games" class="tab-section hidden">
+            <div class="max-w-xl mx-auto mb-8">
+                <div class="flex gap-4 flex-wrap justify-center items-end">
+                    <div>
+                        <label class="block text-gray-400 mb-2">Game Date</label>
+                        <input type="date" id="games-date" class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none">
+                    </div>
+                    <button onclick="loadFanmatch()" class="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg font-medium transition-all">
+                        <i class="fas fa-calendar mr-2"></i>Get Predictions
+                    </button>
+                </div>
+            </div>
+            <div id="games-results" class="grid grid-cols-1 md:grid-cols-2 gap-6"></div>
+        </section>
+
+        <!-- Four Factors Section -->
+        <section id="section-fourfactors" class="tab-section hidden">
+            <div class="max-w-2xl mx-auto mb-8">
+                <div class="flex gap-4 flex-wrap justify-center items-end">
+                    <div>
+                        <label class="block text-gray-400 mb-2">Season Year</label>
+                        <input type="number" id="ff-year" placeholder="2025" value="2025" 
+                            class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-28">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 mb-2">Conference (optional)</label>
+                        <select id="ff-conference" class="px-4 py-3 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none w-40">
+                            <option value="">All Conferences</option>
+                        </select>
+                    </div>
+                    <button onclick="loadFourFactors()" class="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg font-medium transition-all">
+                        <i class="fas fa-th-large mr-2"></i>Load Four Factors
+                    </button>
+                </div>
+            </div>
+            <div id="fourfactors-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 px-8 py-6 rounded-xl flex items-center gap-4">
+                <i class="fas fa-basketball-ball text-orange-500 text-3xl animate-spin"></i>
+                <span class="text-xl">Loading...</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5001/api';
+
+        function showLoading() {
+            document.getElementById('loading').classList.remove('hidden');
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').classList.add('hidden');
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-section').forEach(s => s.classList.add('hidden'));
+            document.querySelectorAll('nav button').forEach(b => {
+                b.classList.remove('tab-active');
+                b.classList.add('text-gray-400');
+            });
+            
+            document.getElementById(`section-${tab}`).classList.remove('hidden');
+            const tabBtn = document.getElementById(`tab-${tab}`);
+            tabBtn.classList.add('tab-active');
+            tabBtn.classList.remove('text-gray-400');
+        }
+
+        async function fetchAPI(endpoint) {
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                return data;
+            } catch (error) {
+                console.error('Error:', error);
+                return { error: error.message };
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadConferenceOptions() {
+            const data = await fetchAPI('/conferences?year=2025');
+            if (data.error || !Array.isArray(data)) return;
+            
+            const options = data.map(c => `<option value="${c.ConfShort}">${c.ConfLong}</option>`).join('');
+            document.querySelectorAll('select[id$="-conference"]').forEach(select => {
+                select.innerHTML = '<option value="">All Conferences</option>' + options;
+            });
+        }
+
+        async function loadRatings() {
+            const year = document.getElementById('ratings-year').value;
+            const conference = document.getElementById('ratings-conference').value;
+            
+            let endpoint = `/ratings?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('ratings-results');
+            
+            if (data.error) {
+                container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`;
+                return;
+            }
+            
+            // Handle both array and object responses, limit results
+            let teams = Array.isArray(data) ? data : (data.data || []);
+            teams = teams.slice(0, 400);
+            
+            if (teams.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8">No ratings data found</div>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-sm">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="px-3 py-3 text-left">Rank</th>
+                            <th class="px-3 py-3 text-left">Team</th>
+                            <th class="px-3 py-3 text-center">Conf</th>
+                            <th class="px-3 py-3 text-center">W-L</th>
+                            <th class="px-3 py-3 text-center">AdjEM</th>
+                            <th class="px-3 py-3 text-center">AdjO</th>
+                            <th class="px-3 py-3 text-center">AdjD</th>
+                            <th class="px-3 py-3 text-center">AdjT</th>
+                            <th class="px-3 py-3 text-center">Luck</th>
+                            <th class="px-3 py-3 text-center">SOS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${teams.map(team => `
+                            <tr class="border-t border-gray-700 hover:bg-gray-700/50">
+                                <td class="px-3 py-2">
+                                    <span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-2 py-1 font-bold">${team.RankAdjEM || '-'}</span>
+                                </td>
+                                <td class="px-3 py-2 font-medium">${team.TeamName || 'N/A'}</td>
+                                <td class="px-3 py-2 text-center text-gray-400">${team.ConfShort || '-'}</td>
+                                <td class="px-3 py-2 text-center">${team.Wins || 0}-${team.Losses || 0}</td>
+                                <td class="px-3 py-2 text-center font-semibold ${team.AdjEM > 0 ? 'text-green-400' : 'text-red-400'}">${team.AdjEM?.toFixed(2) || '-'}</td>
+                                <td class="px-3 py-2 text-center">${team.AdjOE?.toFixed(1) || '-'} <span class="text-gray-500 text-xs">(${team.RankAdjOE})</span></td>
+                                <td class="px-3 py-2 text-center">${team.AdjDE?.toFixed(1) || '-'} <span class="text-gray-500 text-xs">(${team.RankAdjDE})</span></td>
+                                <td class="px-3 py-2 text-center">${team.AdjTempo?.toFixed(1) || '-'}</td>
+                                <td class="px-3 py-2 text-center ${team.Luck > 0 ? 'text-green-400' : 'text-red-400'}">${team.Luck?.toFixed(3) || '-'}</td>
+                                <td class="px-3 py-2 text-center">${team.SOS?.toFixed(2) || '-'} <span class="text-gray-500 text-xs">(${team.RankSOS})</span></td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function loadTeams() {
+            const year = document.getElementById('teams-year').value;
+            const conference = document.getElementById('teams-conference').value;
+            
+            let endpoint = `/teams?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('teams-results');
+            
+            if (data.error) {
+                container.innerHTML = `<div class="col-span-full text-center text-red-400 py-8">${data.error}</div>`;
+                return;
+            }
+            
+            // Handle both array and object responses, limit results
+            let teams = Array.isArray(data) ? data : (data.data || []);
+            teams = teams.slice(0, 400);
+            
+            if (teams.length === 0) {
+                container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">No teams found</div>';
+                return;
+            }
+            
+            container.innerHTML = teams.map(team => `
+                <div class="bg-gray-800 rounded-xl p-5 card-hover transition-all border border-gray-700">
+                    <div class="flex items-center gap-4 mb-4">
+                        <div class="w-14 h-14 bg-orange-500/20 rounded-full flex items-center justify-center">
+                            <span class="text-orange-500 text-lg font-bold">${team.ConfShort || '?'}</span>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold">${team.TeamName || 'Unknown'}</h3>
+                            <p class="text-gray-400 text-sm">${team.Coach || 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div class="bg-gray-700/50 rounded-lg p-2">
+                            <span class="text-gray-400 text-xs">Arena</span>
+                            <p class="font-medium truncate">${team.Arena || 'N/A'}</p>
+                        </div>
+                        <div class="bg-gray-700/50 rounded-lg p-2">
+                            <span class="text-gray-400 text-xs">Location</span>
+                            <p class="font-medium truncate">${team.ArenaCity || ''}, ${team.ArenaState || ''}</p>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadConferences() {
+            const year = document.getElementById('conf-year').value;
+            const data = await fetchAPI(`/conf-ratings?year=${year}`);
+            const container = document.getElementById('conferences-results');
+            
+            if (data.error) {
+                container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`;
+                return;
+            }
+            
+            // Handle both array and object responses
+            let conferences = Array.isArray(data) ? data : (data.data || []);
+            
+            if (conferences.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8">No conference data found</div>';
+                return;
+            }
+            
+            // Remove duplicates by ConfShort and limit to reasonable count
+            const seen = new Set();
+            conferences = conferences.filter(conf => {
+                const key = conf.ConfShort || conf.ConfLong;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            }).slice(0, 50);
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="px-4 py-3 text-left">Rank</th>
+                            <th class="px-4 py-3 text-left">Conference</th>
+                            <th class="px-4 py-3 text-center">Rating</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${conferences.map(conf => `
+                            <tr class="border-t border-gray-700 hover:bg-gray-700/50">
+                                <td class="px-4 py-3">
+                                    <span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-2 py-1 font-bold">${conf.Rank || '-'}</span>
+                                </td>
+                                <td class="px-4 py-3 font-medium">${conf.ConfLong || conf.ConfShort || 'N/A'}</td>
+                                <td class="px-4 py-3 text-center font-semibold ${conf.Rating > 0 ? 'text-green-400' : 'text-red-400'}">${conf.Rating?.toFixed(2) || '-'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        async function loadFanmatch() {
+            const date = document.getElementById('games-date').value;
+            if (!date) {
+                alert('Please select a date');
+                return;
+            }
+            
+            const data = await fetchAPI(`/fanmatch?date=${date}`);
+            const container = document.getElementById('games-results');
+            
+            if (data.error) {
+                container.innerHTML = `<div class="col-span-full text-center text-red-400 py-8">${data.error}</div>`;
+                return;
+            }
+            
+            if (!Array.isArray(data) || data.length === 0) {
+                container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">No games found for this date</div>';
+                return;
+            }
+            
+            container.innerHTML = data.map(game => `
+                <div class="bg-gray-800 rounded-xl p-5 card-hover transition-all border border-gray-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="text-center flex-1">
+                            <p class="text-xs text-gray-500 mb-1">#${game.VisitorRank || '?'}</p>
+                            <p class="font-bold">${game.Visitor || 'TBD'}</p>
+                            <p class="text-2xl font-bold mt-2 text-gray-300">${game.VisitorPred?.toFixed(0) || '-'}</p>
+                        </div>
+                        <div class="px-4 text-center">
+                            <span class="text-gray-500">@</span>
+                            <p class="text-xs text-gray-500 mt-2">Tempo: ${game.PredTempo?.toFixed(0) || '-'}</p>
+                        </div>
+                        <div class="text-center flex-1">
+                            <p class="text-xs text-gray-500 mb-1">#${game.HomeRank || '?'}</p>
+                            <p class="font-bold text-orange-400">${game.Home || 'TBD'}</p>
+                            <p class="text-2xl font-bold mt-2 text-orange-400">${game.HomePred?.toFixed(0) || '-'}</p>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center text-sm border-t border-gray-700 pt-3">
+                        <div>
+                            <span class="text-gray-400">Win Prob:</span>
+                            <span class="font-semibold ml-1 ${game.HomeWP > 0.5 ? 'text-green-400' : 'text-red-400'}">${(game.HomeWP * 100).toFixed(0)}%</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400">Thrill:</span>
+                            <span class="font-semibold ml-1">${game.ThrillScore?.toFixed(1) || '-'}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadFourFactors() {
+            const year = document.getElementById('ff-year').value;
+            const conference = document.getElementById('ff-conference').value;
+            
+            let endpoint = `/four-factors?year=${year}`;
+            if (conference) endpoint += `&conference=${conference}`;
+            
+            const data = await fetchAPI(endpoint);
+            const container = document.getElementById('fourfactors-results');
+            
+            if (data.error) {
+                container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`;
+                return;
+            }
+            
+            if (!Array.isArray(data) || data.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8">No four factors data found</div>';
+                return;
+            }
+            
+            container.innerHTML = `
+                <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-sm">
+                    <thead class="bg-gray-700">
+                        <tr>
+                            <th class="px-3 py-3 text-left">Team</th>
+                            <th class="px-3 py-3 text-center">AdjOE</th>
+                            <th class="px-3 py-3 text-center">eFG%</th>
+                            <th class="px-3 py-3 text-center">TO%</th>
+                            <th class="px-3 py-3 text-center">OR%</th>
+                            <th class="px-3 py-3 text-center">FTR</th>
+                            <th class="px-3 py-3 text-center">AdjDE</th>
+                            <th class="px-3 py-3 text-center">DeFG%</th>
+                            <th class="px-3 py-3 text-center">DTO%</th>
+                            <th class="px-3 py-3 text-center">DOR%</th>
+                            <th class="px-3 py-3 text-center">DFTR</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(team => `
+                            <tr class="border-t border-gray-700 hover:bg-gray-700/50">
+                                <td class="px-3 py-2 font-medium">${team.TeamName || 'N/A'}</td>
+                                <td class="px-3 py-2 text-center text-green-400 font-semibold">${team.AdjOE?.toFixed(1) || '-'}</td>
+                                <td class="px-3 py-2 text-center">${team.eFG_Pct?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center">${team.TO_Pct?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center">${team.OR_Pct?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center">${team.FT_Rate?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center text-red-400 font-semibold">${team.AdjDE?.toFixed(1) || '-'}</td>
+                                <td class="px-3 py-2 text-center">${team.DeFG_Pct?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center">${team.DTO_Pct?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center">${team.DOR_Pct?.toFixed(1) || '-'}%</td>
+                                <td class="px-3 py-2 text-center">${team.DFT_Rate?.toFixed(1) || '-'}%</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set default date to today
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('games-date').value = today;
+            
+            // Load conference options
+            loadConferenceOptions();
+        });
+    </script>
+</body>
+</html>
