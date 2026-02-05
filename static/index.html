@@ -18,6 +18,15 @@
         .sortable:hover { color: #f97316; }
         .sort-asc::after { content: ' ▲'; font-size: 0.7em; }
         .sort-desc::after { content: ' ▼'; font-size: 0.7em; }
+        .quick-filter { transition: all 0.2s; }
+        .quick-filter:hover { transform: scale(1.05); }
+        .quick-filter.active { background: #f97316; color: white; }
+        .compare-btn { opacity: 0; transition: opacity 0.2s; }
+        .clickable-row:hover .compare-btn { opacity: 1; }
+        .tooltip { position: relative; }
+        .tooltip::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1f2937; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 10; }
+        .tooltip:hover::after { opacity: 1; }
+        .compare-selected { background: rgba(249, 115, 22, 0.2) !important; }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
@@ -68,25 +77,50 @@
             </button>
         </nav>
 
+        <!-- Quick Filters -->
+        <div class="flex gap-2 flex-wrap justify-center mb-4">
+            <button onclick="applyQuickFilter('top25')" id="qf-top25" class="quick-filter px-3 py-1 bg-gray-700 rounded-full text-xs font-medium hover:bg-gray-600">
+                <i class="fas fa-trophy mr-1 text-yellow-500"></i>Top 25
+            </button>
+            <button onclick="applyQuickFilter('top50')" id="qf-top50" class="quick-filter px-3 py-1 bg-gray-700 rounded-full text-xs font-medium hover:bg-gray-600">
+                Top 50
+            </button>
+            <button onclick="applyQuickFilter('power5')" id="qf-power5" class="quick-filter px-3 py-1 bg-gray-700 rounded-full text-xs font-medium hover:bg-gray-600">
+                <i class="fas fa-star mr-1 text-blue-400"></i>Power Conf
+            </button>
+            <button onclick="applyQuickFilter('mid')" id="qf-mid" class="quick-filter px-3 py-1 bg-gray-700 rounded-full text-xs font-medium hover:bg-gray-600">
+                Mid-Majors
+            </button>
+            <button onclick="applyQuickFilter('all')" id="qf-all" class="quick-filter px-3 py-1 bg-gray-700 rounded-full text-xs font-medium hover:bg-gray-600 active">
+                All Teams
+            </button>
+        </div>
+
         <!-- Filter Bar -->
-        <div class="flex gap-3 flex-wrap justify-center items-end mb-6 bg-gray-800/50 p-4 rounded-lg">
+        <div class="flex gap-3 flex-wrap justify-center items-end mb-4 bg-gray-800/50 p-4 rounded-lg">
             <div>
                 <label class="block text-gray-400 text-xs mb-1">Season</label>
                 <input type="number" id="global-year" value="2025" 
-                    class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-20 text-sm">
+                    class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-20 text-sm"
+                    onchange="loadCurrentTab()">
             </div>
             <div>
                 <label class="block text-gray-400 text-xs mb-1">Conference</label>
-                <select id="global-conference" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-36 text-sm">
+                <select id="global-conference" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-36 text-sm"
+                    onchange="loadCurrentTab()">
                     <option value="">All</option>
                 </select>
             </div>
             <div id="date-filter" class="hidden">
                 <label class="block text-gray-400 text-xs mb-1">Date</label>
-                <input type="date" id="global-date" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none text-sm">
+                <input type="date" id="global-date" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none text-sm"
+                    onchange="loadCurrentTab()">
             </div>
-            <button onclick="loadCurrentTab()" class="bg-orange-500 hover:bg-orange-600 px-4 py-2 rounded font-medium text-sm transition-all">
-                <i class="fas fa-sync-alt mr-1"></i>Load Data
+            <button onclick="exportToCSV()" class="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded font-medium text-sm transition-all" title="Export to CSV">
+                <i class="fas fa-download"></i>
+            </button>
+            <button onclick="openCompareModal()" id="compare-btn" class="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded font-medium text-sm transition-all hidden" title="Compare Teams">
+                <i class="fas fa-balance-scale mr-1"></i><span id="compare-count">0</span>
             </button>
         </div>
 
@@ -147,6 +181,17 @@
             </div>
         </div>
 
+        <!-- Compare Modal -->
+        <div id="compare-modal" class="modal fixed inset-0 bg-black/80 items-center justify-center z-50 p-4">
+            <div class="bg-gray-800 rounded-xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="sticky top-0 bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-orange-500"><i class="fas fa-balance-scale mr-2"></i>Team Comparison</h2>
+                    <button onclick="closeCompareModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div id="compare-content" class="p-4"></div>
+            </div>
+        </div>
+
         <!-- Loading Indicator -->
         <div id="loading" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div class="bg-gray-800 px-6 py-4 rounded-xl flex items-center gap-3">
@@ -164,9 +209,154 @@
         let currentSortColumn = null;
         let currentSortDir = 'desc';
         let currentDataCache = {};
+        let currentQuickFilter = 'all';
+        let compareTeams = [];
+        const POWER_CONFS = ['SEC', 'B10', 'B12', 'ACC', 'BE'];
+        const METRIC_TIPS = {
+            'AdjEM': 'Adjusted Efficiency Margin - Points above average per 100 possessions',
+            'AdjO': 'Adjusted Offensive Efficiency - Points scored per 100 possessions',
+            'AdjD': 'Adjusted Defensive Efficiency - Points allowed per 100 possessions (lower is better)',
+            'AdjT': 'Adjusted Tempo - Possessions per 40 minutes',
+            'SOS': 'Strength of Schedule',
+            'eFG%': 'Effective FG% - Accounts for 3PT being worth more',
+            'TO%': 'Turnover Rate - Turnovers per 100 possessions',
+            'OR%': 'Offensive Rebound Rate',
+            'FTR': 'Free Throw Rate - FT attempts per FG attempt'
+        };
 
         function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
         function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+
+        // Quick Filter Functions
+        function applyQuickFilter(filter) {
+            currentQuickFilter = filter;
+            document.querySelectorAll('.quick-filter').forEach(b => b.classList.remove('active'));
+            document.getElementById(`qf-${filter}`).classList.add('active');
+            
+            if (filter === 'all') {
+                document.getElementById('global-conference').value = '';
+            }
+            
+            loadCurrentTab();
+        }
+
+        function filterByQuickFilter(teams) {
+            if (currentQuickFilter === 'all') return teams;
+            if (currentQuickFilter === 'top25') return teams.filter(t => (t.RankAdjEM || 999) <= 25);
+            if (currentQuickFilter === 'top50') return teams.filter(t => (t.RankAdjEM || 999) <= 50);
+            if (currentQuickFilter === 'power5') return teams.filter(t => POWER_CONFS.includes(t.ConfShort));
+            if (currentQuickFilter === 'mid') return teams.filter(t => !POWER_CONFS.includes(t.ConfShort) && (t.RankAdjEM || 999) <= 150);
+            return teams;
+        }
+
+        // Team Comparison Functions
+        function toggleCompare(e, teamName, teamId) {
+            e.stopPropagation();
+            const idx = compareTeams.findIndex(t => t.id === teamId);
+            if (idx >= 0) {
+                compareTeams.splice(idx, 1);
+            } else if (compareTeams.length < 4) {
+                compareTeams.push({ name: teamName, id: teamId });
+            }
+            updateCompareUI();
+        }
+
+        function updateCompareUI() {
+            const btn = document.getElementById('compare-btn');
+            const count = document.getElementById('compare-count');
+            count.textContent = compareTeams.length;
+            btn.classList.toggle('hidden', compareTeams.length < 2);
+            
+            document.querySelectorAll('tr[data-teamid]').forEach(row => {
+                const isSelected = compareTeams.some(t => t.id === parseInt(row.dataset.teamid));
+                row.classList.toggle('compare-selected', isSelected);
+            });
+        }
+
+        async function openCompareModal() {
+            if (compareTeams.length < 2) return;
+            document.getElementById('compare-modal').classList.add('active');
+            
+            const { year } = getFilters();
+            const container = document.getElementById('compare-content');
+            container.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></div>';
+            
+            const teamData = await Promise.all(
+                compareTeams.map(t => fetchAPI(`/ratings?year=${year}&team_id=${t.id}`))
+            );
+            
+            const teams = teamData.map((d, i) => ({ ...compareTeams[i], data: Array.isArray(d) ? d[0] : d }));
+            
+            container.innerHTML = `
+                <div class="grid grid-cols-${teams.length} gap-4">
+                    ${teams.map(t => `
+                        <div class="text-center">
+                            <h3 class="text-lg font-bold text-orange-400 mb-2">${t.name}</h3>
+                            <div class="text-3xl font-bold">#${t.data?.RankAdjEM || '-'}</div>
+                            <div class="text-sm text-gray-400">${t.data?.Wins || 0}-${t.data?.Losses || 0}</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="mt-6 space-y-2">
+                    ${[
+                        ['AdjEM', 'Efficiency Margin', t => t.data?.AdjEM?.toFixed(1), true],
+                        ['AdjOE', 'Offense', t => t.data?.AdjOE?.toFixed(1), true],
+                        ['AdjDE', 'Defense', t => t.data?.AdjDE?.toFixed(1), false],
+                        ['AdjTempo', 'Tempo', t => t.data?.AdjTempo?.toFixed(1), null],
+                        ['SOS', 'Strength of Schedule', t => t.data?.SOS?.toFixed(2), true],
+                        ['Luck', 'Luck', t => t.data?.Luck?.toFixed(3), null]
+                    ].map(([key, label, fn, higherBetter]) => {
+                        const vals = teams.map(t => parseFloat(fn(t)) || 0);
+                        const best = higherBetter === null ? null : (higherBetter ? Math.max(...vals) : Math.min(...vals));
+                        return `
+                            <div class="grid grid-cols-${teams.length + 1} gap-4 py-2 border-b border-gray-700">
+                                <div class="text-gray-400 text-sm">${label}</div>
+                                ${teams.map((t, i) => `
+                                    <div class="text-center font-semibold ${vals[i] === best ? 'text-green-400' : ''}">${fn(t) || '-'}</div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div class="mt-4 text-center">
+                    <button onclick="clearCompare()" class="text-sm text-gray-400 hover:text-white">Clear comparison</button>
+                </div>
+            `;
+        }
+
+        function closeCompareModal() {
+            document.getElementById('compare-modal').classList.remove('active');
+        }
+
+        function clearCompare() {
+            compareTeams = [];
+            updateCompareUI();
+            closeCompareModal();
+        }
+
+        // CSV Export
+        function exportToCSV() {
+            const table = document.querySelector(`#${currentTab}-results table`);
+            if (!table) { alert('No data to export'); return; }
+            
+            const rows = [];
+            table.querySelectorAll('tr').forEach(tr => {
+                const row = [];
+                tr.querySelectorAll('th, td').forEach(cell => {
+                    row.push('"' + cell.textContent.trim().replace(/"/g, '""') + '"');
+                });
+                rows.push(row.join(','));
+            });
+            
+            const csv = rows.join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `kenpom_${currentTab}_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
 
         // Sorting functionality
         function sortTable(tableId, column, dataKey) {
@@ -292,29 +482,33 @@
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             
             let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            teams = filterByQuickFilter(teams);
             allTeamsCache = teams;
             
             if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
             
             container.innerHTML = `
+                <div class="text-xs text-gray-500 mb-2 text-right">${teams.length} teams</div>
                 <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-sm">
                     <thead class="bg-gray-700 sticky top-0">
                         <tr>
-                            <th class="px-2 py-2 text-left sortable" data-col="0" onclick="sortTable(null, 0, 'rank')">Rk</th>
+                            <th class="px-2 py-2 text-center w-8"></th>
+                            <th class="px-2 py-2 text-left sortable" data-col="1" onclick="sortTable(null, 1, 'rank')">Rk</th>
                             <th class="px-2 py-2 text-left">Team</th>
                             <th class="px-2 py-2 text-center">Conf</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="3" onclick="sortTable(null, 3, 'wins')">W-L</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="4" onclick="sortTable(null, 4, 'adjem')">AdjEM</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="5" onclick="sortTable(null, 5, 'adjo')">AdjO</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="6" onclick="sortTable(null, 6, 'adjd')">AdjD</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="7" onclick="sortTable(null, 7, 'adjt')">AdjT</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="8" onclick="sortTable(null, 8, 'luck')">Luck</th>
-                            <th class="px-2 py-2 text-center sortable" data-col="9" onclick="sortTable(null, 9, 'sos')">SOS</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="4" onclick="sortTable(null, 4, 'wins')">W-L</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="5" onclick="sortTable(null, 5, 'adjem')" data-tip="Adjusted Efficiency Margin">AdjEM</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="6" onclick="sortTable(null, 6, 'adjo')" data-tip="Adjusted Offensive Efficiency">AdjO</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="7" onclick="sortTable(null, 7, 'adjd')" data-tip="Adjusted Defensive Efficiency">AdjD</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="8" onclick="sortTable(null, 8, 'adjt')" data-tip="Adjusted Tempo">AdjT</th>
+                            <th class="px-2 py-2 text-center sortable" data-col="9" onclick="sortTable(null, 9, 'luck')">Luck</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="10" onclick="sortTable(null, 10, 'sos')" data-tip="Strength of Schedule">SOS</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${teams.map(t => `
-                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-rank="${t.RankAdjEM || 999}" data-wins="${t.Wins || 0}" data-adjem="${t.AdjEM || 0}" data-adjo="${t.AdjOE || 0}" data-adjd="${t.AdjDE || 0}" data-adjt="${t.AdjTempo || 0}" data-luck="${t.Luck || 0}" data-sos="${t.SOS || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-teamid="${t.TeamID || 0}" data-rank="${t.RankAdjEM || 999}" data-wins="${t.Wins || 0}" data-adjem="${t.AdjEM || 0}" data-adjo="${t.AdjOE || 0}" data-adjd="${t.AdjDE || 0}" data-adjt="${t.AdjTempo || 0}" data-luck="${t.Luck || 0}" data-sos="${t.SOS || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                                <td class="px-1 py-1 text-center"><button class="compare-btn text-gray-500 hover:text-orange-400 text-xs" onclick="toggleCompare(event, '${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})" title="Compare"><i class="fas fa-plus-circle"></i></button></td>
                                 <td class="px-2 py-1"><span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-1 text-xs font-bold">${t.RankAdjEM || '-'}</span></td>
                                 <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
                                 <td class="px-2 py-1 text-center text-gray-400 text-xs">${t.ConfShort || '-'}</td>
@@ -329,6 +523,7 @@
                         `).join('')}
                     </tbody>
                 </table>`;
+            updateCompareUI();
         }
 
         async function loadFourFactors() {
@@ -831,9 +1026,20 @@
             container.innerHTML = formatters[tab](team);
         }
 
-        // Close modal on outside click
+        // Close modals on outside click
         document.getElementById('team-modal').addEventListener('click', e => {
             if (e.target.id === 'team-modal') closeModal();
+        });
+        document.getElementById('compare-modal').addEventListener('click', e => {
+            if (e.target.id === 'compare-modal') closeCompareModal();
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeCompareModal();
+            }
         });
 
         // Initialize
