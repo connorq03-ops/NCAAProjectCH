@@ -449,6 +449,24 @@
             return { adj, exp1, exp2, cont1, cont2, expAdj, contAdj };
         }
 
+        // Conference Strength — battle-tested reliability adjustment
+        function calcConfAdj(t1, t2, confMap) {
+            if (!confMap || Object.keys(confMap).length === 0) return { adj: 0, r1: 0, r2: 0, conf1: '', conf2: '' };
+
+            const conf1 = t1.ConfShort || '';
+            const conf2 = t2.ConfShort || '';
+            const r1 = confMap[conf1] || 0;
+            const r2 = confMap[conf2] || 0;
+
+            // Conference rating difference scaled down — KenPom already adjusts for SOS,
+            // so this is a small reliability bonus for tougher conference play.
+            // Each point of conf rating difference = ~0.06 pts, capped at ±1.5
+            const raw = (r1 - r2) * 0.06;
+            const adj = Math.max(-1.5, Math.min(1.5, raw));
+
+            return { adj, r1, r2, conf1, conf2 };
+        }
+
         // Momentum — recent trend in AdjEM
         function calcMomentum(arch1, arch2, t1, t2) {
             if (!arch1 || !arch2) return { adj: 0, t1Trend: 0, t2Trend: 0 };
@@ -749,8 +767,10 @@
             const expAdj = extra.experience ? extra.experience.adj : 0;
             // Momentum adjustment
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
+            // Conference strength adjustment
+            const confAdj = extra.confStrength ? extra.confStrength.adj : 0;
             // Apply enrichment adjustments (split between both sides)
-            const totalAdj = styleAdj + expAdj + momAdj;
+            const totalAdj = styleAdj + expAdj + momAdj + confAdj;
             t1Score += totalAdj / 2;
             t2Score -= totalAdj / 2;
 
@@ -759,7 +779,7 @@
             return {
                 t1Score, t2Score, margin,
                 t1WinProb: gaussianCDF(margin / GAME_SD),
-                tempo: avgTempo, styleAdj, expAdj, momAdj,
+                tempo: avgTempo, styleAdj, expAdj, momAdj, confAdj,
                 label: 'Efficiency Model',
                 desc: 'KenPom efficiency + style clash + experience + momentum'
             };
@@ -868,12 +888,14 @@
             // Expected efficiencies (additive model) + enrichment adjustments
             let t1ExpOE = t1Off + t2Def - AVG_EFF;
             let t2ExpOE = t2Off + t1Def - AVG_EFF;
-            // Bake style clash into expected efficiency
+            // Bake enrichment adjustments into expected efficiency
             const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
             const expAdj = extra.experience ? extra.experience.adj : 0;
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
-            t1ExpOE += (styleAdj + expAdj + momAdj) / 2;
-            t2ExpOE -= (styleAdj + expAdj + momAdj) / 2;
+            const confAdj = extra.confStrength ? extra.confStrength.adj : 0;
+            const totalAdj = styleAdj + expAdj + momAdj + confAdj;
+            t1ExpOE += totalAdj / 2;
+            t2ExpOE -= totalAdj / 2;
 
             // Coach experience factor
             const coach1 = getCoachInfo(t1.TeamName);
@@ -999,14 +1021,20 @@
             const archiveDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             const t1Name = t1.TeamName, t2Name = t2.TeamName;
             const findTeam = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
-            let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2;
+            let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2, confMap = {};
             try {
-                const [ffAll, htAll, pdAll, archAll] = await Promise.all([
+                const [ffAll, htAll, pdAll, archAll, confAll] = await Promise.all([
                     fetchAPI(`/four-factors?year=${year}`),
                     fetchAPI(`/height?year=${year}`),
                     fetchAPI(`/pointdist?year=${year}`),
                     fetchAPI(`/archive?date=${archiveDate}`).catch(() => []),
+                    fetchAPI(`/conf-ratings?year=${year}`).catch(() => []),
                 ]);
+                // Build conference rating lookup
+                const seen = {};
+                (Array.isArray(confAll) ? confAll : []).forEach(c => {
+                    if (c.ConfShort && !seen[c.ConfShort]) { confMap[c.ConfShort] = c.Rating || 0; seen[c.ConfShort] = true; }
+                });
                 ff1 = findTeam(ffAll, t1Name);
                 ff2 = findTeam(ffAll, t2Name);
                 ht1 = findTeam(htAll, t1Name);
@@ -1023,7 +1051,8 @@
             const styleClash = calcStyleClash(ff1, ff2);
             const experience = calcExperienceAdj(ht1, ht2);
             const momentum = calcMomentum(arch1, arch2, t1, t2);
-            const extra = { styleClash, experience, momentum, pd1, pd2 };
+            const confStrength = calcConfAdj(t1, t2, confMap);
+            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2 };
 
             // Run all four models with enrichment data
             const eff = modelEfficiency(t1, t2, hca1, hca2, extra);
@@ -1197,20 +1226,20 @@
                             </div>
                         </div>` : ''}
 
-                        <!-- Experience & Momentum Row -->
-                        <div class="grid grid-cols-2 gap-3">
+                        <!-- Experience, Momentum & Conference Row -->
+                        <div class="grid grid-cols-3 gap-3">
                             <div class="bg-gray-900/50 rounded-lg p-3">
                                 <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Roster Experience</p>
                                 <div class="grid grid-cols-2 gap-2 text-center">
                                     <div>
                                         <p class="text-xs text-orange-400 font-medium">${t1.TeamName}</p>
                                         <p class="text-lg font-bold">${experience.exp1?.toFixed(1) || '?'}<span class="text-xs text-gray-500"> yr</span></p>
-                                        <p class="text-xs text-gray-500">${(experience.cont1 || 0).toFixed(0)}% continuity</p>
+                                        <p class="text-xs text-gray-500">${(experience.cont1 || 0).toFixed(0)}% cont.</p>
                                     </div>
                                     <div>
                                         <p class="text-xs text-orange-400 font-medium">${t2.TeamName}</p>
                                         <p class="text-lg font-bold">${experience.exp2?.toFixed(1) || '?'}<span class="text-xs text-gray-500"> yr</span></p>
-                                        <p class="text-xs text-gray-500">${(experience.cont2 || 0).toFixed(0)}% continuity</p>
+                                        <p class="text-xs text-gray-500">${(experience.cont2 || 0).toFixed(0)}% cont.</p>
                                     </div>
                                 </div>
                                 <p class="text-center text-xs mt-2 ${Math.abs(experience.adj) > 0.1 ? (experience.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(experience.adj) < 0.1 ? 'Even experience' : (experience.adj > 0 ? t1.TeamName : t2.TeamName) + ' +' + Math.abs(experience.adj).toFixed(1) + ' pts'}</p>
@@ -1221,15 +1250,31 @@
                                     <div>
                                         <p class="text-xs text-orange-400 font-medium">${t1.TeamName}</p>
                                         <p class="text-lg font-bold ${momentum.t1Trend > 0.5 ? 'text-green-400' : momentum.t1Trend < -0.5 ? 'text-red-400' : ''}">${momentum.t1Trend > 0 ? '↑' : '↓'}${Math.abs(momentum.t1Trend).toFixed(1)}</p>
-                                        <p class="text-xs text-gray-500">AdjEM change</p>
+                                        <p class="text-xs text-gray-500">AdjEM chg</p>
                                     </div>
                                     <div>
                                         <p class="text-xs text-orange-400 font-medium">${t2.TeamName}</p>
                                         <p class="text-lg font-bold ${momentum.t2Trend > 0.5 ? 'text-green-400' : momentum.t2Trend < -0.5 ? 'text-red-400' : ''}">${momentum.t2Trend > 0 ? '↑' : '↓'}${Math.abs(momentum.t2Trend).toFixed(1)}</p>
-                                        <p class="text-xs text-gray-500">AdjEM change</p>
+                                        <p class="text-xs text-gray-500">AdjEM chg</p>
                                     </div>
                                 </div>
-                                <p class="text-center text-xs mt-2 ${Math.abs(momentum.adj) > 0.1 ? (momentum.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(momentum.adj) < 0.1 ? 'Similar trajectory' : (momentum.adj > 0 ? t1.TeamName : t2.TeamName) + ' trending better +' + Math.abs(momentum.adj).toFixed(1) + ' pts'}</p>
+                                <p class="text-center text-xs mt-2 ${Math.abs(momentum.adj) > 0.1 ? (momentum.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(momentum.adj) < 0.1 ? 'Similar trajectory' : (momentum.adj > 0 ? t1.TeamName : t2.TeamName) + ' +' + Math.abs(momentum.adj).toFixed(1) + ' pts'}</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Conference Strength</p>
+                                <div class="grid grid-cols-2 gap-2 text-center">
+                                    <div>
+                                        <p class="text-xs text-orange-400 font-medium">${confStrength.conf1 || t1.ConfShort || '?'}</p>
+                                        <p class="text-lg font-bold">${confStrength.r1.toFixed(1)}</p>
+                                        <p class="text-xs text-gray-500">rating</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-orange-400 font-medium">${confStrength.conf2 || t2.ConfShort || '?'}</p>
+                                        <p class="text-lg font-bold">${confStrength.r2.toFixed(1)}</p>
+                                        <p class="text-xs text-gray-500">rating</p>
+                                    </div>
+                                </div>
+                                <p class="text-center text-xs mt-2 ${Math.abs(confStrength.adj) > 0.1 ? (confStrength.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(confStrength.adj) < 0.1 ? 'Same conference tier' : (confStrength.adj > 0 ? confStrength.conf1 : confStrength.conf2) + ' edge +' + Math.abs(confStrength.adj).toFixed(1) + ' pts'}</p>
                             </div>
                         </div>
                     </div>
@@ -1288,7 +1333,7 @@
 
                     <div class="text-center text-xs text-gray-500 border-t border-gray-600 pt-3">
                         <p>Composite: 30% Efficiency + 20% Similar Opponents + 20% ConRat + 30% Monte Carlo • HCA ${HCA}pts • σ=11</p>
-                        <p class="mt-1">Enriched with: Four Factors style clash • Experience/Continuity • Point distribution variance • 28-day momentum</p>
+                        <p class="mt-1">Enriched with: Four Factors style clash • Experience/Continuity • Point distribution variance • 28-day momentum • Conference strength</p>
                     </div>
                 </div>
             `;
