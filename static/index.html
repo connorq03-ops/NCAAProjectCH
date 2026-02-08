@@ -7,9 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
+        body { background: linear-gradient(135deg, #111827 0%, #1f2937 50%, #111827 100%); }
         .tab-active { border-bottom: 3px solid #f97316; color: #f97316; }
-        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(249,115,22,0.15); }
         .clickable-row:hover { background: rgba(249, 115, 22, 0.1); cursor: pointer; }
+        .clickable-row { transition: all 0.15s ease; }
         .rank-badge { min-width: 2.5rem; }
         .modal { display: none; }
         .modal.active { display: flex; }
@@ -19,34 +21,64 @@
         .sort-asc::after { content: ' ▲'; font-size: 0.7em; }
         .sort-desc::after { content: ' ▼'; font-size: 0.7em; }
         .quick-filter { transition: all 0.2s; }
-        .quick-filter:hover { transform: scale(1.05); }
-        .quick-filter.active { background: #f97316; color: white; }
+        .quick-filter:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+        .quick-filter.active { background: linear-gradient(135deg, #f97316, #ea580c); color: white; box-shadow: 0 4px 12px rgba(249,115,22,0.4); }
         .compare-btn { opacity: 0; transition: opacity 0.2s; }
         .clickable-row:hover .compare-btn { opacity: 1; }
         .tooltip { position: relative; }
         .tooltip::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1f2937; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 10; }
         .tooltip:hover::after { opacity: 1; }
         .compare-selected { background: rgba(249, 115, 22, 0.2) !important; }
+        .glass-card { background: rgba(31, 41, 55, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .btn-glow:hover { box-shadow: 0 0 20px rgba(249,115,22,0.5); }
+        table thead { background: linear-gradient(135deg, #374151, #1f2937); }
+        table tbody tr:nth-child(even) { background: rgba(55, 65, 81, 0.3); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen">
     <div class="container mx-auto px-4 py-6 max-w-7xl">
         <!-- Header -->
-        <header class="text-center mb-6">
-            <h1 class="text-3xl font-bold text-orange-500 mb-1">
-                <i class="fas fa-basketball-ball mr-2"></i>Kenpom College Basketball
+        <header class="text-center mb-8">
+            <div class="inline-block mb-2">
+                <div class="w-16 h-16 mx-auto bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/30 mb-3">
+                    <i class="fas fa-basketball-ball text-3xl text-white"></i>
+                </div>
+            </div>
+            <h1 class="text-4xl font-bold bg-gradient-to-r from-orange-400 via-orange-500 to-red-500 bg-clip-text text-transparent mb-2">
+                March Madness Analytics
             </h1>
-            <p class="text-gray-400 text-sm">Click any team name to view detailed stats</p>
+            <p class="text-gray-400 text-sm">Powered by KenPom Data • Click any team for detailed stats</p>
         </header>
 
-        <!-- Global Search -->
-        <div class="max-w-md mx-auto mb-6">
-            <div class="relative">
-                <input type="text" id="team-search" placeholder="Search teams..." 
-                    class="w-full px-4 py-3 pl-10 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none"
-                    oninput="filterTeams(this.value)">
-                <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+        <!-- Search & Matchup Row -->
+        <div class="flex flex-col md:flex-row gap-4 max-w-4xl mx-auto mb-6">
+            <!-- Team Search with Autocomplete -->
+            <div class="flex-1 relative">
+                <div class="relative">
+                    <input type="text" id="team-search" placeholder="Search teams..." 
+                        class="w-full px-4 py-3 pl-10 bg-gray-800 rounded-lg border border-gray-700 focus:border-orange-500 focus:outline-none"
+                        oninput="handleSearch(this.value)" onfocus="showSearchResults()" autocomplete="off">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+                    <button onclick="clearSearch()" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white hidden" id="clear-search">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="search-results" class="absolute z-50 w-full mt-1 bg-gray-800 rounded-lg border border-gray-700 max-h-64 overflow-y-auto hidden"></div>
             </div>
+            
+            <!-- Matchup Predictor Button -->
+            <button onclick="openMatchupModal()" class="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg font-semibold hover:from-orange-600 hover:to-red-600 transition-all flex items-center justify-center gap-2 btn-glow shadow-lg shadow-orange-500/20">
+                <i class="fas fa-exchange-alt"></i>
+                <span>Matchup Predictor</span>
+            </button>
+            
+            <!-- Share Button -->
+            <button onclick="copyShareLink()" id="share-btn" class="px-4 py-3 bg-gray-700/80 hover:bg-gray-600 rounded-lg font-medium transition-all flex items-center justify-center gap-2 border border-gray-600 hover:border-orange-500/50">
+                <i class="fas fa-share-alt"></i>
+                <span class="hidden md:inline">Share</span>
+            </button>
         </div>
 
         <!-- Navigation Tabs -->
@@ -97,17 +129,17 @@
         </div>
 
         <!-- Filter Bar -->
-        <div class="flex gap-3 flex-wrap justify-center items-end mb-4 bg-gray-800/50 p-4 rounded-lg">
+        <div class="flex gap-3 flex-wrap justify-center items-end mb-4 glass-card p-4 rounded-xl">
             <div>
                 <label class="block text-gray-400 text-xs mb-1">Season</label>
-                <input type="number" id="global-year" value="2025" 
+                <input type="number" id="global-year" value="2026" 
                     class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-20 text-sm"
-                    onchange="loadCurrentTab()">
+                    onchange="loadCurrentTab(); updateURL()">
             </div>
             <div>
                 <label class="block text-gray-400 text-xs mb-1">Conference</label>
                 <select id="global-conference" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none w-36 text-sm"
-                    onchange="loadCurrentTab()">
+                    onchange="loadCurrentTab(); updateURL()">
                     <option value="">All</option>
                 </select>
             </div>
@@ -192,11 +224,76 @@
             </div>
         </div>
 
+        <!-- Matchup Predictor Modal -->
+        <div id="matchup-modal" class="modal fixed inset-0 bg-black/80 items-center justify-center z-50 p-4">
+            <div class="bg-gray-800 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <div class="sticky top-0 bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+                    <h2 class="text-xl font-bold text-orange-500"><i class="fas fa-exchange-alt mr-2"></i>Matchup Predictor</h2>
+                    <button onclick="closeMatchupModal()" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div class="p-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <!-- Team 1 Selection -->
+                        <div>
+                            <label class="block text-gray-400 text-sm mb-2">Team 1</label>
+                            <div class="relative">
+                                <input type="text" id="matchup-team1" placeholder="Search team..." 
+                                    class="w-full px-4 py-3 bg-gray-700 rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                                    oninput="searchMatchupTeam(1, this.value)" onfocus="showMatchupResults(1)" autocomplete="off">
+                                <div id="matchup-results-1" class="absolute z-50 w-full mt-1 bg-gray-700 rounded-lg border border-gray-600 max-h-48 overflow-y-auto hidden"></div>
+                            </div>
+                            <div id="matchup-team1-info" class="mt-2 text-center hidden">
+                                <div class="bg-gray-700 rounded-lg p-3">
+                                    <p class="font-bold text-orange-400" id="matchup-team1-name"></p>
+                                    <p class="text-2xl font-bold" id="matchup-team1-rank"></p>
+                                    <p class="text-sm text-gray-400" id="matchup-team1-record"></p>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Team 2 Selection -->
+                        <div>
+                            <label class="block text-gray-400 text-sm mb-2">Team 2</label>
+                            <div class="relative">
+                                <input type="text" id="matchup-team2" placeholder="Search team..." 
+                                    class="w-full px-4 py-3 bg-gray-700 rounded-lg border border-gray-600 focus:border-orange-500 focus:outline-none"
+                                    oninput="searchMatchupTeam(2, this.value)" onfocus="showMatchupResults(2)" autocomplete="off">
+                                <div id="matchup-results-2" class="absolute z-50 w-full mt-1 bg-gray-700 rounded-lg border border-gray-600 max-h-48 overflow-y-auto hidden"></div>
+                            </div>
+                            <div id="matchup-team2-info" class="mt-2 text-center hidden">
+                                <div class="bg-gray-700 rounded-lg p-3">
+                                    <p class="font-bold text-orange-400" id="matchup-team2-name"></p>
+                                    <p class="text-2xl font-bold" id="matchup-team2-rank"></p>
+                                    <p class="text-sm text-gray-400" id="matchup-team2-record"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Location Toggle -->
+                    <div class="flex justify-center gap-4 mb-6">
+                        <button onclick="setMatchupLocation('team1')" id="loc-team1" class="px-4 py-2 rounded-lg bg-gray-700 text-sm">@ Team 1</button>
+                        <button onclick="setMatchupLocation('neutral')" id="loc-neutral" class="px-4 py-2 rounded-lg bg-orange-500 text-sm">Neutral</button>
+                        <button onclick="setMatchupLocation('team2')" id="loc-team2" class="px-4 py-2 rounded-lg bg-gray-700 text-sm">@ Team 2</button>
+                    </div>
+                    
+                    <!-- Predict Button -->
+                    <button onclick="predictMatchup()" id="predict-btn" class="w-full py-3 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                        <i class="fas fa-magic mr-2"></i>Predict Matchup
+                    </button>
+                    
+                    <!-- Prediction Results -->
+                    <div id="matchup-result" class="mt-6 hidden"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Loading Indicator -->
-        <div id="loading" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div class="bg-gray-800 px-6 py-4 rounded-xl flex items-center gap-3">
-                <i class="fas fa-basketball-ball text-orange-500 text-2xl animate-spin"></i>
-                <span>Loading...</span>
+        <div id="loading" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div class="bg-gradient-to-br from-gray-800 to-gray-900 px-8 py-5 rounded-2xl flex items-center gap-4 shadow-2xl border border-gray-700">
+                <div class="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-full flex items-center justify-center animate-pulse">
+                    <i class="fas fa-basketball-ball text-white text-lg"></i>
+                </div>
+                <span class="text-lg font-medium">Loading data...</span>
             </div>
         </div>
     </div>
@@ -212,6 +309,19 @@
         let currentQuickFilter = 'all';
         let compareTeams = [];
         const POWER_CONFS = ['SEC', 'B10', 'B12', 'ACC', 'BE'];
+        let coachData = {};
+        
+        async function loadCoachData() {
+            try {
+                const response = await fetch('/static/coach_data.json');
+                coachData = await response.json();
+            } catch (e) { console.log('Coach data not loaded'); }
+        }
+        
+        function getCoachInfo(teamName) {
+            return coachData[teamName] || null;
+        }
+        
         const METRIC_TIPS = {
             'AdjEM': 'Adjusted Efficiency Margin - Points above average per 100 possessions',
             'AdjO': 'Adjusted Offensive Efficiency - Points scored per 100 possessions',
@@ -221,11 +331,195 @@
             'eFG%': 'Effective FG% - Accounts for 3PT being worth more',
             'TO%': 'Turnover Rate - Turnovers per 100 possessions',
             'OR%': 'Offensive Rebound Rate',
-            'FTR': 'Free Throw Rate - FT attempts per FG attempt'
+            'FTR': 'Free Throw Rate - FT attempts per FG attempt',
+            'ConRat': 'Connor Rating - Luck-regressed, SOS-weighted AdjEM with coach experience'
         };
+
+        // ═══════════════════════════════════════════════════════
+        // ConRat: Connor Rating
+        // Addresses key AdjEM flaws:
+        //   1. Luck regression — removes overperformance inflation
+        //   2. SOS weighting — battle-tested teams get more credit
+        //   3. Record quality — penalizes teams that underperform expectations
+        //   4. Coach experience — tournament-proven coaches get a small bump
+        //   5. Diminishing returns — compresses extremes via log scaling
+        // ═══════════════════════════════════════════════════════
+        function calcConRat(team) {
+            const adjEM = team.AdjEM || 0;
+            const luck = team.Luck || 0;
+            const sos = team.SOS || 0;
+            const wins = team.Wins || 0;
+            const losses = team.Losses || 0;
+            const totalGames = wins + losses || 1;
+            const winPct = wins / totalGames;
+
+            // 1. Luck regression: remove 80% of luck inflation
+            // Luck of +.050 ≈ ~1.5 pts of inflated AdjEM
+            const luckAdj = luck * 30 * 0.80;
+            const regressedEM = adjEM - luckAdj;
+
+            // 2. SOS weighting: teams with tougher schedules are more reliable
+            // SOS is on the AdjEM scale (avg ~0). Positive = tough schedule.
+            // Bonus range: 0.95x to 1.05x — subtle but rewards battle-tested teams
+            const sosMultiplier = Math.max(0.95, Math.min(1.05, 1 + sos / 200));
+            const sosAdjEM = regressedEM * sosMultiplier;
+
+            // 3. Record quality: compare actual win% to expected win% from AdjEM
+            // Expected win% from AdjEM using Gaussian model (avg D1 opponent = 0 AdjEM)
+            const expectedWinPct = 0.5 + (adjEM / 40); // rough linear approx, capped
+            const clampedExpected = Math.max(0.1, Math.min(0.95, expectedWinPct));
+            const recordDelta = winPct - clampedExpected; // positive = overperforming record
+            // Small penalty/bonus: ±1.0 pts max
+            const recordAdj = Math.max(-1.0, Math.min(1.0, recordDelta * 8));
+
+            // 4. Coach experience bonus
+            const coach = getCoachInfo(team.TeamName);
+            let coachBonus = 0;
+            if (coach) {
+                const e8 = coach.elite8 || 0;
+                const f4 = coach.finalFour || 0;
+                const titles = coach.titles || 0;
+                // Composite score, capped at +0.8 pts
+                coachBonus = Math.min(0.8, (e8 * 0.05 + f4 * 0.08 + titles * 0.12));
+            }
+
+            // 5. Diminishing returns at extremes
+            // Use signed log scaling: compresses +35 vs +30 gap while preserving +5 vs 0 gap
+            const raw = sosAdjEM + recordAdj + coachBonus;
+            const sign = raw >= 0 ? 1 : -1;
+            const conRat = sign * Math.log(1 + Math.abs(raw)) * (30 / Math.log(1 + 35));
+            // Scale so that a ~+35 AdjEM team ≈ 30 ConRat, keeping numbers readable
+
+            return Math.round(conRat * 10) / 10; // 1 decimal
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // MATCHUP ENRICHMENT FUNCTIONS
+        // These use supplemental data fetched at predict time
+        // ═══════════════════════════════════════════════════════
+
+        // Four Factors Style Clash — identifies matchup-specific advantages
+        // beyond what AdjEM's additive model captures
+        function calcStyleClash(ff1, ff2) {
+            if (!ff1 || !ff2) return { adj: 0, details: null };
+
+            // T1 offense vs T2 defense: advantage = off strength - def ability to stop it
+            // Positive = T1's offense exploits T2's defensive weakness
+            const t1_efg = (ff1.eFG_Pct || 50) - (ff2.DeFG_Pct || 50);   // shooting edge
+            const t1_to = (ff2.DTO_Pct || 19) - (ff1.TO_Pct || 19);      // ball security edge (flipped)
+            const t1_or = (ff1.OR_Pct || 28) - (ff2.DOR_Pct || 28);      // rebounding edge
+            const t1_ftr = (ff1.FT_Rate || 33) - (ff2.DFT_Rate || 33);   // free throw edge
+
+            // T2 offense vs T1 defense
+            const t2_efg = (ff2.eFG_Pct || 50) - (ff1.DeFG_Pct || 50);
+            const t2_to = (ff1.DTO_Pct || 19) - (ff2.TO_Pct || 19);
+            const t2_or = (ff2.OR_Pct || 28) - (ff1.DOR_Pct || 28);
+            const t2_ftr = (ff2.FT_Rate || 33) - (ff1.DFT_Rate || 33);
+
+            // Dean Oliver weights for importance of each factor
+            const W = { efg: 0.40, to: 0.25, or: 0.20, ftr: 0.15 };
+
+            const t1Adv = t1_efg * W.efg + t1_to * W.to + t1_or * W.or + t1_ftr * W.ftr;
+            const t2Adv = t2_efg * W.efg + t2_to * W.to + t2_or * W.or + t2_ftr * W.ftr;
+
+            // Convert to margin adjustment, cap at ±3 pts
+            const raw = (t1Adv - t2Adv) * 0.50;
+            const adj = Math.max(-3.0, Math.min(3.0, raw));
+
+            return { adj, t1_efg, t1_to, t1_or, t1_ftr, t2_efg, t2_to, t2_or, t2_ftr, t1Adv, t2Adv };
+        }
+
+        // Experience & Continuity — roster maturity adjustment
+        function calcExperienceAdj(ht1, ht2) {
+            if (!ht1 || !ht2) return { adj: 0, exp1: 0, exp2: 0, cont1: 0, cont2: 0 };
+
+            const exp1 = ht1.Exp || 2.0;
+            const exp2 = ht2.Exp || 2.0;
+            const cont1 = (ht1.Continuity || 0.5) * 100; // API returns 0-1 fraction
+            const cont2 = (ht2.Continuity || 0.5) * 100;
+
+            // Experience: D1 avg ~2.0 years. Each year above opponent = ~0.3 pt advantage
+            const expAdj = (exp1 - exp2) * 0.3;
+            // Continuity: D1 avg ~50%. Each 10% above opponent = ~0.2 pt advantage
+            const contAdj = ((cont1 - cont2) / 10) * 0.2;
+
+            // Combined, capped at ±1.5 pts
+            const adj = Math.max(-1.5, Math.min(1.5, expAdj + contAdj));
+
+            return { adj, exp1, exp2, cont1, cont2, expAdj, contAdj };
+        }
+
+        // Momentum — recent trend in AdjEM
+        function calcMomentum(arch1, arch2, t1, t2) {
+            if (!arch1 || !arch2) return { adj: 0, t1Trend: 0, t2Trend: 0 };
+
+            const t1Now = t1.AdjEM || 0;
+            const t2Now = t2.AdjEM || 0;
+            const t1Then = arch1.AdjEM || t1Now;
+            const t2Then = arch2.AdjEM || t2Now;
+
+            const t1Trend = t1Now - t1Then; // positive = improving
+            const t2Trend = t2Now - t2Then;
+
+            // Margin adjustment: each point of trend difference = 0.15 pts, capped at ±1.0
+            const adj = Math.max(-1.0, Math.min(1.0, (t1Trend - t2Trend) * 0.15));
+
+            return { adj, t1Trend, t2Trend };
+        }
 
         function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
         function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+
+        // URL State Management
+        function updateURL() {
+            const params = new URLSearchParams();
+            if (currentTab !== 'ratings') params.set('tab', currentTab);
+            const year = document.getElementById('global-year').value;
+            if (year !== '2026') params.set('year', year);
+            const conf = document.getElementById('global-conference').value;
+            if (conf) params.set('conf', conf);
+            if (currentQuickFilter !== 'all') params.set('filter', currentQuickFilter);
+            if (currentTeamId) params.set('team', currentTeamId);
+            
+            const newUrl = params.toString() ? `${window.location.pathname}?${params}` : window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+        }
+
+        function loadFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            
+            if (params.get('year')) document.getElementById('global-year').value = params.get('year');
+            if (params.get('conf')) document.getElementById('global-conference').value = params.get('conf');
+            if (params.get('filter')) {
+                currentQuickFilter = params.get('filter');
+                document.querySelectorAll('.quick-filter').forEach(b => b.classList.remove('active'));
+                document.getElementById(`qf-${currentQuickFilter}`)?.classList.add('active');
+            }
+            if (params.get('tab')) {
+                switchTab(params.get('tab'));
+            }
+            if (params.get('team')) {
+                setTimeout(() => {
+                    const teamId = parseInt(params.get('team'));
+                    const team = allTeamsData.find(t => t.TeamID === teamId);
+                    if (team) openTeamModal(team.TeamName, teamId);
+                }, 500);
+            }
+        }
+
+        function copyShareLink() {
+            updateURL();
+            navigator.clipboard.writeText(window.location.href).then(() => {
+                const btn = document.getElementById('share-btn');
+                const original = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+                btn.classList.add('bg-green-600');
+                setTimeout(() => {
+                    btn.innerHTML = original;
+                    btn.classList.remove('bg-green-600');
+                }, 2000);
+            });
+        }
 
         // Quick Filter Functions
         function applyQuickFilter(filter) {
@@ -238,15 +532,767 @@
             }
             
             loadCurrentTab();
+            updateURL();
         }
 
         function filterByQuickFilter(teams) {
             if (currentQuickFilter === 'all') return teams;
-            if (currentQuickFilter === 'top25') return teams.filter(t => (t.RankAdjEM || 999) <= 25);
-            if (currentQuickFilter === 'top50') return teams.filter(t => (t.RankAdjEM || 999) <= 50);
+            if (currentQuickFilter === 'top25') return teams.filter(t => (t.RankAdjEM || t.Rank || 999) <= 25);
+            if (currentQuickFilter === 'top50') return teams.filter(t => (t.RankAdjEM || t.Rank || 999) <= 50);
             if (currentQuickFilter === 'power5') return teams.filter(t => POWER_CONFS.includes(t.ConfShort));
-            if (currentQuickFilter === 'mid') return teams.filter(t => !POWER_CONFS.includes(t.ConfShort) && (t.RankAdjEM || 999) <= 150);
+            if (currentQuickFilter === 'mid') return teams.filter(t => !POWER_CONFS.includes(t.ConfShort) && (t.RankAdjEM || t.Rank || 999) <= 150);
             return teams;
+        }
+        
+        function shouldApplyQuickFilter() {
+            return ['ratings', 'fourfactors', 'height', 'pointdist', 'miscstats'].includes(currentTab);
+        }
+
+        // Search Functions
+        let searchTimeout = null;
+        let allTeamsData = [];
+        
+        let allTeamsYear = null;
+        async function loadAllTeams() {
+            const year = document.getElementById('global-year').value || '2026';
+            if (allTeamsData.length > 0 && allTeamsYear === year) return allTeamsData;
+            allTeamsYear = year;
+            allTeamsData = [];
+            const data = await fetchAPI(`/ratings?year=${year}`);
+            if (!data.error && Array.isArray(data)) {
+                allTeamsData = data;
+            }
+            return allTeamsData;
+        }
+
+        function handleSearch(query) {
+            clearTimeout(searchTimeout);
+            const clearBtn = document.getElementById('clear-search');
+            clearBtn.classList.toggle('hidden', !query);
+            
+            if (!query) {
+                hideSearchResults();
+                filterTeams('');
+                return;
+            }
+            
+            searchTimeout = setTimeout(async () => {
+                const teams = await loadAllTeams();
+                const filtered = teams.filter(t => 
+                    t.TeamName?.toLowerCase().includes(query.toLowerCase())
+                ).slice(0, 10);
+                
+                const container = document.getElementById('search-results');
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="p-3 text-gray-400 text-sm">No teams found</div>';
+                } else {
+                    container.innerHTML = filtered.map(t => `
+                        <div class="p-3 hover:bg-gray-700 cursor-pointer flex justify-between items-center" onclick="selectSearchTeam('${t.TeamName?.replace(/'/g, "\\'")}', ${t.TeamID})">
+                            <span class="font-medium">${t.TeamName}</span>
+                            <span class="text-gray-500 text-sm">#${t.RankAdjEM || '-'} ${t.ConfShort || ''}</span>
+                        </div>
+                    `).join('');
+                }
+                container.classList.remove('hidden');
+                
+                filterTeams(query);
+            }, 150);
+        }
+
+        function showSearchResults() {
+            const query = document.getElementById('team-search').value;
+            if (query) handleSearch(query);
+        }
+
+        function hideSearchResults() {
+            document.getElementById('search-results').classList.add('hidden');
+        }
+
+        function selectSearchTeam(name, id) {
+            document.getElementById('team-search').value = name;
+            hideSearchResults();
+            openTeamModal(name, id);
+        }
+
+        function clearSearch() {
+            document.getElementById('team-search').value = '';
+            document.getElementById('clear-search').classList.add('hidden');
+            hideSearchResults();
+            filterTeams('');
+        }
+
+        // Matchup Predictor Functions
+        let matchupTeam1 = null;
+        let matchupTeam2 = null;
+        let matchupLocation = 'neutral';
+
+        function openMatchupModal() {
+            document.getElementById('matchup-modal').classList.add('active');
+            allTeamsData = []; allTeamsYear = null;
+            loadAllTeams();
+        }
+
+        function closeMatchupModal() {
+            document.getElementById('matchup-modal').classList.remove('active');
+            resetMatchup();
+        }
+
+        function resetMatchup() {
+            matchupTeam1 = null;
+            matchupTeam2 = null;
+            matchupLocation = 'neutral';
+            document.getElementById('matchup-team1').value = '';
+            document.getElementById('matchup-team2').value = '';
+            document.getElementById('matchup-team1-info').classList.add('hidden');
+            document.getElementById('matchup-team2-info').classList.add('hidden');
+            document.getElementById('matchup-result').classList.add('hidden');
+            document.getElementById('predict-btn').disabled = true;
+            setMatchupLocation('neutral');
+        }
+
+        function searchMatchupTeam(num, query) {
+            const container = document.getElementById(`matchup-results-${num}`);
+            if (!query) {
+                container.classList.add('hidden');
+                return;
+            }
+            
+            const filtered = allTeamsData.filter(t => 
+                t.TeamName?.toLowerCase().includes(query.toLowerCase())
+            ).slice(0, 8);
+            
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="p-2 text-gray-400 text-sm">No teams found</div>';
+            } else {
+                container.innerHTML = filtered.map(t => `
+                    <div class="p-2 hover:bg-gray-600 cursor-pointer text-sm" onclick="selectMatchupTeam(${num}, ${JSON.stringify(t).replace(/"/g, '&quot;')})">
+                        <span class="font-medium">${t.TeamName}</span>
+                        <span class="text-gray-400 ml-2">#${t.RankAdjEM || '-'}</span>
+                    </div>
+                `).join('');
+            }
+            container.classList.remove('hidden');
+        }
+
+        function showMatchupResults(num) {
+            const query = document.getElementById(`matchup-team${num}`).value;
+            if (query) searchMatchupTeam(num, query);
+        }
+
+        function selectMatchupTeam(num, team) {
+            if (num === 1) {
+                matchupTeam1 = team;
+                document.getElementById('matchup-team1').value = team.TeamName;
+                document.getElementById('matchup-team1-name').textContent = team.TeamName;
+                document.getElementById('matchup-team1-rank').textContent = `#${team.RankAdjEM || '-'}`;
+                document.getElementById('matchup-team1-record').textContent = `${team.Wins || 0}-${team.Losses || 0} | ${team.ConfShort || ''}`;
+                document.getElementById('matchup-team1-info').classList.remove('hidden');
+            } else {
+                matchupTeam2 = team;
+                document.getElementById('matchup-team2').value = team.TeamName;
+                document.getElementById('matchup-team2-name').textContent = team.TeamName;
+                document.getElementById('matchup-team2-rank').textContent = `#${team.RankAdjEM || '-'}`;
+                document.getElementById('matchup-team2-record').textContent = `${team.Wins || 0}-${team.Losses || 0} | ${team.ConfShort || ''}`;
+                document.getElementById('matchup-team2-info').classList.remove('hidden');
+            }
+            document.getElementById(`matchup-results-${num}`).classList.add('hidden');
+            document.getElementById('predict-btn').disabled = !(matchupTeam1 && matchupTeam2);
+        }
+
+        function setMatchupLocation(loc) {
+            matchupLocation = loc;
+            ['team1', 'neutral', 'team2'].forEach(l => {
+                document.getElementById(`loc-${l}`).classList.toggle('bg-orange-500', l === loc);
+                document.getElementById(`loc-${l}`).classList.toggle('bg-gray-700', l !== loc);
+            });
+        }
+
+        // Gaussian CDF approximation for win probability from margin
+        function gaussianCDF(x) {
+            const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+            const a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+            const sign = x < 0 ? -1 : 1;
+            x = Math.abs(x) / Math.sqrt(2);
+            const t = 1.0 / (1.0 + p * x);
+            const y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+            return 0.5 * (1.0 + sign * y);
+        }
+
+        // Box-Muller transform for normal random numbers
+        function randNormal(mean, sd) {
+            let u = 0, v = 0;
+            while (u === 0) u = Math.random();
+            while (v === 0) v = Math.random();
+            return mean + sd * Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // MODEL 1: KenPom Efficiency Model (additive)
+        // ═══════════════════════════════════════════════════════
+        function modelEfficiency(t1, t2, hca1, hca2, extra = {}) {
+            const AVG_EFF = 100.0;
+            const GAME_SD = 11.0;
+            const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+
+            const t1Luck = (t1.Luck || 0), t2Luck = (t2.Luck || 0);
+            const t1LuckAdj = t1Luck * 30 * 0.75, t2LuckAdj = t2Luck * 30 * 0.75;
+
+            const t1ExpOE = ((t1.AdjOE || AVG_EFF) + (t2.AdjDE || AVG_EFF) - AVG_EFF);
+            const t2ExpOE = ((t2.AdjOE || AVG_EFF) + (t1.AdjDE || AVG_EFF) - AVG_EFF);
+
+            let t1Score = t1ExpOE * (avgTempo / 100) + hca1 - t1LuckAdj / 2;
+            let t2Score = t2ExpOE * (avgTempo / 100) + hca2 - t2LuckAdj / 2;
+
+            // Style clash adjustment from Four Factors
+            const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
+            // Experience adjustment
+            const expAdj = extra.experience ? extra.experience.adj : 0;
+            // Momentum adjustment
+            const momAdj = extra.momentum ? extra.momentum.adj : 0;
+            // Apply enrichment adjustments (split between both sides)
+            const totalAdj = styleAdj + expAdj + momAdj;
+            t1Score += totalAdj / 2;
+            t2Score -= totalAdj / 2;
+
+            const margin = t1Score - t2Score;
+
+            return {
+                t1Score, t2Score, margin,
+                t1WinProb: gaussianCDF(margin / GAME_SD),
+                tempo: avgTempo, styleAdj, expAdj, momAdj,
+                label: 'Efficiency Model',
+                desc: 'KenPom efficiency + style clash + experience + momentum'
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // MODEL 2: Similar Opponents (style matchup analysis)
+        // Uses Four Factors to find how each team performs
+        // against opponents with a similar profile to the other
+        // ═══════════════════════════════════════════════════════
+        function modelSimilarOpponents(t1, t2, hca1, hca2) {
+            const AVG_EFF = 100.0;
+            const GAME_SD = 11.0;
+
+            // Four Factors style profile for each team
+            // We compare how each team's offensive strengths match up
+            // against the other's defensive weaknesses
+            const t1Off = (t1.AdjOE || AVG_EFF);
+            const t1Def = (t1.AdjDE || AVG_EFF);
+            const t2Off = (t2.AdjOE || AVG_EFF);
+            const t2Def = (t2.AdjDE || AVG_EFF);
+
+            // Consistency factor: teams with high SOS have been battle-tested
+            // against similar quality opponents, so their ratings are more reliable
+            const t1SOS = (t1.SOS || 0);
+            const t2SOS = (t2.SOS || 0);
+            const avgSOS = (t1SOS + t2SOS) / 2;
+
+            // SOS reliability weight: teams with tougher schedules get more credit
+            // Range: 0.85 to 1.15 multiplier on their efficiency edge
+            const t1SOSBonus = avgSOS !== 0 ? Math.max(0.85, Math.min(1.15, 1 + (t1SOS - avgSOS) / 40)) : 1;
+            const t2SOSBonus = avgSOS !== 0 ? Math.max(0.85, Math.min(1.15, 1 + (t2SOS - avgSOS) / 40)) : 1;
+
+            // Win/Loss record quality: teams that win close games vs good teams
+            const t1WinPct = (t1.Wins || 0) / Math.max(1, (t1.Wins || 0) + (t1.Losses || 0));
+            const t2WinPct = (t2.Wins || 0) / Math.max(1, (t2.Wins || 0) + (t2.Losses || 0));
+
+            // Adjusted margin incorporating SOS reliability
+            const t1AdjEM = ((t1.AdjEM || 0) * t1SOSBonus);
+            const t2AdjEM = ((t2.AdjEM || 0) * t2SOSBonus);
+
+            // Factor in record quality (slight nudge for teams that win more than expected)
+            const t1RecordBonus = (t1WinPct - 0.5) * 2; // -1 to +1 scale
+            const t2RecordBonus = (t2WinPct - 0.5) * 2;
+
+            const margin = (t1AdjEM - t2AdjEM) + (t1RecordBonus - t2RecordBonus) * 0.5 + (hca1 - hca2);
+            const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+            const scaledMargin = margin * (avgTempo / 67); // scale to actual game tempo
+
+            const t1Score = (AVG_EFF + scaledMargin / 2) * (avgTempo / 100);
+            const t2Score = (AVG_EFF - scaledMargin / 2) * (avgTempo / 100);
+
+            return {
+                t1Score, t2Score, margin: scaledMargin,
+                t1WinProb: gaussianCDF(scaledMargin / GAME_SD),
+                tempo: avgTempo,
+                t1SOS, t2SOS,
+                label: 'Similar Opponents',
+                desc: 'SOS-weighted efficiency with record quality'
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // MODEL 4: ConRat Model
+        // Uses the Connor Rating (luck-regressed, SOS-weighted,
+        // coach-adjusted, diminishing returns) for predictions
+        // ═══════════════════════════════════════════════════════
+        function modelConRat(t1, t2, hca1, hca2) {
+            const GAME_SD = 11.0;
+            const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+
+            const cr1 = calcConRat(t1);
+            const cr2 = calcConRat(t2);
+
+            // ConRat margin + HCA
+            const margin = (cr1 - cr2) + (hca1 - hca2);
+
+            // Scale scores from ConRat margin
+            const AVG_EFF = 100.0;
+            const t1Score = (AVG_EFF + margin / 2) * (avgTempo / 100);
+            const t2Score = (AVG_EFF - margin / 2) * (avgTempo / 100);
+
+            return {
+                t1Score, t2Score, margin,
+                t1WinProb: gaussianCDF(margin / GAME_SD),
+                cr1, cr2,
+                tempo: avgTempo,
+                label: 'ConRat Model',
+                desc: 'Connor Rating: luck-regressed, SOS-weighted, coach-adjusted'
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════
+        // MODEL 3: Monte Carlo Simulation (1000 games)
+        // Simulates possession-by-possession outcomes with
+        // variance from tempo, shooting, and turnover randomness
+        // ═══════════════════════════════════════════════════════
+        function modelMonteCarlo(t1, t2, hca1, hca2, numSims = 1000, extra = {}) {
+            const AVG_EFF = 100.0;
+            const t1Off = (t1.AdjOE || AVG_EFF);
+            const t1Def = (t1.AdjDE || AVG_EFF);
+            const t2Off = (t2.AdjOE || AVG_EFF);
+            const t2Def = (t2.AdjDE || AVG_EFF);
+            const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+
+            // Expected efficiencies (additive model) + enrichment adjustments
+            let t1ExpOE = t1Off + t2Def - AVG_EFF;
+            let t2ExpOE = t2Off + t1Def - AVG_EFF;
+            // Bake style clash into expected efficiency
+            const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
+            const expAdj = extra.experience ? extra.experience.adj : 0;
+            const momAdj = extra.momentum ? extra.momentum.adj : 0;
+            t1ExpOE += (styleAdj + expAdj + momAdj) / 2;
+            t2ExpOE -= (styleAdj + expAdj + momAdj) / 2;
+
+            // Coach experience factor
+            const coach1 = getCoachInfo(t1.TeamName);
+            const coach2 = getCoachInfo(t2.TeamName);
+            const c1E8 = coach1 ? coach1.elite8 : 0;
+            const c2E8 = coach2 ? coach2.elite8 : 0;
+            const c1F4 = coach1 ? (coach1.finalFour || 0) : 0;
+            const c2F4 = coach2 ? (coach2.finalFour || 0) : 0;
+            const c1Titles = coach1 ? (coach1.titles || 0) : 0;
+            const c2Titles = coach2 ? (coach2.titles || 0) : 0;
+            const c1Exp = c1E8 + c1F4 * 1.5 + c1Titles * 2;
+            const c2Exp = c2E8 + c2F4 * 1.5 + c2Titles * 2;
+            const coachEdge = Math.max(-0.8, Math.min(0.8, (c1Exp - c2Exp) * 0.04));
+
+            // Per-team variance from point distribution
+            // 3PT-heavy teams have more boom-or-bust variance
+            // FT-heavy teams also have higher game-to-game variance
+            const pd1 = extra.pd1, pd2 = extra.pd2;
+            const baseEffSD = 8.5;
+            const avg3pt = 30, avgFT = 20;
+            const t1_3pt = pd1 ? (pd1.OffFg3 || avg3pt) : avg3pt;
+            const t2_3pt = pd2 ? (pd2.OffFg3 || avg3pt) : avg3pt;
+            const t1_ft = pd1 ? (pd1.OffFt || avgFT) : avgFT;
+            const t2_ft = pd2 ? (pd2.OffFt || avgFT) : avgFT;
+            // 3PT: each 5% above avg adds ~0.5 SD; FT: each 5% above avg adds ~0.25 SD
+            const t1StyleSD = baseEffSD + (t1_3pt - avg3pt) * 0.10 + (t1_ft - avgFT) * 0.05;
+            const t2StyleSD = baseEffSD + (t2_3pt - avg3pt) * 0.10 + (t2_ft - avgFT) * 0.05;
+            // Experienced coaches reduce variance further
+            const t1EffSD = t1StyleSD * Math.max(0.92, 1 - c1Exp * 0.003);
+            const t2EffSD = t2StyleSD * Math.max(0.92, 1 - c2Exp * 0.003);
+            // Tempo variance (~3 possessions SD)
+            const tempoSD = 3.0;
+
+            let t1Wins = 0, t2Wins = 0, ties = 0;
+            let totalT1Score = 0, totalT2Score = 0;
+            let marginDist = [];
+            let blowouts = 0; // wins by 15+
+            let closeGames = 0; // decided by 5 or less
+            let upsets = 0; // underdog wins
+
+            const t1Favored = (t1ExpOE * avgTempo / 100 + hca1) > (t2ExpOE * avgTempo / 100 + hca2);
+
+            for (let i = 0; i < numSims; i++) {
+                // Randomize tempo for this game
+                const gameTempo = randNormal(avgTempo, tempoSD);
+                const gamePoss = Math.max(55, Math.min(85, gameTempo));
+
+                // Randomize each team's efficiency (experienced coaches = tighter SD)
+                const gameT1OE = randNormal(t1ExpOE, t1EffSD);
+                const gameT2OE = randNormal(t2ExpOE, t2EffSD);
+
+                // Calculate scores
+                let s1 = gameT1OE * (gamePoss / 100) + hca1;
+                let s2 = gameT2OE * (gamePoss / 100) + hca2;
+
+                // Coach clutch factor: in close games (within 6 pts), apply coach edge
+                const rawMargin = Math.abs(s1 - s2);
+                if (rawMargin <= 6) {
+                    // Scale effect: strongest when game is closest
+                    const clutchScale = 1 - (rawMargin / 6);
+                    s1 += coachEdge * clutchScale;
+                    s2 -= coachEdge * clutchScale;
+                }
+
+                totalT1Score += s1;
+                totalT2Score += s2;
+                const m = s1 - s2;
+                marginDist.push(m);
+
+                if (s1 > s2) { t1Wins++; if (!t1Favored) upsets++; }
+                else if (s2 > s1) { t2Wins++; if (t1Favored) upsets++; }
+                else ties++;
+
+                if (Math.abs(m) >= 15) blowouts++;
+                if (Math.abs(m) <= 5) closeGames++;
+            }
+
+            const t1WinPct = (t1Wins + ties * 0.5) / numSims;
+            const avgT1Score = totalT1Score / numSims;
+            const avgT2Score = totalT2Score / numSims;
+            const avgMargin = marginDist.reduce((a, b) => a + b, 0) / numSims;
+
+            // Median margin and confidence intervals
+            marginDist.sort((a, b) => a - b);
+            const medianMargin = marginDist[Math.floor(numSims / 2)];
+            const p10 = marginDist[Math.floor(numSims * 0.10)];
+            const p25 = marginDist[Math.floor(numSims * 0.25)];
+            const p75 = marginDist[Math.floor(numSims * 0.75)];
+            const p90 = marginDist[Math.floor(numSims * 0.90)];
+
+            return {
+                t1Score: avgT1Score, t2Score: avgT2Score,
+                margin: avgMargin, medianMargin,
+                p10, p25, p75, p90,
+                t1WinProb: t1WinPct,
+                t1Wins, t2Wins, ties,
+                blowouts, closeGames, upsets,
+                coachEdge, c1Exp, c2Exp,
+                tempo: avgTempo, numSims,
+                label: 'Monte Carlo',
+                desc: `${numSims.toLocaleString()} game simulations with variance`
+            };
+        }
+
+        async function predictMatchup() {
+            if (!matchupTeam1 || !matchupTeam2) return;
+
+            const t1 = matchupTeam1;
+            const t2 = matchupTeam2;
+            const HCA = 3.75;
+            const year = document.getElementById('global-year').value || '2026';
+
+            // Show loading state
+            const resultEl = document.getElementById('matchup-result');
+            resultEl.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-orange-400"></i><p class="text-sm text-gray-400 mt-2">Running deep analysis...</p></div>';
+            resultEl.classList.remove('hidden');
+
+            let hca1 = 0, hca2 = 0;
+            if (matchupLocation === 'team1') hca1 = HCA;
+            if (matchupLocation === 'team2') hca2 = HCA;
+
+            // Fetch full datasets and filter by TeamName (ratings API has no TeamID)
+            const archiveDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const t1Name = t1.TeamName, t2Name = t2.TeamName;
+            const findTeam = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
+            let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2;
+            try {
+                const [ffAll, htAll, pdAll, archAll] = await Promise.all([
+                    fetchAPI(`/four-factors?year=${year}`),
+                    fetchAPI(`/height?year=${year}`),
+                    fetchAPI(`/pointdist?year=${year}`),
+                    fetchAPI(`/archive?date=${archiveDate}`).catch(() => []),
+                ]);
+                ff1 = findTeam(ffAll, t1Name);
+                ff2 = findTeam(ffAll, t2Name);
+                ht1 = findTeam(htAll, t1Name);
+                ht2 = findTeam(htAll, t2Name);
+                pd1 = findTeam(pdAll, t1Name);
+                pd2 = findTeam(pdAll, t2Name);
+                arch1 = findTeam(archAll, t1Name);
+                arch2 = findTeam(archAll, t2Name);
+            } catch (e) {
+                console.log('Some supplemental data failed to load:', e);
+            }
+
+            // Compute enrichment factors
+            const styleClash = calcStyleClash(ff1, ff2);
+            const experience = calcExperienceAdj(ht1, ht2);
+            const momentum = calcMomentum(arch1, arch2, t1, t2);
+            const extra = { styleClash, experience, momentum, pd1, pd2 };
+
+            // Run all four models with enrichment data
+            const eff = modelEfficiency(t1, t2, hca1, hca2, extra);
+            const sim = modelSimilarOpponents(t1, t2, hca1, hca2);
+            const cr = modelConRat(t1, t2, hca1, hca2);
+            const mc = modelMonteCarlo(t1, t2, hca1, hca2, 1000, extra);
+
+            // Composite: weighted average (Efficiency 30%, Similar 20%, ConRat 20%, Monte Carlo 30%)
+            const compositeT1Win = eff.t1WinProb * 0.30 + sim.t1WinProb * 0.20 + cr.t1WinProb * 0.20 + mc.t1WinProb * 0.30;
+            const compositeMargin = eff.margin * 0.30 + sim.margin * 0.20 + cr.margin * 0.20 + mc.margin * 0.30;
+            const compositeT1Score = eff.t1Score * 0.30 + sim.t1Score * 0.20 + cr.t1Score * 0.20 + mc.t1Score * 0.30;
+            const compositeT2Score = eff.t2Score * 0.30 + sim.t2Score * 0.20 + cr.t2Score * 0.20 + mc.t2Score * 0.30;
+
+            const winner = compositeT1Score > compositeT2Score ? t1 : t2;
+            const loser = compositeT1Score > compositeT2Score ? t2 : t1;
+            const winnerProb = compositeT1Score > compositeT2Score ? compositeT1Win : 1 - compositeT1Win;
+            const spread = Math.abs(compositeMargin);
+
+            // Luck warning
+            const t1Luck = (t1.Luck || 0), t2Luck = (t2.Luck || 0);
+            const luckWarning = (Math.abs(t1Luck) + Math.abs(t2Luck)) > 0.06;
+
+            // Coach data
+            const coach1 = getCoachInfo(t1.TeamName);
+            const coach2 = getCoachInfo(t2.TeamName);
+
+            // Build win probability bar helper
+            function probBar(label, t1Prob, color) {
+                const t1Pct = (t1Prob * 100).toFixed(0);
+                const t2Pct = ((1 - t1Prob) * 100).toFixed(0);
+                return `<div class="mb-3">
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="font-medium">${label}</span>
+                        <span class="text-gray-400">${t1Pct}% - ${t2Pct}%</span>
+                    </div>
+                    <div class="flex h-6 rounded-full overflow-hidden bg-gray-900">
+                        <div class="flex items-center justify-center text-xs font-bold transition-all duration-500" style="width:${t1Pct}%; background: linear-gradient(90deg, ${t1Prob > 0.5 ? '#22c55e' : '#ef4444'}, ${t1Prob > 0.5 ? '#16a34a' : '#dc2626'})">
+                            ${t1Pct > 15 ? t1Pct + '%' : ''}
+                        </div>
+                        <div class="flex items-center justify-center text-xs font-bold transition-all duration-500" style="width:${t2Pct}%; background: linear-gradient(90deg, ${t1Prob < 0.5 ? '#22c55e' : '#ef4444'}, ${t1Prob < 0.5 ? '#16a34a' : '#dc2626'})">
+                            ${t2Pct > 15 ? t2Pct + '%' : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            document.getElementById('matchup-result').innerHTML = `
+                <div class="bg-gradient-to-br from-gray-700 to-gray-800 rounded-xl p-6 border border-gray-600 animate-in">
+                    
+                    <!-- Header: Predicted Winner -->
+                    <div class="text-center mb-5">
+                        <p class="text-gray-400 text-xs uppercase tracking-wider mb-1">Composite Prediction</p>
+                        <p class="text-3xl font-bold text-orange-400">${winner.TeamName}</p>
+                        <p class="text-sm text-gray-400 mt-1">${(winnerProb * 100).toFixed(0)}% chance to win • ${spread.toFixed(1)} pt spread</p>
+                    </div>
+
+                    <!-- Score Prediction -->
+                    <div class="grid grid-cols-3 gap-4 text-center mb-5">
+                        <div class="bg-gray-800/60 rounded-xl p-4 border ${compositeT1Score > compositeT2Score ? 'border-green-500/40' : 'border-gray-700'}">
+                            <p class="text-3xl font-bold ${compositeT1Score > compositeT2Score ? 'text-green-400' : 'text-gray-300'}">${compositeT1Score.toFixed(0)}</p>
+                            <p class="text-sm font-medium mt-1">${t1.TeamName}</p>
+                            <p class="text-xs text-gray-500">#${t1.RankAdjEM || '-'} • ${t1.Wins || 0}-${t1.Losses || 0}</p>
+                        </div>
+                        <div class="flex flex-col items-center justify-center">
+                            <div class="w-10 h-10 rounded-full bg-gray-800 flex items-center justify-center mb-1">
+                                <span class="text-gray-500 text-sm font-bold">VS</span>
+                            </div>
+                            <p class="text-xs text-gray-500">${matchupLocation === 'neutral' ? '🏟️ Neutral' : matchupLocation === 'team1' ? '🏠 ' + t1.TeamName : '🏠 ' + t2.TeamName}</p>
+                        </div>
+                        <div class="bg-gray-800/60 rounded-xl p-4 border ${compositeT2Score > compositeT1Score ? 'border-green-500/40' : 'border-gray-700'}">
+                            <p class="text-3xl font-bold ${compositeT2Score > compositeT1Score ? 'text-green-400' : 'text-gray-300'}">${compositeT2Score.toFixed(0)}</p>
+                            <p class="text-sm font-medium mt-1">${t2.TeamName}</p>
+                            <p class="text-xs text-gray-500">#${t2.RankAdjEM || '-'} • ${t2.Wins || 0}-${t2.Losses || 0}</p>
+                        </div>
+                    </div>
+
+                    <!-- ESPN-style Win Probability Breakdown -->
+                    <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
+                        <div class="flex justify-between items-center mb-3">
+                            <h4 class="text-sm font-bold text-white"><i class="fas fa-chart-bar mr-1 text-orange-400"></i>Win Probability Breakdown</h4>
+                            <div class="flex gap-3 text-xs">
+                                <span class="text-gray-400">${t1.TeamName}</span>
+                                <span class="text-gray-600">|</span>
+                                <span class="text-gray-400">${t2.TeamName}</span>
+                            </div>
+                        </div>
+                        
+                        ${probBar('<i class="fas fa-calculator mr-1 text-blue-400"></i>Efficiency Model', eff.t1WinProb)}
+                        ${probBar('<i class="fas fa-users mr-1 text-purple-400"></i>Similar Opponents', sim.t1WinProb)}
+                        ${probBar('<i class="fas fa-bolt mr-1 text-cyan-400"></i>ConRat Model', cr.t1WinProb)}
+                        ${probBar('<i class="fas fa-dice mr-1 text-green-400"></i>1,000 Simulations', mc.t1WinProb)}
+                        
+                        <div class="border-t border-gray-600 pt-3 mt-1">
+                            ${probBar('<i class="fas fa-star mr-1 text-orange-400"></i><strong>Composite</strong>', compositeT1Win)}
+                        </div>
+                    </div>
+
+                    <!-- Key Stats Grid -->
+                    <div class="grid grid-cols-4 gap-2 text-center text-sm mb-4">
+                        <div class="bg-gray-800 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs">Spread</p>
+                            <p class="font-bold text-orange-400">${winner.TeamName.length > 10 ? winner.TeamName.substring(0,10) + '..' : winner.TeamName} -${spread.toFixed(1)}</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs">Tempo</p>
+                            <p class="font-bold">${eff.tempo.toFixed(0)} <span class="text-xs text-gray-500">poss</span></p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs">Close Games</p>
+                            <p class="font-bold">${((mc.closeGames / mc.numSims) * 100).toFixed(0)}%</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs">Blowouts</p>
+                            <p class="font-bold">${((mc.blowouts / mc.numSims) * 100).toFixed(0)}%</p>
+                        </div>
+                    </div>
+
+                    <!-- Matchup Factors (enrichment data) -->
+                    <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-microscope mr-1 text-purple-400"></i>Matchup Deep Dive</h4>
+                        
+                        ${ff1 && ff2 ? `<!-- Four Factors Style Matchup -->
+                        <div class="mb-4">
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Four Factors Matchup</p>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="bg-gray-900/50 rounded-lg p-3">
+                                    <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName} Offense vs ${t2.TeamName} Defense</p>
+                                    <div class="space-y-1">
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Shooting (eFG%)</span>
+                                            <span class="font-bold ${styleClash.t1_efg > 2 ? 'text-green-400' : styleClash.t1_efg < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t1_efg > 0 ? '+' : ''}${styleClash.t1_efg.toFixed(1)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Ball Security (TO%)</span>
+                                            <span class="font-bold ${styleClash.t1_to > 2 ? 'text-green-400' : styleClash.t1_to < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t1_to > 0 ? '+' : ''}${styleClash.t1_to.toFixed(1)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Off. Rebounds (OR%)</span>
+                                            <span class="font-bold ${styleClash.t1_or > 2 ? 'text-green-400' : styleClash.t1_or < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t1_or > 0 ? '+' : ''}${styleClash.t1_or.toFixed(1)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Free Throws (FTR)</span>
+                                            <span class="font-bold ${styleClash.t1_ftr > 2 ? 'text-green-400' : styleClash.t1_ftr < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t1_ftr > 0 ? '+' : ''}${styleClash.t1_ftr.toFixed(1)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-gray-900/50 rounded-lg p-3">
+                                    <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName} Offense vs ${t1.TeamName} Defense</p>
+                                    <div class="space-y-1">
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Shooting (eFG%)</span>
+                                            <span class="font-bold ${styleClash.t2_efg > 2 ? 'text-green-400' : styleClash.t2_efg < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t2_efg > 0 ? '+' : ''}${styleClash.t2_efg.toFixed(1)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Ball Security (TO%)</span>
+                                            <span class="font-bold ${styleClash.t2_to > 2 ? 'text-green-400' : styleClash.t2_to < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t2_to > 0 ? '+' : ''}${styleClash.t2_to.toFixed(1)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Off. Rebounds (OR%)</span>
+                                            <span class="font-bold ${styleClash.t2_or > 2 ? 'text-green-400' : styleClash.t2_or < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t2_or > 0 ? '+' : ''}${styleClash.t2_or.toFixed(1)}</span>
+                                        </div>
+                                        <div class="flex justify-between text-xs">
+                                            <span class="text-gray-400">Free Throws (FTR)</span>
+                                            <span class="font-bold ${styleClash.t2_ftr > 2 ? 'text-green-400' : styleClash.t2_ftr < -2 ? 'text-red-400' : 'text-gray-300'}">${styleClash.t2_ftr > 0 ? '+' : ''}${styleClash.t2_ftr.toFixed(1)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-2 text-center text-xs ${Math.abs(styleClash.adj) > 0.3 ? (styleClash.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">
+                                Net style adjustment: ${Math.abs(styleClash.adj) < 0.1 ? 'Balanced — advantages cancel out' : (styleClash.adj > 0 ? t1.TeamName : t2.TeamName) + ' +' + Math.abs(styleClash.adj).toFixed(1) + ' pts'}
+                            </div>
+                        </div>` : ''}
+
+                        <!-- Experience & Momentum Row -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Roster Experience</p>
+                                <div class="grid grid-cols-2 gap-2 text-center">
+                                    <div>
+                                        <p class="text-xs text-orange-400 font-medium">${t1.TeamName}</p>
+                                        <p class="text-lg font-bold">${experience.exp1?.toFixed(1) || '?'}<span class="text-xs text-gray-500"> yr</span></p>
+                                        <p class="text-xs text-gray-500">${(experience.cont1 || 0).toFixed(0)}% continuity</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-orange-400 font-medium">${t2.TeamName}</p>
+                                        <p class="text-lg font-bold">${experience.exp2?.toFixed(1) || '?'}<span class="text-xs text-gray-500"> yr</span></p>
+                                        <p class="text-xs text-gray-500">${(experience.cont2 || 0).toFixed(0)}% continuity</p>
+                                    </div>
+                                </div>
+                                <p class="text-center text-xs mt-2 ${Math.abs(experience.adj) > 0.1 ? (experience.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(experience.adj) < 0.1 ? 'Even experience' : (experience.adj > 0 ? t1.TeamName : t2.TeamName) + ' +' + Math.abs(experience.adj).toFixed(1) + ' pts'}</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">28-Day Momentum</p>
+                                <div class="grid grid-cols-2 gap-2 text-center">
+                                    <div>
+                                        <p class="text-xs text-orange-400 font-medium">${t1.TeamName}</p>
+                                        <p class="text-lg font-bold ${momentum.t1Trend > 0.5 ? 'text-green-400' : momentum.t1Trend < -0.5 ? 'text-red-400' : ''}">${momentum.t1Trend > 0 ? '↑' : '↓'}${Math.abs(momentum.t1Trend).toFixed(1)}</p>
+                                        <p class="text-xs text-gray-500">AdjEM change</p>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs text-orange-400 font-medium">${t2.TeamName}</p>
+                                        <p class="text-lg font-bold ${momentum.t2Trend > 0.5 ? 'text-green-400' : momentum.t2Trend < -0.5 ? 'text-red-400' : ''}">${momentum.t2Trend > 0 ? '↑' : '↓'}${Math.abs(momentum.t2Trend).toFixed(1)}</p>
+                                        <p class="text-xs text-gray-500">AdjEM change</p>
+                                    </div>
+                                </div>
+                                <p class="text-center text-xs mt-2 ${Math.abs(momentum.adj) > 0.1 ? (momentum.adj > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(momentum.adj) < 0.1 ? 'Similar trajectory' : (momentum.adj > 0 ? t1.TeamName : t2.TeamName) + ' trending better +' + Math.abs(momentum.adj).toFixed(1) + ' pts'}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Simulation Details -->
+                    <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-dice mr-1 text-green-400"></i>Simulation Breakdown (${mc.numSims.toLocaleString()} games)</h4>
+                        <div class="grid grid-cols-3 gap-3 text-center text-sm">
+                            <div>
+                                <p class="text-2xl font-bold text-green-400">${mc.t1Wins}</p>
+                                <p class="text-xs text-gray-400">${t1.TeamName} wins</p>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-gray-400">${mc.ties}</p>
+                                <p class="text-xs text-gray-400">Ties</p>
+                            </div>
+                            <div>
+                                <p class="text-2xl font-bold text-green-400">${mc.t2Wins}</p>
+                                <p class="text-xs text-gray-400">${t2.TeamName} wins</p>
+                            </div>
+                        </div>
+                        <div class="mt-3 text-center text-xs text-gray-500">
+                            Avg margin: ${mc.margin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.margin).toFixed(1)} • Median: ${mc.medianMargin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.medianMargin).toFixed(1)} • Upsets: ${((mc.upsets / mc.numSims) * 100).toFixed(0)}%
+                        </div>
+                        <div class="mt-2 text-center text-xs text-gray-600">
+                            80% CI: ${mc.p10 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p10).toFixed(0)} to ${mc.p90 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p90).toFixed(0)} • 50% CI: ${mc.p25 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p25).toFixed(0)} to ${mc.p75 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p75).toFixed(0)}
+                        </div>
+                    </div>
+
+                    <!-- Coach Tournament Experience -->
+                    ${(coach1 || coach2) ? `<div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-user-tie mr-1 text-yellow-400"></i>Coach Tournament Experience</h4>
+                        <div class="grid grid-cols-2 gap-4 text-center text-sm">
+                            <div>
+                                <p class="font-medium text-orange-400">${coach1 ? coach1.coach : (t1.Coach || 'N/A')}</p>
+                                ${coach1 ? `<div class="flex justify-center gap-3 mt-2">
+                                    <div><p class="text-lg font-bold">${coach1.elite8}</p><p class="text-xs text-gray-500">E8</p></div>
+                                    ${coach1.finalFour ? `<div><p class="text-lg font-bold text-blue-400">${coach1.finalFour}</p><p class="text-xs text-gray-500">F4</p></div>` : ''}
+                                    ${coach1.titles ? `<div><p class="text-lg font-bold text-yellow-400">${coach1.titles}</p><p class="text-xs text-gray-500">🏆</p></div>` : ''}
+                                </div>` : '<p class="text-xs text-gray-500 mt-1">No tournament data</p>'}
+                            </div>
+                            <div>
+                                <p class="font-medium text-orange-400">${coach2 ? coach2.coach : (t2.Coach || 'N/A')}</p>
+                                ${coach2 ? `<div class="flex justify-center gap-3 mt-2">
+                                    <div><p class="text-lg font-bold">${coach2.elite8}</p><p class="text-xs text-gray-500">E8</p></div>
+                                    ${coach2.finalFour ? `<div><p class="text-lg font-bold text-blue-400">${coach2.finalFour}</p><p class="text-xs text-gray-500">F4</p></div>` : ''}
+                                    ${coach2.titles ? `<div><p class="text-lg font-bold text-yellow-400">${coach2.titles}</p><p class="text-xs text-gray-500">🏆</p></div>` : ''}
+                                </div>` : '<p class="text-xs text-gray-500 mt-1">No tournament data</p>'}
+                            </div>
+                        </div>
+                    </div>` : ''}
+
+                    ${luckWarning ? `<div class="bg-yellow-900/30 border border-yellow-500/30 rounded-lg p-3 mb-3 text-center">
+                        <p class="text-xs text-yellow-400"><i class="fas fa-exclamation-triangle mr-1"></i>Luck factor: ${t1.TeamName} (${t1Luck > 0 ? '+' : ''}${t1Luck.toFixed(3)}), ${t2.TeamName} (${t2Luck > 0 ? '+' : ''}${t2Luck.toFixed(3)})</p>
+                    </div>` : ''}
+
+                    <div class="text-center text-xs text-gray-500 border-t border-gray-600 pt-3">
+                        <p>Composite: 30% Efficiency + 20% Similar Opponents + 20% ConRat + 30% Monte Carlo • HCA ${HCA}pts • σ=11</p>
+                        <p class="mt-1">Enriched with: Four Factors style clash • Experience/Continuity • Point distribution variance • 28-day momentum</p>
+                    </div>
+                </div>
+            `;
+            document.getElementById('matchup-result').classList.remove('hidden');
         }
 
         // Team Comparison Functions
@@ -412,6 +1458,10 @@
             
             // Show/hide date filter
             document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive');
+            
+            // Load data for the selected tab
+            loadCurrentTab();
+            updateURL();
         }
 
         async function fetchAPI(endpoint) {
@@ -461,7 +1511,8 @@
         }
 
         async function loadConferenceOptions() {
-            const data = await fetchAPI('/conferences?year=2025');
+            const year = document.getElementById('global-year').value || '2026';
+            const data = await fetchAPI(`/conferences?year=${year}`);
             if (data.error || !Array.isArray(data)) return;
             const options = data.map(c => `<option value="${c.ConfShort}">${c.ConfLong || c.ConfShort}</option>`).join('');
             document.getElementById('global-conference').innerHTML = '<option value="">All</option>' + options;
@@ -481,14 +1532,25 @@
             
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             
-            let teams = Array.isArray(data) ? data.slice(0, 400) : [];
-            teams = filterByQuickFilter(teams);
-            allTeamsCache = teams;
+            let allTeams = Array.isArray(data) ? data.slice(0, 400) : [];
             
-            if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+            // Add ConRat to each team
+            allTeams.forEach(t => { t._conRat = calcConRat(t); });
+            // Assign AdjEM rank (sort descending)
+            const emSorted = [...allTeams].sort((a, b) => (b.AdjEM || 0) - (a.AdjEM || 0));
+            emSorted.forEach((t, i) => { t._adjEMRank = i + 1; });
+            // Assign ConRat rank (sort descending)
+            const crSorted = [...allTeams].sort((a, b) => b._conRat - a._conRat);
+            crSorted.forEach((t, i) => { t._conRatRank = i + 1; });
             
+            // Now apply quick filter
+            let teamsWithCR = filterByQuickFilter(allTeams);
+            allTeamsCache = teamsWithCR;
+            
+            if (teamsWithCR.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
+
             container.innerHTML = `
-                <div class="text-xs text-gray-500 mb-2 text-right">${teams.length} teams</div>
+                <div class="text-xs text-gray-500 mb-2 text-right">${teamsWithCR.length} teams</div>
                 <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-sm">
                     <thead class="bg-gray-700 sticky top-0">
                         <tr>
@@ -503,11 +1565,18 @@
                             <th class="px-2 py-2 text-center sortable tooltip" data-col="8" onclick="sortTable(null, 8, 'adjt')" data-tip="Adjusted Tempo">AdjT</th>
                             <th class="px-2 py-2 text-center sortable" data-col="9" onclick="sortTable(null, 9, 'luck')">Luck</th>
                             <th class="px-2 py-2 text-center sortable tooltip" data-col="10" onclick="sortTable(null, 10, 'sos')" data-tip="Strength of Schedule">SOS</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="11" onclick="sortTable(null, 11, 'conrat')" data-tip="Connor Rating - Luck-regressed, SOS-weighted, coach-adjusted">ConRat</th>
+                            <th class="px-2 py-2 text-center sortable tooltip" data-col="12" onclick="sortTable(null, 12, 'rdiff')" data-tip="Rank difference: positive = ConRat ranks team higher than AdjEM">+/-</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${teams.map(t => `
-                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-teamid="${t.TeamID || 0}" data-rank="${t.RankAdjEM || 999}" data-wins="${t.Wins || 0}" data-adjem="${t.AdjEM || 0}" data-adjo="${t.AdjOE || 0}" data-adjd="${t.AdjDE || 0}" data-adjt="${t.AdjTempo || 0}" data-luck="${t.Luck || 0}" data-sos="${t.SOS || 0}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
+                        ${teamsWithCR.map(t => {
+                            const cr = t._conRat;
+                            const crRank = t._conRatRank;
+                            const adjRank = t._adjEMRank;
+                            const rankDiff = adjRank - crRank; // positive = ConRat ranks higher
+                            return `
+                            <tr class="border-t border-gray-700 clickable-row" data-team="${t.TeamName || ''}" data-teamid="${t.TeamID || 0}" data-rank="${t.RankAdjEM || 999}" data-wins="${t.Wins || 0}" data-adjem="${t.AdjEM || 0}" data-adjo="${t.AdjOE || 0}" data-adjd="${t.AdjDE || 0}" data-adjt="${t.AdjTempo || 0}" data-luck="${t.Luck || 0}" data-sos="${t.SOS || 0}" data-conrat="${cr}" data-rdiff="${rankDiff}" onclick="openTeamModal('${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})">
                                 <td class="px-1 py-1 text-center"><button class="compare-btn text-gray-500 hover:text-orange-400 text-xs" onclick="toggleCompare(event, '${(t.TeamName || '').replace(/'/g, "\\'")}', ${t.TeamID || 0})" title="Compare"><i class="fas fa-plus-circle"></i></button></td>
                                 <td class="px-2 py-1"><span class="rank-badge inline-block text-center bg-orange-500/20 text-orange-400 rounded px-1 text-xs font-bold">${t.RankAdjEM || '-'}</span></td>
                                 <td class="px-2 py-1 font-medium text-orange-400">${t.TeamName || 'N/A'}</td>
@@ -519,8 +1588,10 @@
                                 <td class="px-2 py-1 text-center text-xs">${t.AdjTempo?.toFixed(1) || '-'}</td>
                                 <td class="px-2 py-1 text-center text-xs ${(t.Luck || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.Luck?.toFixed(3) || '-'}</td>
                                 <td class="px-2 py-1 text-center text-xs">${t.SOS?.toFixed(2) || '-'}</td>
-                            </tr>
-                        `).join('')}
+                                <td class="px-2 py-1 text-center font-semibold ${cr > 0 ? 'text-cyan-400' : 'text-red-400'}">${cr.toFixed(1)}</td>
+                                <td class="px-2 py-1 text-center text-xs font-bold ${rankDiff > 0 ? 'text-green-400' : rankDiff < 0 ? 'text-red-400' : 'text-gray-500'}">${rankDiff > 0 ? '+' + rankDiff : rankDiff === 0 ? '—' : rankDiff}</td>
+                            </tr>`;
+                        }).join('')}
                     </tbody>
                 </table>`;
             updateCompareUI();
@@ -536,9 +1607,11 @@
             
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (shouldApplyQuickFilter()) teams = filterByQuickFilter(teams);
             if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
             
             container.innerHTML = `
+                <div class="text-xs text-gray-500 mb-2 text-right">${teams.length} teams</div>
                 <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
                     <thead class="bg-gray-700 sticky top-0">
                         <tr>
@@ -590,9 +1663,11 @@
             
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (shouldApplyQuickFilter()) teams = filterByQuickFilter(teams);
             if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
             
             container.innerHTML = `
+                <div class="text-xs text-gray-500 mb-2 text-right">${teams.length} teams</div>
                 <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
                     <thead class="bg-gray-700 sticky top-0">
                         <tr>
@@ -639,9 +1714,11 @@
             
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (shouldApplyQuickFilter()) teams = filterByQuickFilter(teams);
             if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
             
             container.innerHTML = `
+                <div class="text-xs text-gray-500 mb-2 text-right">${teams.length} teams</div>
                 <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
                     <thead class="bg-gray-700 sticky top-0">
                         <tr>
@@ -685,9 +1762,11 @@
             
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             let teams = Array.isArray(data) ? data.slice(0, 400) : [];
+            if (shouldApplyQuickFilter()) teams = filterByQuickFilter(teams);
             if (teams.length === 0) { container.innerHTML = '<div class="text-center text-gray-400 py-8">No data found</div>'; return; }
             
             container.innerHTML = `
+                <div class="text-xs text-gray-500 mb-2 text-right">${teams.length} teams</div>
                 <table class="w-full bg-gray-800 rounded-xl overflow-hidden text-xs">
                     <thead class="bg-gray-700 sticky top-0">
                         <tr>
@@ -856,11 +1935,13 @@
             document.getElementById('modal-team-name').textContent = teamName;
             document.getElementById('team-modal').classList.add('active');
             loadTeamTab('ratings');
+            updateURL();
         }
 
         function closeModal() {
             document.getElementById('team-modal').classList.remove('active');
             currentTeamId = null;
+            updateURL();
         }
 
         async function loadTeamTab(tab) {
@@ -915,9 +1996,36 @@
                         <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">Luck:</span> <span class="font-semibold ${(t.Luck || 0) > 0 ? 'text-green-400' : 'text-red-400'}">${t.Luck?.toFixed(3) || '-'}</span></div>
                         <div class="bg-gray-700/50 rounded p-2"><span class="text-gray-400 text-xs">SOS:</span> <span class="font-semibold">${t.SOS?.toFixed(2) || '-'}</span> <span class="text-gray-500 text-xs">(#${t.RankSOS})</span></div>
                     </div>
-                    <div class="mt-4 text-sm text-gray-400">
-                        <p><strong>Coach:</strong> ${t.Coach || 'N/A'}</p>
-                    </div>`,
+                    ${(() => {
+                        const coach = getCoachInfo(t.TeamName);
+                        if (coach) {
+                            const hasTourneySuccess = coach.finalFour || coach.titles;
+                            return `<div class="mt-4 p-3 bg-gradient-to-r from-orange-900/30 to-yellow-900/30 rounded-lg border border-orange-500/30">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div>
+                                        <p class="text-sm text-gray-400">Head Coach</p>
+                                        <p class="font-bold text-lg">${coach.coach}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <p class="text-xs text-gray-400">Elite 8s</p>
+                                        <p class="text-2xl font-bold text-orange-400">${coach.elite8}</p>
+                                    </div>
+                                </div>
+                                ${hasTourneySuccess ? `<div class="flex gap-3 mt-2 pt-2 border-t border-orange-500/20">
+                                    ${coach.finalFour ? `<div class="flex-1 text-center bg-blue-900/30 rounded p-2">
+                                        <p class="text-xs text-gray-400">Final Fours</p>
+                                        <p class="text-xl font-bold text-blue-400">${coach.finalFour}</p>
+                                    </div>` : ''}
+                                    ${coach.titles ? `<div class="flex-1 text-center bg-yellow-900/30 rounded p-2">
+                                        <p class="text-xs text-gray-400">🏆 Titles</p>
+                                        <p class="text-xl font-bold text-yellow-400">${coach.titles}</p>
+                                    </div>` : ''}
+                                </div>` : `<p class="text-xs text-gray-500 mt-1">First E8: ${coach.firstE8}</p>`}
+                            </div>`;
+                        } else {
+                            return `<div class="mt-4 text-sm text-gray-400"><p><strong>Coach:</strong> ${t.Coach || 'N/A'}</p></div>`;
+                        }
+                    })()}`,
                 fourfactors: t => `
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="bg-green-900/30 rounded-lg p-4">
@@ -1033,21 +2141,48 @@
         document.getElementById('compare-modal').addEventListener('click', e => {
             if (e.target.id === 'compare-modal') closeCompareModal();
         });
+        document.getElementById('matchup-modal').addEventListener('click', e => {
+            if (e.target.id === 'matchup-modal') closeMatchupModal();
+        });
+
+        // Close search on outside click
+        document.addEventListener('click', e => {
+            if (!e.target.closest('#team-search') && !e.target.closest('#search-results')) {
+                hideSearchResults();
+            }
+            if (!e.target.closest('#matchup-team1') && !e.target.closest('#matchup-results-1')) {
+                document.getElementById('matchup-results-1')?.classList.add('hidden');
+            }
+            if (!e.target.closest('#matchup-team2') && !e.target.closest('#matchup-results-2')) {
+                document.getElementById('matchup-results-2')?.classList.add('hidden');
+            }
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') {
                 closeModal();
                 closeCompareModal();
+                closeMatchupModal();
+                hideSearchResults();
             }
         });
 
         // Initialize
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('global-date').value = today;
-            loadConferenceOptions();
-            loadRatings();
+            await loadCoachData();
+            await loadConferenceOptions();
+            await loadAllTeams();
+            
+            // Check for URL params
+            const params = new URLSearchParams(window.location.search);
+            if (params.toString()) {
+                loadFromURL();
+            } else {
+                loadRatings();
+            }
         });
     </script>
 </body>
