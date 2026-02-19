@@ -104,6 +104,9 @@
             <button onclick="switchTab('games')" id="tab-games" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
                 <i class="fas fa-calendar mr-1"></i>Games
             </button>
+            <button onclick="switchTab('recap')" id="tab-recap" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-clipboard-check mr-1"></i>Recap
+            </button>
             <button onclick="switchTab('archive')" id="tab-archive" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
                 <i class="fas fa-history mr-1"></i>Archive
             </button>
@@ -183,6 +186,10 @@
 
         <section id="section-games" class="tab-section hidden">
             <div id="games-results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+        </section>
+
+        <section id="section-recap" class="tab-section hidden">
+            <div id="recap-results" class="max-w-5xl mx-auto"></div>
         </section>
 
         <section id="section-archive" class="tab-section hidden">
@@ -527,8 +534,9 @@
             return { adj, t1Trend, t2Trend };
         }
 
-        function showLoading() { document.getElementById('loading').classList.remove('hidden'); }
-        function hideLoading() { document.getElementById('loading').classList.add('hidden'); }
+        let _loadCount = 0;
+        function showLoading() { _loadCount++; document.getElementById('loading').classList.remove('hidden'); }
+        function hideLoading() { _loadCount = Math.max(0, _loadCount - 1); if (_loadCount === 0) document.getElementById('loading').classList.add('hidden'); }
 
         // URL State Management
         function updateURL() {
@@ -1808,11 +1816,16 @@
             document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
             
             // Show/hide date filter
-            document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive');
+            document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive' && tab !== 'recap');
             
-            // Auto-set today's date when switching to games/archive if empty
+            // Auto-set date when switching to date-based tabs
             if ((tab === 'games' || tab === 'archive') && !document.getElementById('global-date').value) {
                 document.getElementById('global-date').value = new Date().toISOString().split('T')[0];
+            }
+            if (tab === 'recap' && !document.getElementById('global-date').value) {
+                // Default recap to yesterday
+                const y = new Date(); y.setDate(y.getDate() - 1);
+                document.getElementById('global-date').value = y.toISOString().split('T')[0];
             }
             
             // Load data for the selected tab
@@ -1861,6 +1874,7 @@
                 miscstats: loadMiscStats,
                 conferences: loadConferences,
                 games: loadGames,
+                recap: loadRecap,
                 archive: loadArchive
             };
             if (loaders[currentTab]) await loaders[currentTab]();
@@ -2257,6 +2271,231 @@
                     </div>
                 </div>`;
             }).join('');
+        }
+
+        async function loadRecap() {
+            const container = document.getElementById('recap-results');
+            const { date, year } = getFilters();
+            if (!date) {
+                const y = new Date(); y.setDate(y.getDate() - 1);
+                document.getElementById('global-date').value = y.toISOString().split('T')[0];
+                return loadRecap();
+            }
+
+            container.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-orange-400 text-2xl"></i><p class="text-gray-400 mt-2">Loading recap&hellip;</p></div>';
+
+            const recapDate = new Date(date + 'T12:00:00');
+
+            // Compute next-day date for single-day diff method
+            const nextDate = new Date(recapDate); nextDate.setDate(nextDate.getDate() + 1);
+            const nextDateStr = nextDate.toISOString().split('T')[0];
+
+            // Fetch fanmatch + game-day archive + next-day archive (for single-day diff)
+            const [fanmatch, archDay, archNext] = await Promise.all([
+                fetchAPI(`/fanmatch?date=${date}`),
+                fetchAPI(`/archive?date=${date}`),
+                fetchAPI(`/archive?date=${nextDateStr}`)
+            ]);
+
+            if (fanmatch.error) {
+                const msg = (fanmatch.error.includes('400') || fanmatch.error.includes('Bad Request'))
+                    ? 'No game data available for this date.' : fanmatch.error;
+                container.innerHTML = `<div class="text-center text-red-400 py-8"><i class="fas fa-calendar-times mr-2"></i>${msg}</div>`;
+                return;
+            }
+            if (!Array.isArray(fanmatch) || fanmatch.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8">No games found for this date</div>';
+                return;
+            }
+            if (!Array.isArray(archDay)) {
+                container.innerHTML = '<div class="text-center text-red-400 py-8"><i class="fas fa-exclamation-triangle mr-2"></i>Archive data not available for this date</div>';
+                return;
+            }
+
+            // Build lookup maps
+            const dayMap = {};
+            archDay.forEach(t => { dayMap[t.TeamName] = t; });
+            // Next-day archive: used for single-day diff on older dates
+            const hasNext = Array.isArray(archNext) && archNext.length > 0;
+            const nextMap = {};
+            if (hasNext) archNext.forEach(t => { nextMap[t.TeamName] = t; });
+
+            const HCA = 3.75;
+            const games = [];
+
+            for (const g of fanmatch) {
+                const home = g.Home, visitor = g.Visitor;
+                const dH = dayMap[home], dV = dayMap[visitor];
+                if (!dH || !dV) continue;
+
+                let homeEMChg, visEMChg, homeRkChg, visRkChg;
+
+                if (hasNext && nextMap[home] && nextMap[visitor]) {
+                    // Single-day diff: next-day AdjEM minus game-day AdjEM
+                    homeEMChg = nextMap[home].AdjEM - dH.AdjEM;
+                    visEMChg  = nextMap[visitor].AdjEM - dV.AdjEM;
+                    homeRkChg = (dH.RankAdjEM || 0) - (nextMap[home].RankAdjEM || 0); // lower rank# = better
+                    visRkChg  = (dV.RankAdjEM || 0) - (nextMap[visitor].RankAdjEM || 0);
+                } else {
+                    // Fallback for latest date: AdjEMChg reflects game-to-current
+                    homeEMChg = dH.AdjEMChg || 0;
+                    visEMChg  = dV.AdjEMChg || 0;
+                    homeRkChg = dH.RankChg || 0;
+                    visRkChg  = dV.RankChg || 0;
+                }
+
+                // Result signal: positive = home outperformed visitor
+                const resultSignal = homeEMChg - visEMChg;
+                const inferredWinner = resultSignal >= 0 ? home : visitor;
+                const confidence = Math.abs(resultSignal);
+
+                // KenPom's prediction
+                const kpPredMargin = (g.HomePred || 0) - (g.VisitorPred || 0);
+                const kpPredWinner = kpPredMargin >= 0 ? home : visitor;
+
+                // Our model: pre-game AdjEM diff + HCA
+                const ourMargin = (dH.AdjEM - dV.AdjEM) + HCA;
+                const ourPredWinner = ourMargin >= 0 ? home : visitor;
+
+                const ourCorrect = ourPredWinner === inferredWinner;
+                const kpCorrect  = kpPredWinner === inferredWinner;
+                const ourSurprise = Math.abs(ourMargin) * (ourCorrect ? 0 : 1) + confidence * (ourCorrect ? 0 : 1);
+
+                games.push({
+                    home, visitor, homeRank: g.HomeRank, visRank: g.VisitorRank,
+                    kpHomePred: g.HomePred, kpVisPred: g.VisitorPred,
+                    kpPredMargin, kpPredWinner, kpCorrect,
+                    ourMargin, ourPredWinner, ourCorrect,
+                    homeEMChg, visEMChg, homeRkChg, visRkChg,
+                    resultSignal, inferredWinner, confidence,
+                    ourSurprise, thrillScore: g.ThrillScore || 0
+                });
+            }
+
+            if (games.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8">No matchable games found (archive data may not cover this date)</div>';
+                return;
+            }
+
+            // Sort: biggest upsets / surprises first
+            const byMiss = [...games].sort((a, b) => b.confidence - a.confidence);
+            const ourRight = games.filter(g => g.ourCorrect).length;
+            const kpRight  = games.filter(g => g.kpCorrect).length;
+            const total = games.length;
+            const ourPct = ((ourRight / total) * 100).toFixed(0);
+            const kpPct  = ((kpRight / total) * 100).toFixed(0);
+            const bothRight  = games.filter(g => g.ourCorrect && g.kpCorrect).length;
+            const weOnlyRight = games.filter(g => g.ourCorrect && !g.kpCorrect).length;
+            const kpOnlyRight = games.filter(g => !g.ourCorrect && g.kpCorrect).length;
+            const bothWrong  = games.filter(g => !g.ourCorrect && !g.kpCorrect).length;
+            const bigUpsets  = games.filter(g => !g.kpCorrect && g.confidence > 1.0);
+
+            const recapDateFmt = recapDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+            container.innerHTML = `
+                <div class="text-center mb-6">
+                    <h2 class="text-2xl font-bold text-white mb-1"><i class="fas fa-clipboard-check mr-2 text-orange-400"></i>Game Recap</h2>
+                    <p class="text-gray-400">${recapDateFmt} &mdash; ${total} games analyzed</p>
+                    <p class="text-xs text-gray-500 mt-1">Winners inferred from KenPom AdjEM movement on game day</p>
+                </div>
+
+                <!-- Accuracy Summary -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(ourPct) >= parseInt(kpPct) ? 'border-green-500/40' : 'border-gray-700'}">
+                        <p class="text-3xl font-bold ${parseInt(ourPct) >= 70 ? 'text-green-400' : parseInt(ourPct) >= 55 ? 'text-yellow-400' : 'text-red-400'}">${ourPct}%</p>
+                        <p class="text-xs text-gray-400 mt-1">Our Model</p>
+                        <p class="text-xs text-gray-500">${ourRight}/${total} correct</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(kpPct) > parseInt(ourPct) ? 'border-blue-500/40' : 'border-gray-700'}">
+                        <p class="text-3xl font-bold ${parseInt(kpPct) >= 70 ? 'text-blue-400' : parseInt(kpPct) >= 55 ? 'text-yellow-400' : 'text-red-400'}">${kpPct}%</p>
+                        <p class="text-xs text-gray-400 mt-1">KenPom</p>
+                        <p class="text-xs text-gray-500">${kpRight}/${total} correct</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-700">
+                        <p class="text-3xl font-bold text-purple-400">${weOnlyRight}</p>
+                        <p class="text-xs text-gray-400 mt-1">Only We Got Right</p>
+                        <p class="text-xs text-gray-500">KenPom missed</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-700">
+                        <p class="text-3xl font-bold text-orange-400">${bigUpsets.length}</p>
+                        <p class="text-xs text-gray-400 mt-1">Big Upsets</p>
+                        <p class="text-xs text-gray-500">AdjEM swing &gt; 1.0</p>
+                    </div>
+                </div>
+
+                <!-- Agreement Matrix -->
+                <div class="bg-gray-800 rounded-xl p-4 mb-6 border border-gray-700">
+                    <h3 class="text-sm font-bold text-white mb-3"><i class="fas fa-th mr-1 text-cyan-400"></i>Agreement Matrix</h3>
+                    <div class="grid grid-cols-4 gap-2 text-center text-xs">
+                        <div class="bg-green-900/30 rounded p-2 border border-green-500/20"><p class="text-lg font-bold text-green-400">${bothRight}</p><p class="text-gray-400">Both Right</p></div>
+                        <div class="bg-purple-900/30 rounded p-2 border border-purple-500/20"><p class="text-lg font-bold text-purple-400">${weOnlyRight}</p><p class="text-gray-400">Only Us</p></div>
+                        <div class="bg-blue-900/30 rounded p-2 border border-blue-500/20"><p class="text-lg font-bold text-blue-400">${kpOnlyRight}</p><p class="text-gray-400">Only KenPom</p></div>
+                        <div class="bg-red-900/30 rounded p-2 border border-red-500/20"><p class="text-lg font-bold text-red-400">${bothWrong}</p><p class="text-gray-400">Both Wrong</p></div>
+                    </div>
+                </div>
+
+                <!-- Game-by-Game Results -->
+                <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+                    <h3 class="text-sm font-bold text-white mb-3"><i class="fas fa-list mr-1 text-orange-400"></i>All Games (sorted by rating swing)</h3>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-700">
+                                <tr>
+                                    <th class="px-2 py-2 text-left">Matchup</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="KenPom predicted score margin">KP Pred</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="Our model predicted margin (AdjEM diff + HCA)">Our Pred</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="AdjEM change for each team on game day">Rating Swing</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="Rank change (positive = moved up)">Rk&Delta;</th>
+                                    <th class="px-2 py-2 text-center">Us</th>
+                                    <th class="px-2 py-2 text-center">KP</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${byMiss.map((g, i) => {
+                                    const isUpset = !g.kpCorrect && g.confidence > 0.5;
+                                    const rowBg = i % 2 === 0 ? '' : 'bg-gray-700/20';
+                                    const ourSpread = Math.abs(g.ourMargin).toFixed(1);
+                                    const kpSpread = Math.abs(g.kpPredMargin).toFixed(0);
+                                    const winnerName = g.inferredWinner;
+                                    return `<tr class="${rowBg} ${isUpset ? 'border-l-2 border-orange-500' : ''} hover:bg-gray-700/50">
+                                        <td class="px-2 py-2 whitespace-nowrap">
+                                            <span class="text-xs text-gray-500">#${g.visRank}</span>
+                                            <span class="font-medium ${g.inferredWinner === g.visitor ? 'text-green-400' : ''}">${g.visitor}</span>
+                                            <span class="text-gray-500 mx-1">@</span>
+                                            <span class="text-xs text-gray-500">#${g.homeRank}</span>
+                                            <span class="font-medium ${g.inferredWinner === g.home ? 'text-green-400' : ''}">${g.home}</span>
+                                            ${isUpset ? '<span class="ml-1 text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">UPSET</span>' : ''}
+                                        </td>
+                                        <td class="px-2 py-2 text-center text-xs">
+                                            <span class="${g.kpCorrect ? 'text-gray-300' : 'text-red-400'}">${g.kpPredWinner} -${kpSpread}</span>
+                                        </td>
+                                        <td class="px-2 py-2 text-center text-xs">
+                                            <span class="${g.ourCorrect ? 'text-gray-300' : 'text-red-400'}">${g.ourPredWinner} -${ourSpread}</span>
+                                        </td>
+                                        <td class="px-2 py-2 text-center text-xs whitespace-nowrap">
+                                            <span class="${g.visEMChg >= 0 ? 'text-green-400' : 'text-red-400'}">${g.visitor.split(' ').pop()} ${g.visEMChg >= 0 ? '+' : ''}${g.visEMChg.toFixed(2)}</span>
+                                            <span class="text-gray-600 mx-0.5">/</span>
+                                            <span class="${g.homeEMChg >= 0 ? 'text-green-400' : 'text-red-400'}">${g.home.split(' ').pop()} ${g.homeEMChg >= 0 ? '+' : ''}${g.homeEMChg.toFixed(2)}</span>
+                                        </td>
+                                        <td class="px-2 py-2 text-center text-xs whitespace-nowrap">
+                                            <span class="${g.visRkChg > 0 ? 'text-green-400' : g.visRkChg < 0 ? 'text-red-400' : 'text-gray-500'}">${g.visRkChg > 0 ? '+' : ''}${g.visRkChg}</span>
+                                            <span class="text-gray-600 mx-0.5">/</span>
+                                            <span class="${g.homeRkChg > 0 ? 'text-green-400' : g.homeRkChg < 0 ? 'text-red-400' : 'text-gray-500'}">${g.homeRkChg > 0 ? '+' : ''}${g.homeRkChg}</span>
+                                        </td>
+                                        <td class="px-2 py-2 text-center">${g.ourCorrect ? '<i class="fas fa-check text-green-400"></i>' : '<i class="fas fa-times text-red-400"></i>'}</td>
+                                        <td class="px-2 py-2 text-center">${g.kpCorrect ? '<i class="fas fa-check text-blue-400"></i>' : '<i class="fas fa-times text-red-400"></i>'}</td>
+                                    </tr>`;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="text-center text-xs text-gray-600 mt-4">
+                    <p>Winners inferred from AdjEM changes on ${date}. Teams whose rating rose likely won; teams whose rating fell likely lost.</p>
+                    <p class="mt-0.5">Our model: pre-game AdjEM diff + ${HCA}pt HCA. Future: full MC simulation + learning from results.</p>
+                </div>
+            `;
         }
 
         async function predictGame(visitor, home) {
