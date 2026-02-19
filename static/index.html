@@ -146,7 +146,7 @@
             <div id="date-filter" class="hidden">
                 <label class="block text-gray-400 text-xs mb-1">Date</label>
                 <input type="date" id="global-date" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-orange-500 focus:outline-none text-sm"
-                    onchange="loadCurrentTab()">
+                    onchange="loadCurrentTab()" max="">
             </div>
             <button onclick="exportToCSV()" class="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded font-medium text-sm transition-all" title="Export to CSV">
                 <i class="fas fa-download"></i>
@@ -302,6 +302,7 @@
         const API_BASE = 'http://localhost:5001/api';
         let currentTab = 'ratings';
         let currentTeamId = null;
+        let currentTeamName = null;
         let allTeamsCache = [];
         let currentSortColumn = null;
         let currentSortDir = 'desc';
@@ -332,17 +333,22 @@
             'TO%': 'Turnover Rate - Turnovers per 100 possessions',
             'OR%': 'Offensive Rebound Rate',
             'FTR': 'Free Throw Rate - FT attempts per FG attempt',
-            'ConRat': 'Connor Rating - Luck-regressed, SOS-weighted AdjEM with coach experience'
+            'ConRat': 'Connor Rating v2 - 10-layer composite: luck-regressed, SOS-weighted, Pythag, NCSOS, O/D balance, def floor, SOS split'
         };
 
         // ═══════════════════════════════════════════════════════
-        // ConRat: Connor Rating
-        // Addresses key AdjEM flaws:
+        // ConRat: Connor Rating (v2)
+        // 10-layer composite rating addressing AdjEM blind spots:
         //   1. Luck regression — removes overperformance inflation
         //   2. SOS weighting — battle-tested teams get more credit
-        //   3. Record quality — penalizes teams that underperform expectations
-        //   4. Coach experience — tournament-proven coaches get a small bump
-        //   5. Diminishing returns — compresses extremes via log scaling
+        //   3. Record quality — Pythag-based over/underperformance
+        //   4. Coach experience — tournament-proven coaches bump
+        //   5. NCSOS — non-conference schedule quality bonus
+        //   6. O/D Balance — balanced teams get reliability bonus
+        //   7. Defensive floor — elite defense premium
+        //   8. SOS split — SOSO validates defense, SOSD validates offense
+        //   9. Diminishing returns — log scaling compresses extremes
+        //  10. Final scaling — readable 0-30 range
         // ═══════════════════════════════════════════════════════
         function calcConRat(team) {
             const adjEM = team.AdjEM || 0;
@@ -364,11 +370,10 @@
             const sosMultiplier = Math.max(0.95, Math.min(1.05, 1 + sos / 200));
             const sosAdjEM = regressedEM * sosMultiplier;
 
-            // 3. Record quality: compare actual win% to expected win% from AdjEM
-            // Expected win% from AdjEM using Gaussian model (avg D1 opponent = 0 AdjEM)
-            const expectedWinPct = 0.5 + (adjEM / 40); // rough linear approx, capped
-            const clampedExpected = Math.max(0.1, Math.min(0.95, expectedWinPct));
-            const recordDelta = winPct - clampedExpected; // positive = overperforming record
+            // 3. Record quality: use KenPom Pythag instead of linear approximation
+            // Pythag is the expected win% based on actual point differential — much more accurate
+            const pythag = team.Pythag || (0.5 + adjEM / 40); // fallback to linear if missing
+            const recordDelta = winPct - pythag; // positive = winning more than expected
             // Small penalty/bonus: ±1.0 pts max
             const recordAdj = Math.max(-1.0, Math.min(1.0, recordDelta * 8));
 
@@ -383,10 +388,47 @@
                 coachBonus = Math.min(0.8, (e8 * 0.05 + f4 * 0.08 + titles * 0.12));
             }
 
-            // 5. Diminishing returns at extremes
+            // 5. NCSOS — Non-Conference SOS bonus
+            // Teams that schedule tough OOC opponents prove their efficiency is real
+            // NCSOS avg ~0, positive = tough OOC. Each 5 pts above avg = ~0.3 bonus, capped ±1.0
+            const ncsos = team.NCSOS || 0;
+            const ncsosAdj = Math.max(-1.0, Math.min(1.0, ncsos * 0.06));
+
+            // 6. O/D Balance — balanced teams have a higher floor
+            // Measure gap between offensive and defensive rank
+            // Smaller gap = more reliable in tournament settings
+            const adjOERank = team.RankAdjOE || 175;
+            const adjDERank = team.RankAdjDE || 175;
+            const rankGap = Math.abs(adjOERank - adjDERank);
+            // Teams within 30 rank spots get a small bonus; extreme imbalance gets penalized
+            // Max bonus +0.5, max penalty -0.3
+            const balanceAdj = rankGap <= 30 ? 0.5 * (1 - rankGap / 30) :
+                               rankGap >= 150 ? -0.3 : 0;
+
+            // 7. Defensive floor premium — elite defense = safety net
+            // In single-elimination, defense is more consistent than offense game-to-game
+            // Top 25 defense gets a bonus, scaled by how elite (max +0.6)
+            const adjDE = team.AdjDE || 100;
+            const avgDE = 100;
+            const defPremium = adjDE < avgDE
+                ? Math.min(0.6, (avgDE - adjDE) * 0.04)
+                : 0;
+
+            // 8. SOS Split — targeted reliability credit
+            // SOSO (offensive SOS) validates your defense — you faced good offenses
+            // SOSD (defensive SOS) validates your offense — you scored against good defenses
+            // avg ~100 for both. Each point above avg = small credit, capped ±0.5
+            const soso = team.SOSO || 100;
+            const sosd = team.SOSD || 100;
+            const sosSplitAdj = Math.max(-0.5, Math.min(0.5,
+                ((soso - 100) * 0.03 + (sosd - 100) * 0.03)));
+
+            // 9. Diminishing returns at extremes
             // Use signed log scaling: compresses +35 vs +30 gap while preserving +5 vs 0 gap
-            const raw = sosAdjEM + recordAdj + coachBonus;
+            const raw = sosAdjEM + recordAdj + coachBonus + ncsosAdj + balanceAdj + defPremium + sosSplitAdj;
             const sign = raw >= 0 ? 1 : -1;
+
+            // 10. Final scaling — readable 0-30 range
             const conRat = sign * Math.log(1 + Math.abs(raw)) * (30 / Math.log(1 + 35));
             // Scale so that a ~+35 AdjEM team ≈ 30 ConRat, keeping numbers readable
 
@@ -873,104 +915,271 @@
         }
 
         // ═══════════════════════════════════════════════════════
-        // MODEL 3: Monte Carlo Simulation (1000 games)
-        // Simulates possession-by-possession outcomes with
-        // variance from tempo, shooting, and turnover randomness
+        // MODEL 3: Possession-Level Monte Carlo Simulation
+        // Each game simulates individual possessions with outcomes:
+        //   TO → lost possession (steal = opponent transition bonus)
+        //   2PT attempt → make/miss (block-adjusted), OREB on miss
+        //   3PT attempt → make/miss, OREB on miss (reduced rate)
+        //   FT trip → foul-based free throws
+        // Enriched with:
+        //   • Matchup-adjusted rates (off + def - avg)
+        //   • Height → OR% bonus (bigger team boards better)
+        //   • Block/steal matchup (two-way: helps & hurts)
+        //   • Correlated game factor (refs/arena affect both teams)
+        //   • Bench depth → shooting volatility modifier
+        //   • Tempo tug-of-war (extreme pace team imposes style)
+        //   • Coach clutch + FT clutch in close games
+        //   • Style/experience/momentum/conference enrichment
         // ═══════════════════════════════════════════════════════
-        function modelMonteCarlo(t1, t2, hca1, hca2, numSims = 1000, extra = {}) {
-            const AVG_EFF = 100.0;
-            const t1Off = (t1.AdjOE || AVG_EFF);
-            const t1Def = (t1.AdjDE || AVG_EFF);
-            const t2Off = (t2.AdjOE || AVG_EFF);
-            const t2Def = (t2.AdjDE || AVG_EFF);
-            const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+        function modelMonteCarlo(t1, t2, hca1, hca2, numSims = 5000, extra = {}) {
+            const ff1 = extra.ff1, ff2 = extra.ff2;
+            const ms1 = extra.ms1, ms2 = extra.ms2;
+            const ht1 = extra.ht1, ht2 = extra.ht2;
 
-            // Expected efficiencies (additive model) + enrichment adjustments
-            let t1ExpOE = t1Off + t2Def - AVG_EFF;
-            let t2ExpOE = t2Off + t1Def - AVG_EFF;
-            // Bake enrichment adjustments into expected efficiency
+            // ── LEAGUE AVERAGES ──
+            const AVG_TO = 17.5, AVG_OR = 28, AVG_FTR = 30, AVG_FTP = 71;
+            const AVG_FG2 = 50, AVG_FG3 = 34, AVG_3RATE = 36, AVG_BLK = 9.5;
+            const AVG_EFG = 50, AVG_BENCH = 30;
+
+            // ── OFFENSIVE STATS (team's own rates) ──
+            const t1_TO  = ff1 ? (ff1.TO_Pct  || AVG_TO) : AVG_TO;
+            const t2_TO  = ff2 ? (ff2.TO_Pct  || AVG_TO) : AVG_TO;
+            const t1_OR  = ff1 ? (ff1.OR_Pct  || AVG_OR) : AVG_OR;
+            const t2_OR  = ff2 ? (ff2.OR_Pct  || AVG_OR) : AVG_OR;
+            const t1_FTR = ff1 ? (ff1.FT_Rate || AVG_FTR) : AVG_FTR;
+            const t2_FTR = ff2 ? (ff2.FT_Rate || AVG_FTR) : AVG_FTR;
+            const t1_FG2 = ms1 ? (ms1.FG2Pct  || AVG_FG2) : AVG_FG2;
+            const t2_FG2 = ms2 ? (ms2.FG2Pct  || AVG_FG2) : AVG_FG2;
+            const t1_FG3 = ms1 ? (ms1.FG3Pct  || AVG_FG3) : AVG_FG3;
+            const t2_FG3 = ms2 ? (ms2.FG3Pct  || AVG_FG3) : AVG_FG3;
+            const t1_3Rate = ms1 ? (ms1.F3GRate || AVG_3RATE) : AVG_3RATE;
+            const t2_3Rate = ms2 ? (ms2.F3GRate || AVG_3RATE) : AVG_3RATE;
+            const t1_FTP = ms1 ? (ms1.FTPct || AVG_FTP) : AVG_FTP;
+            const t2_FTP = ms2 ? (ms2.FTPct || AVG_FTP) : AVG_FTP;
+
+            // ── DEFENSIVE STATS (opponent rates / what defense allows) ──
+            const t1_DTO  = ff1 ? (ff1.DTO_Pct  || AVG_TO) : AVG_TO;
+            const t2_DTO  = ff2 ? (ff2.DTO_Pct  || AVG_TO) : AVG_TO;
+            const t1_DOR  = ff1 ? (ff1.DOR_Pct  || AVG_OR) : AVG_OR;
+            const t2_DOR  = ff2 ? (ff2.DOR_Pct  || AVG_OR) : AVG_OR;
+            const t1_DFTR = ff1 ? (ff1.DFT_Rate || AVG_FTR) : AVG_FTR;
+            const t2_DFTR = ff2 ? (ff2.DFT_Rate || AVG_FTR) : AVG_FTR;
+            const t1_DEFG = ff1 ? (ff1.DeFG_Pct || AVG_EFG) : AVG_EFG;
+            const t2_DEFG = ff2 ? (ff2.DeFG_Pct || AVG_EFG) : AVG_EFG;
+            // Opponent shooting from misc-stats (for block/steal matchup)
+            const t1_OppFG2 = ms1 ? (ms1.OppFG2Pct || AVG_FG2) : AVG_FG2;
+            const t2_OppFG2 = ms2 ? (ms2.OppFG2Pct || AVG_FG2) : AVG_FG2;
+            const t1_OppFG3 = ms1 ? (ms1.OppFG3Pct || AVG_FG3) : AVG_FG3;
+            const t2_OppFG3 = ms2 ? (ms2.OppFG3Pct || AVG_FG3) : AVG_FG3;
+            const t1_Blk = ms1 ? (ms1.BlockPct || AVG_BLK) : AVG_BLK;
+            const t2_Blk = ms2 ? (ms2.BlockPct || AVG_BLK) : AVG_BLK;
+            const t1_OppBlk = ms1 ? (ms1.OppBlockPct || AVG_BLK) : AVG_BLK;
+            const t2_OppBlk = ms2 ? (ms2.OppBlockPct || AVG_BLK) : AVG_BLK;
+
+            // ── MATCHUP-ADJUSTED RATES (additive: off + def_opp - avg) ──
+            // T1 offense vs T2 defense
+            const m_t1_TO  = clamp(t1_TO + t2_DTO - AVG_TO, 8, 28);
+            const m_t2_TO  = clamp(t2_TO + t1_DTO - AVG_TO, 8, 28);
+            const m_t1_OR  = clamp(t1_OR + t2_DOR - AVG_OR, 15, 42);
+            const m_t2_OR  = clamp(t2_OR + t1_DOR - AVG_OR, 15, 42);
+            const m_t1_FTR = clamp(t1_FTR + t2_DFTR - AVG_FTR, 15, 50);
+            const m_t2_FTR = clamp(t2_FTR + t1_DFTR - AVG_FTR, 15, 50);
+            // Shooting: blend own% with opponent-allowed%
+            // Two-way block effect: opponent blocks suppress 2PT, weak blocks boost it
+            const t1_blkAdj = (t2_Blk - AVG_BLK) * 0.12; // positive = T2 blocks hurt T1
+            const t2_blkAdj = (t1_Blk - AVG_BLK) * 0.12;
+            const m_t1_FG2 = clamp((t1_FG2 + t2_OppFG2) / 2 - t1_blkAdj, 30, 65);
+            const m_t2_FG2 = clamp((t2_FG2 + t1_OppFG2) / 2 - t2_blkAdj, 30, 65);
+            const m_t1_FG3 = clamp((t1_FG3 + t2_OppFG3) / 2, 22, 44);
+            const m_t2_FG3 = clamp((t2_FG3 + t1_OppFG3) / 2, 22, 44);
+
+            // ── HEIGHT → REBOUNDING EDGE ──
+            const t1Hgt = ht1 ? (ht1.AvgHgt || 77.5) : 77.5;
+            const t2Hgt = ht2 ? (ht2.AvgHgt || 77.5) : 77.5;
+            const hgtDiff = t1Hgt - t2Hgt;
+            const t1HgtEff = ht1 ? (ht1.HgtEff || 0) : 0;
+            const t2HgtEff = ht2 ? (ht2.HgtEff || 0) : 0;
+            // Each inch of height → ~0.8% OR bonus (bigger team boards better)
+            const t1HgtORBonus = clamp(hgtDiff * 0.8 + (t1HgtEff - t2HgtEff) * 0.4, -3, 3);
+
+            // ── TEMPO TUG-OF-WAR ──
+            const t1Tempo = t1.AdjTempo || 67, t2Tempo = t2.AdjTempo || 67;
+            const avgD1Tempo = 67;
+            const t1Dev = Math.abs(t1Tempo - avgD1Tempo);
+            const t2Dev = Math.abs(t2Tempo - avgD1Tempo);
+            const tempoWeight = (t1Dev + t2Dev > 0) ? t1Dev / (t1Dev + t2Dev) : 0.5;
+            const gameTempoCtr = t1Tempo * tempoWeight + t2Tempo * (1 - tempoWeight);
+
+            // ── BENCH DEPTH → shooting volatility ──
+            const t1Bench = ht1 ? (ht1.Bench || AVG_BENCH) : AVG_BENCH;
+            const t2Bench = ht2 ? (ht2.Bench || AVG_BENCH) : AVG_BENCH;
+            // Shallow bench → more game-to-game shooting swing
+            const t1VolMod = 1 + (AVG_BENCH - t1Bench) * 0.012;
+            const t2VolMod = 1 + (AVG_BENCH - t2Bench) * 0.012;
+
+            // ── COACH EXPERIENCE ──
+            const coach1 = getCoachInfo(t1.TeamName);
+            const coach2 = getCoachInfo(t2.TeamName);
+            const c1Exp = (coach1 ? coach1.elite8 : 0) + (coach1 ? (coach1.finalFour||0) : 0) * 1.5 + (coach1 ? (coach1.titles||0) : 0) * 2;
+            const c2Exp = (coach2 ? coach2.elite8 : 0) + (coach2 ? (coach2.finalFour||0) : 0) * 1.5 + (coach2 ? (coach2.titles||0) : 0) * 2;
+            const coachEdge = clamp((c1Exp - c2Exp) * 0.04, -0.8, 0.8);
+            const ftClutchEdge = (t1_FTP - t2_FTP) * 0.08;
+
+            // ── ENRICHMENT ADJUSTMENTS (style, experience, momentum, conference) ──
             const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
             const expAdj = extra.experience ? extra.experience.adj : 0;
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
             const confAdj = extra.confStrength ? extra.confStrength.adj : 0;
             const totalAdj = styleAdj + expAdj + momAdj + confAdj;
-            t1ExpOE += totalAdj / 2;
-            t2ExpOE -= totalAdj / 2;
 
-            // Coach experience factor
-            const coach1 = getCoachInfo(t1.TeamName);
-            const coach2 = getCoachInfo(t2.TeamName);
-            const c1E8 = coach1 ? coach1.elite8 : 0;
-            const c2E8 = coach2 ? coach2.elite8 : 0;
-            const c1F4 = coach1 ? (coach1.finalFour || 0) : 0;
-            const c2F4 = coach2 ? (coach2.finalFour || 0) : 0;
-            const c1Titles = coach1 ? (coach1.titles || 0) : 0;
-            const c2Titles = coach2 ? (coach2.titles || 0) : 0;
-            const c1Exp = c1E8 + c1F4 * 1.5 + c1Titles * 2;
-            const c2Exp = c2E8 + c2F4 * 1.5 + c2Titles * 2;
-            const coachEdge = Math.max(-0.8, Math.min(0.8, (c1Exp - c2Exp) * 0.04));
+            // ── CALIBRATION ──
+            // Compute expected efficiency from KenPom's matchup model
+            // Use gap between KenPom expected and possession-model expected
+            // as a per-possession scoring correction (keeps MC centered on KenPom)
+            const AVG_EFF = 100.0;
+            const kpT1ExpOE = (t1.AdjOE || AVG_EFF) + (t2.AdjDE || AVG_EFF) - AVG_EFF;
+            const kpT2ExpOE = (t2.AdjOE || AVG_EFF) + (t1.AdjDE || AVG_EFF) - AVG_EFF;
 
-            // Per-team variance from point distribution
-            // 3PT-heavy teams have more boom-or-bust variance
-            // FT-heavy teams also have higher game-to-game variance
-            const pd1 = extra.pd1, pd2 = extra.pd2;
-            const baseEffSD = 8.5;
-            const avg3pt = 30, avgFT = 20;
-            const t1_3pt = pd1 ? (pd1.OffFg3 || avg3pt) : avg3pt;
-            const t2_3pt = pd2 ? (pd2.OffFg3 || avg3pt) : avg3pt;
-            const t1_ft = pd1 ? (pd1.OffFt || avgFT) : avgFT;
-            const t2_ft = pd2 ? (pd2.OffFt || avgFT) : avgFT;
-            // 3PT: each 5% above avg adds ~0.5 SD; FT: each 5% above avg adds ~0.25 SD
-            const t1StyleSD = baseEffSD + (t1_3pt - avg3pt) * 0.10 + (t1_ft - avgFT) * 0.05;
-            const t2StyleSD = baseEffSD + (t2_3pt - avg3pt) * 0.10 + (t2_ft - avgFT) * 0.05;
-            // Experienced coaches reduce variance further
-            const t1EffSD = t1StyleSD * Math.max(0.92, 1 - c1Exp * 0.003);
-            const t2EffSD = t2StyleSD * Math.max(0.92, 1 - c2Exp * 0.003);
-            // Tempo variance (~3 possessions SD)
-            const tempoSD = 3.0;
+            // ── POSSESSION SIMULATION FUNCTION ──
+            function simPossessions(poss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct) {
+                let points = 0, possUsed = 0, makes2 = 0, makes3 = 0, tos = 0;
+                let ftMade = 0, ftAtt = 0, orebs = 0, attempts = 0;
+                let possLeft = Math.round(poss);
+                const maxPoss = possLeft + 20; // cap to prevent OREB loops
+                while (possLeft > 0 && possUsed < maxPoss) {
+                    possLeft--; possUsed++;
 
+                    // Turnover?
+                    if (Math.random() * 100 < toPct) { tos++; continue; }
+
+                    // Free throw trip? ~(FTR/100 * 0.38) probability per non-TO possession
+                    // FTR = FTA/FGA, but not every possession has an FGA
+                    if (Math.random() < ftr / 100 * 0.38) {
+                        const numFTs = Math.random() < 0.25 ? 3 : 2; // 3-shot foul ~25%
+                        for (let f = 0; f < numFTs; f++) {
+                            ftAtt++;
+                            if (Math.random() * 100 < ftPct) { points++; ftMade++; }
+                        }
+                        continue;
+                    }
+
+                    // Shot attempt
+                    attempts++;
+                    const is3pt = Math.random() * 100 < rate3;
+                    if (is3pt) {
+                        if (Math.random() * 100 < fg3) {
+                            points += 3; makes3++;
+                            // And-1 three (rare, ~2%)
+                            if (Math.random() < 0.02) {
+                                ftAtt++;
+                                if (Math.random() * 100 < ftPct) { points++; ftMade++; }
+                            }
+                        } else {
+                            // Missed 3: OREB chance (long rebounds → reduced rate)
+                            if (Math.random() * 100 < orPct * 0.80) { possLeft++; orebs++; }
+                        }
+                    } else {
+                        if (Math.random() * 100 < fg2) {
+                            points += 2; makes2++;
+                            // And-1 on 2PT (~6%)
+                            if (Math.random() < 0.06) {
+                                ftAtt++;
+                                if (Math.random() * 100 < ftPct) { points++; ftMade++; }
+                            }
+                        } else {
+                            // Missed 2: OREB chance (full rate)
+                            if (Math.random() * 100 < orPct) { possLeft++; orebs++; }
+                        }
+                    }
+                }
+                return { points, possUsed, makes2, makes3, tos, ftMade, ftAtt, orebs, attempts };
+            }
+
+            // ── SIMULATION LOOP ──
             let t1Wins = 0, t2Wins = 0, ties = 0;
             let totalT1Score = 0, totalT2Score = 0;
             let marginDist = [];
-            let blowouts = 0; // wins by 15+
-            let closeGames = 0; // decided by 5 or less
-            let upsets = 0; // underdog wins
+            let blowouts = 0, closeGames = 0, upsets = 0;
+            let totalT1Poss = 0, totalT2Poss = 0;
+            let totalT1_3Made = 0, totalT2_3Made = 0;
+            let totalT1_2Made = 0, totalT2_2Made = 0;
+            let totalT1_TOs = 0, totalT2_TOs = 0;
+            let totalT1_ORebs = 0, totalT2_ORebs = 0;
+            let totalT1_FTM = 0, totalT2_FTM = 0;
 
-            const t1Favored = (t1ExpOE * avgTempo / 100 + hca1) > (t2ExpOE * avgTempo / 100 + hca2);
+            const t1AdjEM = (t1.AdjEM || 0), t2AdjEM = (t2.AdjEM || 0);
+            const t1Favored = (t1AdjEM + hca1 * 2) > (t2AdjEM + hca2 * 2);
+
+            const SHOT_SWING_SD = 3.2; // game-to-game shooting % swing
 
             for (let i = 0; i < numSims; i++) {
-                // Randomize tempo for this game
-                const gameTempo = randNormal(avgTempo, tempoSD);
-                const gamePoss = Math.max(55, Math.min(85, gameTempo));
+                // Correlated game factor (refs/arena/energy — affects both teams)
+                const gameFactor = randNormal(0, 1.2);
 
-                // Randomize each team's efficiency (experienced coaches = tighter SD)
-                const gameT1OE = randNormal(t1ExpOE, t1EffSD);
-                const gameT2OE = randNormal(t2ExpOE, t2EffSD);
+                // Game tempo (tug-of-war with variance)
+                const gamePoss = clamp(randNormal(gameTempoCtr, 3.0), 55, 85);
 
-                // Calculate scores
-                let s1 = gameT1OE * (gamePoss / 100) + hca1;
-                let s2 = gameT2OE * (gamePoss / 100) + hca2;
+                // Game-level shooting swings (hot/cold night)
+                const t1Swing = randNormal(0, SHOT_SWING_SD) * t1VolMod;
+                const t2Swing = randNormal(0, SHOT_SWING_SD) * t2VolMod;
 
-                // Coach clutch factor: in close games (within 6 pts), apply coach edge
+                // This game's matchup-adjusted rates with per-game variance
+                const g_t1_FG2 = clamp(m_t1_FG2 + t1Swing * 0.7 + gameFactor * 0.25, 28, 68);
+                const g_t2_FG2 = clamp(m_t2_FG2 + t2Swing * 0.7 + gameFactor * 0.25, 28, 68);
+                const g_t1_FG3 = clamp(m_t1_FG3 + t1Swing * 1.0 + gameFactor * 0.15, 18, 48);
+                const g_t2_FG3 = clamp(m_t2_FG3 + t2Swing * 1.0 + gameFactor * 0.15, 18, 48);
+                const g_t1_TO  = clamp(m_t1_TO + randNormal(0, 1.8), 6, 30);
+                const g_t2_TO  = clamp(m_t2_TO + randNormal(0, 1.8), 6, 30);
+                const g_t1_OR  = clamp(m_t1_OR + t1HgtORBonus + randNormal(0, 2.5), 12, 45);
+                const g_t2_OR  = clamp(m_t2_OR - t1HgtORBonus + randNormal(0, 2.5), 12, 45);
+
+                // Simulate possessions for each team
+                const r1 = simPossessions(gamePoss, g_t1_FG2, g_t1_FG3, g_t1_TO, g_t1_OR, t1_3Rate, m_t1_FTR, t1_FTP);
+                const r2 = simPossessions(gamePoss, g_t2_FG2, g_t2_FG3, g_t2_TO, g_t2_OR, t2_3Rate, m_t2_FTR, t2_FTP);
+
+                // Raw scores from possession sim
+                let s1 = r1.points;
+                let s2 = r2.points;
+
+                // Calibration: nudge toward KenPom expected efficiency
+                // Compute what KenPom expects for this game's pace
+                const kpS1 = kpT1ExpOE * (gamePoss / 100);
+                const kpS2 = kpT2ExpOE * (gamePoss / 100);
+                // Blend: 70% possession sim + 30% KenPom expected (anchoring)
+                s1 = s1 * 0.70 + kpS1 * 0.30;
+                s2 = s2 * 0.70 + kpS2 * 0.30;
+
+                // Apply enrichment and HCA
+                s1 += totalAdj / 2 + hca1;
+                s2 += -totalAdj / 2 + hca2;
+
+                // Close-game adjustments (within 6 pts)
                 const rawMargin = Math.abs(s1 - s2);
                 if (rawMargin <= 6) {
-                    // Scale effect: strongest when game is closest
                     const clutchScale = 1 - (rawMargin / 6);
                     s1 += coachEdge * clutchScale;
                     s2 -= coachEdge * clutchScale;
+                    s1 += ftClutchEdge * clutchScale * 0.5;
+                    s2 -= ftClutchEdge * clutchScale * 0.5;
                 }
 
-                totalT1Score += s1;
-                totalT2Score += s2;
+                totalT1Score += s1; totalT2Score += s2;
                 const m = s1 - s2;
                 marginDist.push(m);
 
                 if (s1 > s2) { t1Wins++; if (!t1Favored) upsets++; }
                 else if (s2 > s1) { t2Wins++; if (t1Favored) upsets++; }
                 else ties++;
-
                 if (Math.abs(m) >= 15) blowouts++;
                 if (Math.abs(m) <= 5) closeGames++;
+
+                // Accumulate stats for averages
+                totalT1Poss += r1.possUsed; totalT2Poss += r2.possUsed;
+                totalT1_3Made += r1.makes3; totalT2_3Made += r2.makes3;
+                totalT1_2Made += r1.makes2; totalT2_2Made += r2.makes2;
+                totalT1_TOs += r1.tos; totalT2_TOs += r2.tos;
+                totalT1_ORebs += r1.orebs; totalT2_ORebs += r2.orebs;
+                totalT1_FTM += r1.ftMade; totalT2_FTM += r2.ftMade;
             }
 
             const t1WinPct = (t1Wins + ties * 0.5) / numSims;
@@ -978,7 +1187,6 @@
             const avgT2Score = totalT2Score / numSims;
             const avgMargin = marginDist.reduce((a, b) => a + b, 0) / numSims;
 
-            // Median margin and confidence intervals
             marginDist.sort((a, b) => a - b);
             const medianMargin = marginDist[Math.floor(numSims / 2)];
             const p10 = marginDist[Math.floor(numSims * 0.10)];
@@ -993,12 +1201,26 @@
                 t1WinProb: t1WinPct,
                 t1Wins, t2Wins, ties,
                 blowouts, closeGames, upsets,
-                coachEdge, c1Exp, c2Exp,
-                tempo: avgTempo, numSims,
+                coachEdge, c1Exp, c2Exp, ftEdge: ftClutchEdge,
+                heightEdge: t1HgtORBonus, t1Hgt, t2Hgt, t1HgtEff, t2HgtEff,
+                t1EffSD: SHOT_SWING_SD * t1VolMod, t2EffSD: SHOT_SWING_SD * t2VolMod,
+                tempo: gameTempoCtr, numSims,
+                // Possession-level stats (per-game averages)
+                t1AvgPoss: totalT1Poss / numSims, t2AvgPoss: totalT2Poss / numSims,
+                t1Avg3s: totalT1_3Made / numSims, t2Avg3s: totalT2_3Made / numSims,
+                t1Avg2s: totalT1_2Made / numSims, t2Avg2s: totalT2_2Made / numSims,
+                t1AvgTOs: totalT1_TOs / numSims, t2AvgTOs: totalT2_TOs / numSims,
+                t1AvgORebs: totalT1_ORebs / numSims, t2AvgORebs: totalT2_ORebs / numSims,
+                t1AvgFTM: totalT1_FTM / numSims, t2AvgFTM: totalT2_FTM / numSims,
+                // Matchup rates used
+                m_t1_FG2, m_t2_FG2, m_t1_FG3, m_t2_FG3,
+                m_t1_TO, m_t2_TO, m_t1_OR, m_t2_OR,
                 label: 'Monte Carlo',
-                desc: `${numSims.toLocaleString()} game simulations with variance`
+                desc: `${numSims.toLocaleString()} possession-level simulations`
             };
         }
+
+        function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
 
         async function predictMatchup() {
             if (!matchupTeam1 || !matchupTeam2) return;
@@ -1021,14 +1243,15 @@
             const archiveDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             const t1Name = t1.TeamName, t2Name = t2.TeamName;
             const findTeam = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
-            let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2, confMap = {};
+            let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2, ms1, ms2, confMap = {};
             try {
-                const [ffAll, htAll, pdAll, archAll, confAll] = await Promise.all([
+                const [ffAll, htAll, pdAll, archAll, confAll, msAll] = await Promise.all([
                     fetchAPI(`/four-factors?year=${year}`),
                     fetchAPI(`/height?year=${year}`),
                     fetchAPI(`/pointdist?year=${year}`),
                     fetchAPI(`/archive?date=${archiveDate}`).catch(() => []),
                     fetchAPI(`/conf-ratings?year=${year}`).catch(() => []),
+                    fetchAPI(`/misc-stats?year=${year}`).catch(() => []),
                 ]);
                 // Build conference rating lookup
                 const seen = {};
@@ -1043,6 +1266,8 @@
                 pd2 = findTeam(pdAll, t2Name);
                 arch1 = findTeam(archAll, t1Name);
                 arch2 = findTeam(archAll, t2Name);
+                ms1 = findTeam(msAll, t1Name);
+                ms2 = findTeam(msAll, t2Name);
             } catch (e) {
                 console.log('Some supplemental data failed to load:', e);
             }
@@ -1052,19 +1277,32 @@
             const experience = calcExperienceAdj(ht1, ht2);
             const momentum = calcMomentum(arch1, arch2, t1, t2);
             const confStrength = calcConfAdj(t1, t2, confMap);
-            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2 };
+            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2, ht1, ht2, ms1, ms2, ff1, ff2 };
 
             // Run all four models with enrichment data
             const eff = modelEfficiency(t1, t2, hca1, hca2, extra);
             const sim = modelSimilarOpponents(t1, t2, hca1, hca2);
             const cr = modelConRat(t1, t2, hca1, hca2);
-            const mc = modelMonteCarlo(t1, t2, hca1, hca2, 1000, extra);
+            const mc = modelMonteCarlo(t1, t2, hca1, hca2, 5000, extra);
 
-            // Composite: weighted average (Efficiency 30%, Similar 20%, ConRat 20%, Monte Carlo 30%)
-            const compositeT1Win = eff.t1WinProb * 0.30 + sim.t1WinProb * 0.20 + cr.t1WinProb * 0.20 + mc.t1WinProb * 0.30;
-            const compositeMargin = eff.margin * 0.30 + sim.margin * 0.20 + cr.margin * 0.20 + mc.margin * 0.30;
-            const compositeT1Score = eff.t1Score * 0.30 + sim.t1Score * 0.20 + cr.t1Score * 0.20 + mc.t1Score * 0.30;
-            const compositeT2Score = eff.t2Score * 0.30 + sim.t2Score * 0.20 + cr.t2Score * 0.20 + mc.t2Score * 0.30;
+            // Dynamic composite weights based on data quality
+            // More data → trust MC & Efficiency more; weak schedule → lean on ConRat/SOS models
+            const hasRichData = !!(ff1 && ff2 && ms1 && ms2 && ht1 && ht2);
+            const avgSOS = ((t1.SOS || 0) + (t2.SOS || 0)) / 2;
+            const avgGames = ((t1.Wins||0) + (t1.Losses||0) + (t2.Wins||0) + (t2.Losses||0)) / 2;
+            // Base weights: Eff 25%, Similar 15%, ConRat 20%, MC 40%
+            let wEff = 0.25, wSim = 0.15, wCR = 0.20, wMC = 0.40;
+            if (!hasRichData) { wMC -= 0.10; wEff += 0.05; wCR += 0.05; } // less MC data → rely on efficiency
+            if (avgGames < 15) { wEff -= 0.05; wCR += 0.05; } // early season → ConRat more stable
+            if (Math.abs(avgSOS) > 5) { wSim += 0.05; wMC -= 0.05; } // strong SOS signal → trust SOS model
+            // Normalize to sum to 1
+            const wTotal = wEff + wSim + wCR + wMC;
+            wEff /= wTotal; wSim /= wTotal; wCR /= wTotal; wMC /= wTotal;
+
+            const compositeT1Win = eff.t1WinProb * wEff + sim.t1WinProb * wSim + cr.t1WinProb * wCR + mc.t1WinProb * wMC;
+            const compositeMargin = eff.margin * wEff + sim.margin * wSim + cr.margin * wCR + mc.margin * wMC;
+            const compositeT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
+            const compositeT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
 
             const winner = compositeT1Score > compositeT2Score ? t1 : t2;
             const loser = compositeT1Score > compositeT2Score ? t2 : t1;
@@ -1143,7 +1381,7 @@
                         ${probBar('<i class="fas fa-calculator mr-1 text-blue-400"></i>Efficiency Model', eff.t1WinProb)}
                         ${probBar('<i class="fas fa-users mr-1 text-purple-400"></i>Similar Opponents', sim.t1WinProb)}
                         ${probBar('<i class="fas fa-bolt mr-1 text-cyan-400"></i>ConRat Model', cr.t1WinProb)}
-                        ${probBar('<i class="fas fa-dice mr-1 text-green-400"></i>1,000 Simulations', mc.t1WinProb)}
+                        ${probBar('<i class="fas fa-dice mr-1 text-green-400"></i>' + mc.numSims.toLocaleString() + ' Simulations', mc.t1WinProb)}
                         
                         <div class="border-t border-gray-600 pt-3 mt-1">
                             ${probBar('<i class="fas fa-star mr-1 text-orange-400"></i><strong>Composite</strong>', compositeT1Win)}
@@ -1279,9 +1517,68 @@
                         </div>
                     </div>
 
-                    <!-- Simulation Details -->
+                    <!-- Possession-Level MC Engine -->
                     <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
-                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-dice mr-1 text-green-400"></i>Simulation Breakdown (${mc.numSims.toLocaleString()} games)</h4>
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-basketball-ball mr-1 text-cyan-400"></i>Possession-Level Simulation</h4>
+                        
+                        <!-- Scoring Breakdown: how each team scores -->
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName} — Avg Scoring</p>
+                                <div class="space-y-1.5 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">2PT makes</span><span class="font-bold">${mc.t1Avg2s?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t1_FG2?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">3PT makes</span><span class="font-bold">${mc.t1Avg3s?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t1_FG3?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">FT made</span><span class="font-bold">${mc.t1AvgFTM?.toFixed(1) || '?'}</span></div>
+                                    <div class="flex justify-between border-t border-gray-700 pt-1"><span class="text-gray-400">Turnovers</span><span class="font-bold text-red-400">${mc.t1AvgTOs?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t1_TO?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Off. rebounds</span><span class="font-bold text-green-400">${mc.t1AvgORebs?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t1_OR?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Possessions</span><span class="font-bold">${mc.t1AvgPoss?.toFixed(1) || '?'}</span></div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName} — Avg Scoring</p>
+                                <div class="space-y-1.5 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">2PT makes</span><span class="font-bold">${mc.t2Avg2s?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t2_FG2?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">3PT makes</span><span class="font-bold">${mc.t2Avg3s?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t2_FG3?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">FT made</span><span class="font-bold">${mc.t2AvgFTM?.toFixed(1) || '?'}</span></div>
+                                    <div class="flex justify-between border-t border-gray-700 pt-1"><span class="text-gray-400">Turnovers</span><span class="font-bold text-red-400">${mc.t2AvgTOs?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t2_TO?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Off. rebounds</span><span class="font-bold text-green-400">${mc.t2AvgORebs?.toFixed(1) || '?'} <span class="text-gray-500">(${mc.m_t2_OR?.toFixed(1)}%)</span></span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Possessions</span><span class="font-bold">${mc.t2AvgPoss?.toFixed(1) || '?'}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Matchup Edges Row -->
+                        <div class="grid grid-cols-3 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Height</p>
+                                <p class="text-lg font-bold">${mc.t1Hgt?.toFixed(1) || '?'}" <span class="text-gray-500 text-sm">v</span> ${mc.t2Hgt?.toFixed(1) || '?'}"</p>
+                                <p class="text-xs mt-1 ${Math.abs(mc.heightEdge || 0) > 0.5 ? (mc.heightEdge > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(mc.heightEdge || 0) < 0.2 ? 'Even boards' : (mc.heightEdge > 0 ? t1.TeamName : t2.TeamName) + ' OR edge'}</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Tempo</p>
+                                <p class="text-lg font-bold">${mc.tempo?.toFixed(1) || '?'}</p>
+                                <p class="text-xs text-gray-500 mt-1">${t1.AdjTempo?.toFixed(0)} v ${t2.AdjTempo?.toFixed(0)} pref</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Volatility</p>
+                                <p class="text-lg font-bold">${mc.t1EffSD?.toFixed(1)} <span class="text-gray-500 text-sm">v</span> ${mc.t2EffSD?.toFixed(1)}</p>
+                                <p class="text-xs text-gray-500 mt-1">shot swing SD</p>
+                            </div>
+                        </div>
+
+                        <!-- Close-Game Factors -->
+                        <div class="bg-gray-900/50 rounded-lg p-3">
+                            <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Close-Game Edge (within 6 pts)</p>
+                            <div class="grid grid-cols-2 gap-3 text-xs">
+                                <div class="flex justify-between"><span class="text-gray-400">Coach Clutch</span><span class="font-bold ${Math.abs(mc.coachEdge) > 0.1 ? (mc.coachEdge > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-300'}">${mc.coachEdge > 0 ? t1.TeamName : mc.coachEdge < 0 ? t2.TeamName : 'Even'} ${Math.abs(mc.coachEdge) > 0.1 ? '+' + Math.abs(mc.coachEdge).toFixed(2) : ''}</span></div>
+                                <div class="flex justify-between"><span class="text-gray-400">FT Clutch</span><span class="font-bold ${Math.abs(mc.ftEdge) > 0.5 ? (mc.ftEdge > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-300'}">${mc.ftEdge > 0 ? t1.TeamName : mc.ftEdge < 0 ? t2.TeamName : 'Even'} ${Math.abs(mc.ftEdge) > 0.5 ? '+' + Math.abs(mc.ftEdge).toFixed(1) : ''}</span></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Simulation Results -->
+                    <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-dice mr-1 text-green-400"></i>Simulation Results (${mc.numSims.toLocaleString()} games)</h4>
                         <div class="grid grid-cols-3 gap-3 text-center text-sm">
                             <div>
                                 <p class="text-2xl font-bold text-green-400">${mc.t1Wins}</p>
@@ -1296,11 +1593,19 @@
                                 <p class="text-xs text-gray-400">${t2.TeamName} wins</p>
                             </div>
                         </div>
+                        <div class="grid grid-cols-3 gap-3 text-center text-xs mt-3 pt-3 border-t border-gray-700">
+                            <div><p class="text-lg font-bold ${mc.blowouts / mc.numSims > 0.25 ? 'text-orange-400' : 'text-gray-300'}">${((mc.blowouts / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Blowouts (15+)</p></div>
+                            <div><p class="text-lg font-bold ${mc.closeGames / mc.numSims > 0.35 ? 'text-yellow-400' : 'text-gray-300'}">${((mc.closeGames / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Close (≤5)</p></div>
+                            <div><p class="text-lg font-bold ${mc.upsets / mc.numSims > 0.35 ? 'text-red-400' : 'text-gray-300'}">${((mc.upsets / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Upsets</p></div>
+                        </div>
                         <div class="mt-3 text-center text-xs text-gray-500">
-                            Avg margin: ${mc.margin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.margin).toFixed(1)} • Median: ${mc.medianMargin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.medianMargin).toFixed(1)} • Upsets: ${((mc.upsets / mc.numSims) * 100).toFixed(0)}%
+                            Avg margin: ${mc.margin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.margin).toFixed(1)} • Median: ${mc.medianMargin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.medianMargin).toFixed(1)}
+                        </div>
+                        <div class="mt-1 text-center text-xs text-gray-600">
+                            80% range: ${mc.p10 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p10).toFixed(0)} to ${mc.p90 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p90).toFixed(0)} • 50% range: ${mc.p25 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p25).toFixed(0)} to ${mc.p75 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p75).toFixed(0)}
                         </div>
                         <div class="mt-2 text-center text-xs text-gray-600">
-                            80% CI: ${mc.p10 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p10).toFixed(0)} to ${mc.p90 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p90).toFixed(0)} • 50% CI: ${mc.p25 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p25).toFixed(0)} to ${mc.p75 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p75).toFixed(0)}
+                            Weights: Eff ${(wEff*100).toFixed(0)}% • SOS ${(wSim*100).toFixed(0)}% • ConRat ${(wCR*100).toFixed(0)}% • MC ${(wMC*100).toFixed(0)}%
                         </div>
                     </div>
 
@@ -1332,8 +1637,9 @@
                     </div>` : ''}
 
                     <div class="text-center text-xs text-gray-500 border-t border-gray-600 pt-3">
-                        <p>Composite: 30% Efficiency + 20% Similar Opponents + 20% ConRat + 30% Monte Carlo • HCA ${HCA}pts • σ=11</p>
-                        <p class="mt-1">Enriched with: Four Factors style clash • Experience/Continuity • Point distribution variance • 28-day momentum • Conference strength</p>
+                        <p>Dynamic composite: Eff ${(wEff*100).toFixed(0)}% + SOS ${(wSim*100).toFixed(0)}% + ConRat ${(wCR*100).toFixed(0)}% + MC ${(wMC*100).toFixed(0)}% • HCA ${HCA}pts • σ=11</p>
+                        <p class="mt-1">MC Engine: Possession-level sim (2PT/3PT/TO/FT/OREB) • Matchup-adjusted rates • Correlated game factor • Two-way blocks • Height→OR% • Bench volatility</p>
+                        <p class="mt-0.5">Enriched with: Four Factors style clash • Experience/Continuity • 28-day momentum • Conference strength • Coach clutch • FT clutch</p>
                     </div>
                 </div>
             `;
@@ -1503,6 +1809,11 @@
             
             // Show/hide date filter
             document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive');
+            
+            // Auto-set today's date when switching to games/archive if empty
+            if ((tab === 'games' || tab === 'archive') && !document.getElementById('global-date').value) {
+                document.getElementById('global-date').value = new Date().toISOString().split('T')[0];
+            }
             
             // Load data for the selected tab
             loadCurrentTab();
@@ -1899,33 +2210,78 @@
             const data = await fetchAPI(`/fanmatch?date=${date}`);
             const container = document.getElementById('games-results');
             
-            if (data.error) { container.innerHTML = `<div class="col-span-full text-center text-red-400 py-8">${data.error}</div>`; return; }
-            if (!Array.isArray(data) || data.length === 0) { container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">No games found</div>'; return; }
+            if (data.error) {
+                const msg = data.error.includes('400') || data.error.includes('Bad Request')
+                    ? 'No game data available for this date. KenPom only has data for past dates.'
+                    : data.error;
+                container.innerHTML = `<div class="col-span-full text-center text-red-400 py-8"><i class="fas fa-calendar-times mr-2"></i>${msg}</div>`;
+                return;
+            }
+            if (!Array.isArray(data) || data.length === 0) { container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">No games found for this date</div>'; return; }
             
-            container.innerHTML = data.slice(0, 50).map(g => `
-                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+            // Sort by thrill score descending (best games first)
+            const sorted = [...data].sort((a, b) => (b.ThrillScore || 0) - (a.ThrillScore || 0));
+            
+            container.innerHTML = sorted.slice(0, 50).map(g => {
+                const homeWP = (g.HomeWP || 0) * 100;
+                const visWP = 100 - homeWP;
+                const homeFavored = homeWP >= 50;
+                const margin = Math.abs(g.HomePred - g.VisitorPred);
+                return `
+                <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-orange-500/40 transition-all">
                     <div class="flex items-center justify-between mb-3">
                         <div class="text-center flex-1">
                             <p class="text-xs text-gray-500">#${g.VisitorRank || '?'}</p>
-                            <p class="font-bold text-sm">${g.Visitor || 'TBD'}</p>
-                            <p class="text-xl font-bold mt-1">${g.VisitorPred?.toFixed(0) || '-'}</p>
+                            <p class="font-bold text-sm ${!homeFavored ? 'text-orange-300' : ''}">${g.Visitor || 'TBD'}</p>
+                            <p class="text-2xl font-bold mt-1">${g.VisitorPred?.toFixed(0) || '-'}</p>
+                            <p class="text-xs mt-1 ${!homeFavored ? 'text-orange-400 font-semibold' : 'text-gray-500'}">${visWP.toFixed(0)}%</p>
                         </div>
-                        <div class="px-2 text-center">
-                            <span class="text-gray-500 text-sm">@</span>
-                            <p class="text-xs text-gray-500 mt-1">${g.PredTempo?.toFixed(0) || '-'} tempo</p>
+                        <div class="px-3 text-center">
+                            <span class="text-gray-500 text-xs">@</span>
+                            <p class="text-xs text-gray-500 mt-1">${g.PredTempo?.toFixed(0) || '-'} poss</p>
+                            <p class="text-xs text-gray-600 mt-1">by ${margin.toFixed(0)}</p>
                         </div>
                         <div class="text-center flex-1">
                             <p class="text-xs text-gray-500">#${g.HomeRank || '?'}</p>
-                            <p class="font-bold text-sm text-orange-400">${g.Home || 'TBD'}</p>
-                            <p class="text-xl font-bold mt-1 text-orange-400">${g.HomePred?.toFixed(0) || '-'}</p>
+                            <p class="font-bold text-sm ${homeFavored ? 'text-orange-300' : ''}">${g.Home || 'TBD'}</p>
+                            <p class="text-2xl font-bold mt-1">${g.HomePred?.toFixed(0) || '-'}</p>
+                            <p class="text-xs mt-1 ${homeFavored ? 'text-orange-400 font-semibold' : 'text-gray-500'}">${homeWP.toFixed(0)}%</p>
                         </div>
                     </div>
-                    <div class="flex justify-between text-xs border-t border-gray-700 pt-2">
-                        <span>Win: <span class="${(g.HomeWP || 0) > 0.5 ? 'text-green-400' : 'text-red-400'}">${((g.HomeWP || 0) * 100).toFixed(0)}%</span></span>
-                        <span>Thrill: ${g.ThrillScore?.toFixed(1) || '-'}</span>
+                    <div class="flex items-center justify-between border-t border-gray-700 pt-2">
+                        <span class="text-xs text-gray-500">Thrill: <span class="${(g.ThrillScore || 0) >= 60 ? 'text-green-400' : (g.ThrillScore || 0) >= 40 ? 'text-yellow-400' : 'text-gray-400'}">${g.ThrillScore?.toFixed(1) || '-'}</span></span>
+                        <button onclick="predictGame('${(g.Visitor || '').replace(/'/g, "\\'")}',' ${(g.Home || '').replace(/'/g, "\\'")}')"
+                            class="text-xs bg-orange-500/20 hover:bg-orange-500/40 text-orange-400 px-3 py-1 rounded transition-all">
+                            <i class="fas fa-exchange-alt mr-1"></i>Predict
+                        </button>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
+        }
+
+        async function predictGame(visitor, home) {
+            // Load teams before opening modal (openMatchupModal resets allTeamsData)
+            const year = document.getElementById('global-year').value || '2026';
+            const data = await fetchAPI(`/ratings?year=${year}`);
+            if (!data.error && Array.isArray(data)) allTeamsData = data;
+            allTeamsYear = year;
+
+            const t1 = allTeamsData.find(t => t.TeamName === visitor.trim());
+            const t2 = allTeamsData.find(t => t.TeamName === home.trim());
+
+            // Open modal and reset UI without wiping allTeamsData
+            document.getElementById('matchup-modal').classList.add('active');
+            matchupTeam1 = null; matchupTeam2 = null;
+            document.getElementById('matchup-team1').value = '';
+            document.getElementById('matchup-team2').value = '';
+            document.getElementById('matchup-team1-info').classList.add('hidden');
+            document.getElementById('matchup-team2-info').classList.add('hidden');
+            document.getElementById('matchup-result').classList.add('hidden');
+            document.getElementById('predict-btn').disabled = true;
+            setMatchupLocation('team2'); // visitor @ home
+
+            if (t1) selectMatchupTeam(1, t1);
+            if (t2) selectMatchupTeam(2, t2);
         }
 
         async function loadArchive() {
@@ -1977,6 +2333,7 @@
         // Team Modal Functions
         function openTeamModal(teamName, teamId) {
             currentTeamId = teamId;
+            currentTeamName = teamName;
             document.getElementById('modal-team-name').textContent = teamName;
             document.getElementById('team-modal').classList.add('active');
             loadTeamTab('ratings');
@@ -1986,6 +2343,7 @@
         function closeModal() {
             document.getElementById('team-modal').classList.remove('active');
             currentTeamId = null;
+            currentTeamName = null;
             updateURL();
         }
 
@@ -2001,17 +2359,18 @@
             const container = document.getElementById('team-detail-content');
             
             const endpoints = {
-                ratings: `/ratings?year=${year}&team_id=${currentTeamId}`,
-                fourfactors: `/four-factors?year=${year}&team_id=${currentTeamId}`,
-                height: `/height?year=${year}&team_id=${currentTeamId}`,
-                pointdist: `/pointdist?year=${year}&team_id=${currentTeamId}`,
-                miscstats: `/misc-stats?year=${year}&team_id=${currentTeamId}`
+                ratings: `/ratings?year=${year}`,
+                fourfactors: `/four-factors?year=${year}`,
+                height: `/height?year=${year}`,
+                pointdist: `/pointdist?year=${year}`,
+                miscstats: `/misc-stats?year=${year}`
             };
             
             const data = await fetchAPI(endpoints[tab]);
             if (data.error) { container.innerHTML = `<div class="text-red-400">${data.error}</div>`; return; }
             
-            const team = Array.isArray(data) ? data[0] : data;
+            const allRows = Array.isArray(data) ? data : (data.data || [data]);
+            const team = allRows.find(t => t.TeamName === currentTeamName) || allRows[0];
             if (!team) { container.innerHTML = '<div class="text-gray-400">No data found</div>'; return; }
             
             const formatters = {
@@ -2217,6 +2576,7 @@
         document.addEventListener('DOMContentLoaded', async () => {
             const today = new Date().toISOString().split('T')[0];
             document.getElementById('global-date').value = today;
+            document.getElementById('global-date').max = today;
             await loadCoachData();
             await loadConferenceOptions();
             await loadAllTeams();
