@@ -94,7 +94,8 @@ class InjuryFetcher:
 
     def fetch_google_news(self, team_name: str, max_results: int = 10) -> List[Dict]:
         """Fetch team-specific injury news from Google News RSS."""
-        query = f"{team_name} college basketball injury 2026"
+        # Use quotes around team name to avoid partial matches (e.g. "Arkansas" matching "Kansas")
+        query = f'"{team_name}" college basketball injury 2026'
         try:
             resp = self.session.get(
                 GOOGLE_NEWS_RSS + requests.utils.quote(query),
@@ -272,18 +273,20 @@ NEWS HEADLINES:
         prompt = f"""Analyze these news articles about {team_name} basketball and extract CURRENT injury statuses.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}.
 
-For each injured player, provide:
+CRITICAL: Only include players who ACTUALLY PLAY FOR {team_name}. Do NOT include players from other teams even if they appear in the articles. Be careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State"). Verify each player's team from the article context.
+
+For each injured player on {team_name}, provide:
 - team: "{team_name}"
 - player: Full player name
 - position: Position (PG/SG/SF/PF/C/G/F)
-- status: One of "Out", "Doubtful", "Questionable", "Probable", "Day-to-Day"
+- status: One of "Out", "Doubtful", "Questionable", "Probable", "Day-to-Day", "Indefinite"
 - injury: Brief injury type
 - is_starter: true/false
 - impact_score: 1-10
 - date_reported: Most recent report date (YYYY-MM-DD)
 
 Only include players with ACTIVE injuries (not returned players). Use the most recent article for each player's status.
-Return ONLY a JSON array. If no current injuries, return [].
+Return ONLY a JSON array. If no current injuries for {team_name}, return [].
 
 NEWS:
 {news_text}"""
@@ -291,6 +294,8 @@ NEWS:
         try:
             response_text = self._ask_claude(prompt)
             injuries = self._parse_json_response(response_text)
+            # Post-processing: drop any injuries misattributed to wrong team
+            injuries = [i for i in injuries if self._team_match(i.get('team', ''), team_name)]
         except Exception as e:
             print(f"[InjuryAnalyzer] Claude error for {team_name}: {e}")
             injuries = []
@@ -318,11 +323,13 @@ NEWS:
         prompt = f"""Analyze these injury news articles for an upcoming game: {team1} vs {team2}.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}.
 
-For each player with a CURRENT injury affecting either team, provide:
+CRITICAL: Only include players who ACTUALLY PLAY FOR either {team1} or {team2}. Do NOT include players from other teams that happen to appear in the articles. Be very careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State", "Michigan" vs "Michigan State"). Verify each player's team from the article context before including them.
+
+For each player with a CURRENT injury affecting either {team1} or {team2}, provide:
 - team: The team name (must be exactly "{team1}" or "{team2}")
 - player: Full player name
 - position: Position (PG/SG/SF/PF/C/G/F)
-- status: One of "Out", "Doubtful", "Questionable", "Probable", "Day-to-Day"
+- status: One of "Out", "Doubtful", "Questionable", "Probable", "Day-to-Day", "Indefinite"
 - injury: Brief injury type
 - is_starter: true/false
 - impact_score: 1-10 (10=star out, 7-9=key starter, 4-6=role player, 1-3=bench)
