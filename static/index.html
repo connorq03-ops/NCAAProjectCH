@@ -819,8 +819,10 @@
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
             // Conference strength adjustment
             const confAdj = extra.confStrength ? extra.confStrength.adj : 0;
+            // Injury adjustment (positive injuryAdj = t1 healthier)
+            const injAdj = extra.injuryAdj || 0;
             // Apply enrichment adjustments (split between both sides)
-            const totalAdj = styleAdj + expAdj + momAdj + confAdj;
+            const totalAdj = styleAdj + expAdj + momAdj + confAdj + injAdj;
             t1Score += totalAdj / 2;
             t2Score -= totalAdj / 2;
 
@@ -1033,12 +1035,13 @@
             const coachEdge = clamp((c1Exp - c2Exp) * 0.04, -0.8, 0.8);
             const ftClutchEdge = (t1_FTP - t2_FTP) * 0.08;
 
-            // ── ENRICHMENT ADJUSTMENTS (style, experience, momentum, conference) ──
+            // ── ENRICHMENT ADJUSTMENTS (style, experience, momentum, conference, injuries) ──
             const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
             const expAdj = extra.experience ? extra.experience.adj : 0;
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
             const confAdj = extra.confStrength ? extra.confStrength.adj : 0;
-            const totalAdj = styleAdj + expAdj + momAdj + confAdj;
+            const injAdj = extra.injuryAdj || 0;
+            const totalAdj = styleAdj + expAdj + momAdj + confAdj + injAdj;
 
             // ── CALIBRATION ──
             // Compute expected efficiency from KenPom's matchup model
@@ -1252,15 +1255,18 @@
             const t1Name = t1.TeamName, t2Name = t2.TeamName;
             const findTeam = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
             let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2, ms1, ms2, confMap = {};
+            let injuryData = null;
             try {
-                const [ffAll, htAll, pdAll, archAll, confAll, msAll] = await Promise.all([
+                const [ffAll, htAll, pdAll, archAll, confAll, msAll, injData] = await Promise.all([
                     fetchAPI(`/four-factors?year=${year}`),
                     fetchAPI(`/height?year=${year}`),
                     fetchAPI(`/pointdist?year=${year}`),
                     fetchAPI(`/archive?date=${archiveDate}`).catch(() => []),
                     fetchAPI(`/conf-ratings?year=${year}`).catch(() => []),
                     fetchAPI(`/misc-stats?year=${year}`).catch(() => []),
+                    fetchAPI(`/injuries/matchup?team1=${encodeURIComponent(t1Name)}&team2=${encodeURIComponent(t2Name)}`).catch(() => null),
                 ]);
+                injuryData = injData;
                 // Build conference rating lookup
                 const seen = {};
                 (Array.isArray(confAll) ? confAll : []).forEach(c => {
@@ -1285,7 +1291,12 @@
             const experience = calcExperienceAdj(ht1, ht2);
             const momentum = calcMomentum(arch1, arch2, t1, t2);
             const confStrength = calcConfAdj(t1, t2, confMap);
-            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2, ht1, ht2, ms1, ms2, ff1, ff2 };
+
+            // Injury adjustments
+            const t1InjPenalty = injuryData?.team1_impact?.adj_em_penalty || 0;
+            const t2InjPenalty = injuryData?.team2_impact?.adj_em_penalty || 0;
+            const injuryAdj = t2InjPenalty - t1InjPenalty; // positive = t1 healthier
+            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2, ht1, ht2, ms1, ms2, ff1, ff2, injuryAdj };
 
             // Run all four models with enrichment data
             const eff = modelEfficiency(t1, t2, hca1, hca2, extra);
@@ -1415,6 +1426,52 @@
                             <p class="font-bold">${((mc.blowouts / mc.numSims) * 100).toFixed(0)}%</p>
                         </div>
                     </div>
+
+                    <!-- Injury Report -->
+                    ${injuryData && (injuryData.team1_injuries?.length || injuryData.team2_injuries?.length) ? `
+                    <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border ${injuryData.team1_impact?.severity === 'critical' || injuryData.team2_impact?.severity === 'critical' ? 'border-red-500/50' : injuryData.team1_impact?.severity === 'significant' || injuryData.team2_impact?.severity === 'significant' ? 'border-orange-500/40' : 'border-gray-700'}">
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-medkit mr-1 text-red-400"></i>Injury Intelligence <span class="text-xs font-normal text-gray-500 ml-1">via Claude AI + ESPN/Google News</span></h4>
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName}</p>
+                                ${injuryData.team1_injuries?.length ? injuryData.team1_injuries.map(i => `
+                                    <div class="flex items-center gap-2 mb-1.5">
+                                        <span class="inline-block w-2 h-2 rounded-full ${i.status === 'Out' ? 'bg-red-500' : i.status === 'Doubtful' ? 'bg-orange-500' : i.status === 'Questionable' ? 'bg-yellow-500' : 'bg-green-500'}"></span>
+                                        <span class="text-xs text-white font-medium">${i.player}</span>
+                                        <span class="text-[10px] text-gray-500">${i.position || ''}</span>
+                                        <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded ${i.status === 'Out' ? 'bg-red-900/50 text-red-400' : i.status === 'Doubtful' ? 'bg-orange-900/50 text-orange-400' : 'bg-yellow-900/50 text-yellow-400'}">${i.status}</span>
+                                    </div>
+                                    <p class="text-[10px] text-gray-500 ml-4 mb-1">${i.injury || ''} ${i.is_starter ? '• Starter' : ''} • Impact: ${i.impact_score}/10</p>
+                                `).join('') : '<p class="text-xs text-green-400"><i class="fas fa-check-circle mr-1"></i>Fully healthy</p>'}
+                                <div class="mt-2 pt-2 border-t border-gray-700/50">
+                                    <p class="text-[10px] text-gray-400">AdjEM penalty: <span class="font-bold ${t1InjPenalty > 2 ? 'text-red-400' : t1InjPenalty > 0 ? 'text-yellow-400' : 'text-green-400'}">${t1InjPenalty > 0 ? '-' + t1InjPenalty.toFixed(1) : 'None'}</span></p>
+                                </div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName}</p>
+                                ${injuryData.team2_injuries?.length ? injuryData.team2_injuries.map(i => `
+                                    <div class="flex items-center gap-2 mb-1.5">
+                                        <span class="inline-block w-2 h-2 rounded-full ${i.status === 'Out' ? 'bg-red-500' : i.status === 'Doubtful' ? 'bg-orange-500' : i.status === 'Questionable' ? 'bg-yellow-500' : 'bg-green-500'}"></span>
+                                        <span class="text-xs text-white font-medium">${i.player}</span>
+                                        <span class="text-[10px] text-gray-500">${i.position || ''}</span>
+                                        <span class="ml-auto text-[10px] px-1.5 py-0.5 rounded ${i.status === 'Out' ? 'bg-red-900/50 text-red-400' : i.status === 'Doubtful' ? 'bg-orange-900/50 text-orange-400' : 'bg-yellow-900/50 text-yellow-400'}">${i.status}</span>
+                                    </div>
+                                    <p class="text-[10px] text-gray-500 ml-4 mb-1">${i.injury || ''} ${i.is_starter ? '• Starter' : ''} • Impact: ${i.impact_score}/10</p>
+                                `).join('') : '<p class="text-xs text-green-400"><i class="fas fa-check-circle mr-1"></i>Fully healthy</p>'}
+                                <div class="mt-2 pt-2 border-t border-gray-700/50">
+                                    <p class="text-[10px] text-gray-400">AdjEM penalty: <span class="font-bold ${t2InjPenalty > 2 ? 'text-red-400' : t2InjPenalty > 0 ? 'text-yellow-400' : 'text-green-400'}">${t2InjPenalty > 0 ? '-' + t2InjPenalty.toFixed(1) : 'None'}</span></p>
+                                </div>
+                            </div>
+                        </div>
+                        ${Math.abs(injuryAdj) > 0.5 ? `<div class="text-center text-xs ${injuryAdj > 0 ? 'text-green-400' : 'text-red-400'}">
+                            <i class="fas fa-balance-scale mr-1"></i>Net injury edge: ${injuryAdj > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(injuryAdj).toFixed(1)} pts (healthier)
+                        </div>` : '<div class="text-center text-xs text-gray-500">Injury impact roughly equal</div>'}
+                    </div>
+                    ` : injuryData ? `
+                    <div class="bg-gray-800/40 rounded-xl p-3 mb-4 border border-gray-700">
+                        <p class="text-xs text-green-400 text-center"><i class="fas fa-medkit mr-1"></i>Injury Report: Both teams appear healthy <span class="text-gray-500 ml-1">(via ESPN/Google News + Claude AI)</span></p>
+                    </div>
+                    ` : ''}
 
                     <!-- Matchup Factors (enrichment data) -->
                     <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border border-gray-700">
