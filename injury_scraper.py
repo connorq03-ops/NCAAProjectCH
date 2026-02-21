@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Any
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import anthropic
+from star_players import get_star_player, get_team_stars, build_star_context
 
 load_dotenv()
 
@@ -270,11 +271,20 @@ NEWS HEADLINES:
             for a in all_articles
         )[:5000]
 
+        # Build star player reference for this team
+        star_context = ""
+        team_stars = get_team_stars(team_name)
+        if team_stars:
+            star_context = f"\n\nKEY PLAYERS REFERENCE for {team_name} (use these impact scores):\n"
+            for s in team_stars:
+                star_context += f"  - {s['player']} ({s['position']}) — {s['tier'].upper()}, impact={s['impact']}/10 — {s['note']}\n"
+            star_context += "If an injured player is listed above, USE the impact_score from this reference. If not listed, estimate 4-6 for rotation players, 1-3 for bench.\n"
+
         prompt = f"""Analyze these news articles about {team_name} basketball and extract CURRENT injury statuses.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}.
 
 CRITICAL: Only include players who ACTUALLY PLAY FOR {team_name}. Do NOT include players from other teams even if they appear in the articles. Be careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State"). Verify each player's team from the article context.
-
+{star_context}
 For each injured player on {team_name}, provide:
 - team: "{team_name}"
 - player: Full player name
@@ -282,7 +292,7 @@ For each injured player on {team_name}, provide:
 - status: One of "Out", "Doubtful", "Questionable", "Probable", "Day-to-Day", "Indefinite"
 - injury: Brief injury type
 - is_starter: true/false
-- impact_score: 1-10
+- impact_score: 1-10 (USE the KEY PLAYERS REFERENCE above if the player is listed there)
 - date_reported: Most recent report date (YYYY-MM-DD)
 
 Only include players with ACTIVE injuries (not returned players). Use the most recent article for each player's status.
@@ -296,6 +306,8 @@ NEWS:
             injuries = self._parse_json_response(response_text)
             # Post-processing: drop any injuries misattributed to wrong team
             injuries = [i for i in injuries if self._team_match(i.get('team', ''), team_name)]
+            # Override impact scores with star player database
+            injuries = self._apply_star_overrides(injuries)
         except Exception as e:
             print(f"[InjuryAnalyzer] Claude error for {team_name}: {e}")
             injuries = []
@@ -320,10 +332,17 @@ NEWS:
         # Gather news for both teams
         news_text = self.fetcher.fetch_matchup_news(team1, team2)
 
+        # Build star player reference for both teams
+        star_ref = build_star_context(team1, team2)
+
         prompt = f"""Analyze these injury news articles for an upcoming game: {team1} vs {team2}.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}.
 
 CRITICAL: Only include players who ACTUALLY PLAY FOR either {team1} or {team2}. Do NOT include players from other teams that happen to appear in the articles. Be very careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State", "Michigan" vs "Michigan State"). Verify each player's team from the article context before including them.
+
+KEY PLAYERS REFERENCE (use these impact scores when the player matches):
+{star_ref}
+If an injured player is listed in the reference above, you MUST use that impact_score. If not listed, estimate 4-6 for rotation players, 1-3 for bench.
 
 For each player with a CURRENT injury affecting either {team1} or {team2}, provide:
 - team: The team name (must be exactly "{team1}" or "{team2}")
@@ -332,7 +351,7 @@ For each player with a CURRENT injury affecting either {team1} or {team2}, provi
 - status: One of "Out", "Doubtful", "Questionable", "Probable", "Day-to-Day", "Indefinite"
 - injury: Brief injury type
 - is_starter: true/false
-- impact_score: 1-10 (10=star out, 7-9=key starter, 4-6=role player, 1-3=bench)
+- impact_score: 1-10 (USE the KEY PLAYERS REFERENCE above if the player is listed there)
 
 Only include ACTIVE injuries — not players who have returned. Use most recent information.
 Return ONLY a JSON array. If both teams are healthy, return [].
@@ -343,6 +362,8 @@ NEWS ARTICLES:
         try:
             response_text = self._ask_claude(prompt)
             all_injuries = self._parse_json_response(response_text)
+            # Post-processing: override impact scores with star player database
+            all_injuries = self._apply_star_overrides(all_injuries)
         except Exception as e:
             print(f"[InjuryAnalyzer] Claude matchup error: {e}")
             all_injuries = []
@@ -441,6 +462,22 @@ NEWS ARTICLES:
             "summary": summary,
             "severity": severity
         }
+
+    def _apply_star_overrides(self, injuries: List[Dict]) -> List[Dict]:
+        """Override Claude's impact scores with our star player database when we have a match."""
+        for inj in injuries:
+            player_name = inj.get('player', '')
+            star = get_star_player(player_name)
+            if star:
+                old_impact = inj.get('impact_score', 5)
+                inj['impact_score'] = star['impact']
+                inj['is_starter'] = star['tier'] in ('superstar', 'star', 'key_star', 'starter')
+                inj['star_verified'] = True
+                if old_impact != star['impact']:
+                    print(f"[InjuryAnalyzer] Star override: {player_name} impact {old_impact} -> {star['impact']} ({star['tier']})")
+            else:
+                inj['star_verified'] = False
+        return injuries
 
     def _team_match(self, scraped_name: str, target_name: str) -> bool:
         """Fuzzy match between scraped team name and target name."""
