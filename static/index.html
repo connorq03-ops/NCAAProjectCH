@@ -351,7 +351,7 @@
         //   3. Record quality — Pythag-based over/underperformance
         //   4. Coach experience — tournament-proven coaches bump
         //   5. NCSOS — non-conference schedule quality bonus
-        //   6. O/D Balance — balanced teams get reliability bonus
+        //   6. O/D Balance — quadratic balance curve + quality multiplier + two-way elite bonus
         //   7. Defensive floor — elite defense premium
         //   8. SOS split — SOSO validates defense, SOSD validates offense
         //   9. Diminishing returns — log scaling compresses extremes
@@ -402,15 +402,30 @@
             const ncsosAdj = Math.max(-1.0, Math.min(1.0, ncsos * 0.06));
 
             // 6. O/D Balance — balanced teams have a higher floor
-            // Measure gap between offensive and defensive rank
-            // Smaller gap = more reliable in tournament settings
+            // Two-dimensional: rank gap (balance) × quality (both sides elite)
             const adjOERank = team.RankAdjOE || 175;
             const adjDERank = team.RankAdjDE || 175;
+            const adjOE = team.AdjOE || 100;
+            const adjDE_val = team.AdjDE || 100;
             const rankGap = Math.abs(adjOERank - adjDERank);
-            // Teams within 30 rank spots get a small bonus; extreme imbalance gets penalized
-            // Max bonus +0.5, max penalty -0.3
-            const balanceAdj = rankGap <= 30 ? 0.5 * (1 - rankGap / 30) :
-                               rankGap >= 150 ? -0.3 : 0;
+            // a) Continuous balance curve — no dead zones
+            //    Gap 0 → +1.2, gap 50 → +0.5, gap 100 → 0, gap 200+ → -0.8
+            const balanceBase = rankGap <= 100
+                ? 1.2 * (1 - rankGap / 100) * (1 - rankGap / 100)  // quadratic decay
+                : -0.8 * Math.min(1, (rankGap - 100) / 150);        // linear penalty beyond 100
+            // b) Quality multiplier — balance matters more when both sides are good
+            //    Both top-50 → full credit; worse rank → diminishing credit
+            const worstRank = Math.max(adjOERank, adjDERank);
+            const qualityMult = worstRank <= 50 ? 1.0
+                              : worstRank <= 100 ? 0.75
+                              : worstRank <= 150 ? 0.5
+                              : 0.3;
+            // c) Two-way elite bonus — if both AdjOE and AdjDE are above average
+            //    This rewards teams that are legitimately good on BOTH ends
+            const twoWayBonus = (adjOE > 104 && adjDE_val < 98)
+                ? Math.min(0.6, ((adjOE - 104) * 0.04 + (98 - adjDE_val) * 0.04))
+                : 0;
+            const balanceAdj = balanceBase * qualityMult + twoWayBonus;
 
             // 7. Defensive floor premium — elite defense = safety net
             // In single-elimination, defense is more consistent than offense game-to-game
