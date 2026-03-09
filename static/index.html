@@ -110,6 +110,9 @@
             <button onclick="switchTab('archive')" id="tab-archive" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
                 <i class="fas fa-history mr-1"></i>Archive
             </button>
+            <button onclick="switchTab('picks')" id="tab-picks" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-bullseye mr-1"></i>Picks
+            </button>
         </nav>
 
         <!-- Quick Filters -->
@@ -197,6 +200,13 @@
                 <p class="text-gray-400 text-sm">View historical ratings from any date during the season</p>
             </div>
             <div id="archive-results" class="overflow-x-auto"></div>
+        </section>
+
+        <section id="section-picks" class="tab-section hidden">
+            <div class="max-w-4xl mx-auto">
+                <div id="picks-accuracy" class="mb-4"></div>
+                <div id="picks-results"></div>
+            </div>
         </section>
 
         <!-- Team Detail Modal -->
@@ -327,7 +337,13 @@
         }
         
         function getCoachInfo(teamName) {
-            return coachData[teamName] || null;
+            if (coachData[teamName]) return coachData[teamName];
+            // Fallback: normalize dots/periods and try again
+            const norm = teamName.replace(/\./g, '').trim();
+            for (const [key, val] of Object.entries(coachData)) {
+                if (key.replace(/\./g, '').trim() === norm) return val;
+            }
+            return null;
         }
         
         const METRIC_TIPS = {
@@ -340,22 +356,29 @@
             'TO%': 'Turnover Rate - Turnovers per 100 possessions',
             'OR%': 'Offensive Rebound Rate',
             'FTR': 'Free Throw Rate - FT attempts per FG attempt',
-            'ConRat': 'Connor Rating v2 - 10-layer composite: luck-regressed, SOS-weighted, Pythag, NCSOS, O/D balance, def floor, SOS split'
+            'ConRat': 'Connor Rating v3 - 17-layer composite: luck-regressed, SOS-weighted, Pythag, coach, NCSOS, O/D balance, def floor, SOS split, continuity/exp, 3PT variance, TO discipline, tempo vol, poss length, FT reliability, bench depth'
         };
 
         // ═══════════════════════════════════════════════════════
-        // ConRat: Connor Rating (v2)
-        // 10-layer composite rating addressing AdjEM blind spots:
+        // ConRat: Connor Rating (v3)
+        // 17-layer composite rating addressing AdjEM blind spots:
         //   1. Luck regression — removes overperformance inflation
-        //   2. SOS weighting — battle-tested teams get more credit
+        //   2. SOS weighting — battle-tested teams get more credit (WIDENED)
         //   3. Record quality — Pythag-based over/underperformance
         //   4. Coach experience — tournament-proven coaches bump
-        //   5. NCSOS — non-conference schedule quality bonus
-        //   6. O/D Balance — quadratic balance curve + quality multiplier + two-way elite bonus
-        //   7. Defensive floor — elite defense premium
-        //   8. SOS split — SOSO validates defense, SOSD validates offense
-        //   9. Diminishing returns — log scaling compresses extremes
-        //  10. Final scaling — readable 0-30 range
+        //   5. NCSOS — non-conference schedule quality bonus (WIDENED)
+        //   6. O/D Balance — quadratic balance + quality mult + two-way elite
+        //   7. Defensive floor — elite defense premium (WIDENED)
+        //   8. SOS split — SOSO validates defense, SOSD validates offense (WIDENED)
+        //   9. Continuity & Experience — veteran/returning rosters are more reliable
+        //  10. 3PT Variance — heavy 3PT reliance = higher variance risk
+        //  11. Turnover Discipline — elite ball security = higher floor
+        //  12. Tempo Volatility — extreme pace = less predictable
+        //  13. Possession Length — patient O + grinding D = quality signal
+        //  14. FT Rate Reliability — getting to the line = consistent scoring
+        //  15. Bench Depth — shallow bench = foul/fatigue vulnerability
+        //  16. Diminishing returns — power-curve scaling compresses extremes
+        //  17. Final scaling — readable 0-30 range
         // ═══════════════════════════════════════════════════════
         function calcConRat(team) {
             const adjEM = team.AdjEM || 0;
@@ -365,6 +388,10 @@
             const losses = team.Losses || 0;
             const totalGames = wins + losses || 1;
             const winPct = wins / totalGames;
+            // Supplemental data (merged in loadRatings, or available from matchup context)
+            const ff = team._ff || {};
+            const ms = team._ms || {};
+            const ht = team._ht || {};
 
             // 1. Luck regression: remove 80% of luck inflation
             // Luck of +.050 ≈ ~1.5 pts of inflated AdjEM
@@ -372,89 +399,174 @@
             const regressedEM = adjEM - luckAdj;
 
             // 2. SOS weighting: teams with tougher schedules are more reliable
-            // SOS is on the AdjEM scale (avg ~0). Positive = tough schedule.
-            // Bonus range: 0.95x to 1.05x — subtle but rewards battle-tested teams
-            const sosMultiplier = Math.max(0.95, Math.min(1.05, 1 + sos / 200));
+            // WIDENED from 0.95-1.05 to 0.92-1.08 for stronger differentiation
+            const sosMultiplier = Math.max(0.92, Math.min(1.08, 1 + sos / 125));
             const sosAdjEM = regressedEM * sosMultiplier;
 
-            // 3. Record quality: use KenPom Pythag instead of linear approximation
-            // Pythag is the expected win% based on actual point differential — much more accurate
-            const pythag = team.Pythag || (0.5 + adjEM / 40); // fallback to linear if missing
-            const recordDelta = winPct - pythag; // positive = winning more than expected
-            // Small penalty/bonus: ±1.0 pts max
+            // 3. Record quality: Pythag-based over/underperformance
+            const pythag = team.Pythag || (0.5 + adjEM / 40);
+            const recordDelta = winPct - pythag;
             const recordAdj = Math.max(-1.0, Math.min(1.0, recordDelta * 8));
 
-            // 4. Coach experience bonus
+            // 4. Coach experience bonus/penalty
             const coach = getCoachInfo(team.TeamName);
             let coachBonus = 0;
             if (coach) {
                 const e8 = coach.elite8 || 0;
                 const f4 = coach.finalFour || 0;
                 const titles = coach.titles || 0;
-                // Composite score, capped at +0.8 pts
                 coachBonus = Math.min(0.8, (e8 * 0.05 + f4 * 0.08 + titles * 0.12));
+            } else {
+                // No tournament track record: penalty for top-50 teams likely tourney-bound
+                // First-time coaches historically underperform ATS by ~1.5 pts in March
+                const rankEM = team.RankAdjEM || 200;
+                if (rankEM <= 25) coachBonus = -0.3;
+                else if (rankEM <= 50) coachBonus = -0.2;
+                else if (rankEM <= 80) coachBonus = -0.1;
             }
 
             // 5. NCSOS — Non-Conference SOS bonus
-            // Teams that schedule tough OOC opponents prove their efficiency is real
-            // NCSOS avg ~0, positive = tough OOC. Each 5 pts above avg = ~0.3 bonus, capped ±1.0
+            // WIDENED cap from ±1.0 to ±1.5 — OOC schedule is highly predictive of tourney success
             const ncsos = team.NCSOS || 0;
-            const ncsosAdj = Math.max(-1.0, Math.min(1.0, ncsos * 0.06));
+            const ncsosAdj = Math.max(-1.5, Math.min(1.5, ncsos * 0.08));
 
             // 6. O/D Balance — balanced teams have a higher floor
-            // Two-dimensional: rank gap (balance) × quality (both sides elite)
             const adjOERank = team.RankAdjOE || 175;
             const adjDERank = team.RankAdjDE || 175;
             const adjOE = team.AdjOE || 100;
             const adjDE_val = team.AdjDE || 100;
             const rankGap = Math.abs(adjOERank - adjDERank);
-            // a) Continuous balance curve — no dead zones
-            //    Gap 0 → +1.2, gap 50 → +0.5, gap 100 → 0, gap 200+ → -0.8
             const balanceBase = rankGap <= 100
-                ? 1.2 * (1 - rankGap / 100) * (1 - rankGap / 100)  // quadratic decay
-                : -0.8 * Math.min(1, (rankGap - 100) / 150);        // linear penalty beyond 100
-            // b) Quality multiplier — balance matters more when both sides are good
-            //    Both top-50 → full credit; worse rank → diminishing credit
+                ? 1.2 * (1 - rankGap / 100) * (1 - rankGap / 100)
+                : -0.8 * Math.min(1, (rankGap - 100) / 150);
             const worstRank = Math.max(adjOERank, adjDERank);
             const qualityMult = worstRank <= 50 ? 1.0
                               : worstRank <= 100 ? 0.75
                               : worstRank <= 150 ? 0.5
                               : 0.3;
-            // c) Two-way elite bonus — if both AdjOE and AdjDE are above average
-            //    This rewards teams that are legitimately good on BOTH ends
             const twoWayBonus = (adjOE > 104 && adjDE_val < 98)
                 ? Math.min(0.6, ((adjOE - 104) * 0.04 + (98 - adjDE_val) * 0.04))
                 : 0;
             const balanceAdj = balanceBase * qualityMult + twoWayBonus;
 
             // 7. Defensive floor premium — elite defense = safety net
-            // In single-elimination, defense is more consistent than offense game-to-game
-            // Top 25 defense gets a bonus, scaled by how elite (max +0.6)
+            // WIDENED cap from +0.6 to +1.0 — elite D is the #1 predictor in March
             const adjDE = team.AdjDE || 100;
             const avgDE = 100;
             const defPremium = adjDE < avgDE
-                ? Math.min(0.6, (avgDE - adjDE) * 0.04)
+                ? Math.min(1.0, (avgDE - adjDE) * 0.06)
                 : 0;
 
             // 8. SOS Split — targeted reliability credit
-            // SOSO (offensive SOS) validates your defense — you faced good offenses
-            // SOSD (defensive SOS) validates your offense — you scored against good defenses
-            // avg ~100 for both. Each point above avg = small credit, capped ±0.5
+            // WIDENED cap from ±0.5 to ±0.8
             const soso = team.SOSO || 100;
             const sosd = team.SOSD || 100;
-            const sosSplitAdj = Math.max(-0.5, Math.min(0.5,
-                ((soso - 100) * 0.03 + (sosd - 100) * 0.03)));
+            const sosSplitAdj = Math.max(-0.8, Math.min(0.8,
+                ((soso - 100) * 0.04 + (sosd - 100) * 0.04)));
 
-            // 9. Diminishing returns at extremes
-            // Use signed log scaling: compresses +35 vs +30 gap while preserving +5 vs 0 gap
-            const raw = sosAdjEM + recordAdj + coachBonus + ncsosAdj + balanceAdj + defPremium + sosSplitAdj;
+            // ── NEW LAYERS (v3) ─────────────────────────────────
+
+            // 9. Continuity & Experience — returning players = reliable efficiency
+            // Continuity: % of minutes returning (0-1). Avg ~0.45. High = stable roster.
+            // Exp: avg years of experience. Avg ~2.0. High = veteran team.
+            // This is one of the strongest predictive signals AdjEM ignores.
+            const continuity = ht.Continuity || 0.45;
+            const experience = ht.Exp || 2.0;
+            // Continuity bonus: each 0.1 above avg = +0.6 pts; penalty below avg
+            const contAdj = (continuity - 0.45) * 6.0;
+            // Experience bonus: each 0.5 yr above avg = +0.5 pts
+            const expAdj = (experience - 2.0) * 1.0;
+            // Combined, capped ±1.8
+            const continuityAdj = Math.max(-1.8, Math.min(1.8, contAdj + expAdj));
+
+            // 10. 3PT Variance — teams that live by the 3 die by the 3
+            // F3GRate: % of FGA that are 3s. Avg ~36%. High = 3PT dependent.
+            // Heavy 3PT reliance with mediocre 3PT% = volatile and risky.
+            const f3gRate = ms.F3GRate || 36;
+            const fg3Pct = ms.FG3Pct || 34;
+            // Penalty starts when 3PT rate exceeds 40%
+            const threeReliance = Math.max(0, f3gRate - 36) * 0.08;
+            // But offset if they're actually elite shooters (top 35% accuracy)
+            const threeAccuracyOffset = fg3Pct > 36 ? Math.min(0.4, (fg3Pct - 36) * 0.05) : 0;
+            // Teams with balanced shot profile (low 3PT rate + good 2PT%) get a small bonus
+            const fg2Pct = ms.FG2Pct || 50;
+            const balancedShotBonus = f3gRate < 34 && fg2Pct > 52 ? 0.3 : 0;
+            const threeVarAdj = Math.max(-0.8, Math.min(0.8,
+                -threeReliance + threeAccuracyOffset + balancedShotBonus));
+
+            // 11. Turnover Discipline — elite ball security = higher floor
+            // TO_Pct: offensive turnover rate. Avg ~17.5. Lower = better.
+            // DTO_Pct: defensive forced TO rate. Avg ~17.5. Higher = better.
+            // Both are among the most stable stats game-to-game.
+            const toPct = ff.TO_Pct || 17.5;
+            const dtoPct = ff.DTO_Pct || 17.5;
+            // Reward low offensive TO rate
+            const toBonus = (17.5 - toPct) * 0.12;
+            // Reward high defensive forced TO rate
+            const dtoBonus = (dtoPct - 17.5) * 0.08;
+            const toDisciplineAdj = Math.max(-0.7, Math.min(0.7, toBonus + dtoBonus));
+
+            // 12. Tempo Volatility — extreme pace teams are less predictable
+            // Teams deviating far from avg tempo (~67) have more variance in outcomes.
+            // Fast teams = more possessions = more randomness per game.
+            const adjTempo = team.AdjTempo || 67;
+            const tempoDev = Math.abs(adjTempo - 67);
+            // Slow-but-controlled teams (< 65) get a small reliability bonus
+            const slowBonus = adjTempo < 65 ? Math.min(0.3, (65 - adjTempo) * 0.15) : 0;
+            // Fast/chaotic teams (> 71) get a small penalty
+            const fastPenalty = adjTempo > 71 ? Math.min(0.3, (adjTempo - 71) * 0.08) : 0;
+            const tempoVolAdj = Math.max(-0.5, Math.min(0.5, slowBonus - fastPenalty));
+
+            // 13. Possession Length — patient offense + grinding defense = quality
+            // APL_Off: avg offensive possession length. Avg ~17. Higher = more patient.
+            // APL_Def: avg defensive possession length forced. Avg ~17. Higher = grinding D.
+            const aplOff = team.APL_Off || 17;
+            const aplDef = team.APL_Def || 17;
+            // Patient offense (longer possessions = better shot selection)
+            const offPatienceAdj = (aplOff - 17) * 0.15;
+            // Grinding defense (forcing long possessions = disrupting opponent rhythm)
+            const defGrindAdj = (aplDef - 17) * 0.15;
+            const aplAdj = Math.max(-0.5, Math.min(0.5, offPatienceAdj + defGrindAdj));
+
+            // 14. FT Rate Reliability — getting to the line = consistent scoring floor
+            // FT_Rate: FTA/FGA. Avg ~30. High = drawing fouls consistently.
+            // FTPct: free throw percentage. Avg ~71.
+            // Elite FT Rate + good FT% = very reliable scoring, especially late in games.
+            const ftRate = ff.FT_Rate || 30;
+            const ftPct = ms.FTPct || 71;
+            // Bonus for elite FT rate (above 35)
+            const ftRateBonus = Math.max(0, ftRate - 30) * 0.04;
+            // Extra credit if they actually make their FTs
+            const ftPctBonus = ftPct > 74 ? Math.min(0.2, (ftPct - 74) * 0.03) : 0;
+            // Penalty for poor FT shooting (below 68%)
+            const ftPctPenalty = ftPct < 68 ? Math.min(0.2, (68 - ftPct) * 0.03) : 0;
+            const ftAdj = Math.max(-0.5, Math.min(0.5, ftRateBonus + ftPctBonus - ftPctPenalty));
+
+            // 15. Bench Depth — shallow bench = vulnerability in tournament
+            // Bench: % of minutes from non-starters. Avg ~30%. Low = thin rotation.
+            // Shallow benches fatigue late in games and are one foul-trouble away from collapse.
+            const bench = ht.Bench || 30;
+            // Bonus for deep bench (>35%), penalty for thin bench (<25%)
+            const benchBonus = bench > 30 ? Math.min(0.4, (bench - 30) * 0.04) : 0;
+            const benchPenalty = bench < 30 ? Math.min(0.4, (30 - bench) * 0.06) : 0;
+            const benchAdj = Math.max(-0.8, Math.min(0.8, benchBonus - benchPenalty));
+
+            // ── AGGREGATE & SCALE ─────────────────────────────────
+
+            // 16. Diminishing returns at extremes
+            const raw = sosAdjEM + recordAdj + coachBonus + ncsosAdj + balanceAdj
+                      + defPremium + sosSplitAdj
+                      + continuityAdj + threeVarAdj + toDisciplineAdj
+                      + tempoVolAdj + aplAdj + ftAdj + benchAdj;
             const sign = raw >= 0 ? 1 : -1;
 
-            // 10. Final scaling — readable 0-30 range
-            const conRat = sign * Math.log(1 + Math.abs(raw)) * (30 / Math.log(1 + 35));
-            // Scale so that a ~+35 AdjEM team ≈ 30 ConRat, keeping numbers readable
-
-            return Math.round(conRat * 10) / 10; // 1 decimal
+            // 17. Final scaling — readable 0-30 range
+            // Power curve (x^0.82): preserves differentiation at the top
+            // where new layers matter most (10% gap vs 3% with log)
+            // Max theoretical raw ~48, so calibrate: 48^0.82 ≈ 28.6
+            const absRaw = Math.abs(raw);
+            const conRat = sign * Math.pow(absRaw, 0.82) * (30 / Math.pow(48, 0.82));
+            return Math.round(conRat * 10) / 10;
         }
 
         // ═══════════════════════════════════════════════════════
@@ -547,6 +659,40 @@
             const adj = Math.max(-1.0, Math.min(1.0, (t1Trend - t2Trend) * 0.15));
 
             return { adj, t1Trend, t2Trend };
+        }
+
+        // Spread calibration: raw efficiency margins overpredict blowouts.
+        // Vegas-style regression compresses extreme spreads toward the mean.
+        // Research: raw KenPom margins are ~10-15% too wide on average,
+        // and much worse for large spreads (15+ pts).
+        function calibrateSpread(rawMargin) {
+            const sign = rawMargin >= 0 ? 1 : -1;
+            const abs = Math.abs(rawMargin);
+            // Piecewise dampening:
+            //   0-7 pts:  0.92x (close games, mostly accurate)
+            //   7-14 pts: 0.85x (moderate spreads, some regression)
+            //   14+ pts:  logarithmic compression (blowouts rarely hit raw number)
+            let calibrated;
+            if (abs <= 7) {
+                calibrated = abs * 0.92;
+            } else if (abs <= 14) {
+                calibrated = 7 * 0.92 + (abs - 7) * 0.85;
+            } else {
+                // Log compression for extreme spreads: 14pt base + diminishing returns
+                const base = 7 * 0.92 + 7 * 0.85;
+                calibrated = base + Math.log(1 + (abs - 14) * 0.5) * 3.5;
+            }
+            return sign * calibrated;
+        }
+
+        // Conference-tier Home Court Advantage
+        // Power conferences have bigger, louder arenas and more travel fatigue for visitors
+        const POWER_HCA_CONFS = ['SEC', 'B12', 'B10', 'BE', 'ACC', 'P12'];
+        const MID_HCA_CONFS = ['MWC', 'Amer', 'A10', 'WCC', 'MVC'];
+        function getHCA(homeConf) {
+            if (POWER_HCA_CONFS.includes(homeConf)) return 4.2;
+            if (MID_HCA_CONFS.includes(homeConf)) return 3.6;
+            return 3.0; // small conference / neutral-like
         }
 
         let _loadCount = 0;
@@ -780,6 +926,24 @@
             }
             document.getElementById(`matchup-results-${num}`).classList.add('hidden');
             document.getElementById('predict-btn').disabled = !(matchupTeam1 && matchupTeam2);
+
+            // Auto-detect conference tournament: same conference + March = neutral site
+            if (matchupTeam1 && matchupTeam2) {
+                const now = new Date();
+                const month = now.getMonth() + 1; // 1-indexed
+                const sameConf = matchupTeam1.ConfShort && matchupTeam1.ConfShort === matchupTeam2.ConfShort;
+                if (sameConf && month >= 3) {
+                    setMatchupLocation('neutral');
+                    // Show conf tourney notice
+                    const notice = document.getElementById('conf-tourney-notice');
+                    if (notice) notice.remove();
+                    const btn = document.getElementById('predict-btn');
+                    btn.insertAdjacentHTML('beforebegin',
+                        `<p id="conf-tourney-notice" class="text-xs text-cyan-400 text-center mb-2">
+                            <i class="fas fa-info-circle mr-1"></i>Same conference (${matchupTeam1.ConfShort}) in March — auto-set to neutral site
+                        </p>`);
+                }
+            }
         }
 
         function setMatchupLocation(loc) {
@@ -810,12 +974,12 @@
         }
 
         // ═══════════════════════════════════════════════════════
-        // MODEL 1: KenPom Efficiency Model (additive)
+        // MODEL 1: KenPom Model (additive)
         // ═══════════════════════════════════════════════════════
         function modelEfficiency(t1, t2, hca1, hca2, extra = {}) {
             const AVG_EFF = 100.0;
-            const GAME_SD = 11.0;
             const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+            const GAME_SD = 11.0 * Math.sqrt(avgTempo / 67);
 
             const t1Luck = (t1.Luck || 0), t2Luck = (t2.Luck || 0);
             const t1LuckAdj = t1Luck * 30 * 0.75, t2LuckAdj = t2Luck * 30 * 0.75;
@@ -837,7 +1001,9 @@
             // Injury adjustment (positive injuryAdj = t1 healthier)
             const injAdj = extra.injuryAdj || 0;
             // Apply enrichment adjustments (split between both sides)
-            const totalAdj = styleAdj + expAdj + momAdj + confAdj + injAdj;
+            // Scale by avgTempo/100 since scores are in game-point space, not per-100-poss
+            const tempoScale = avgTempo / 100;
+            const totalAdj = (styleAdj + expAdj + momAdj + confAdj + injAdj) * tempoScale;
             t1Score += totalAdj / 2;
             t2Score -= totalAdj / 2;
 
@@ -847,7 +1013,7 @@
                 t1Score, t2Score, margin,
                 t1WinProb: gaussianCDF(margin / GAME_SD),
                 tempo: avgTempo, styleAdj, expAdj, momAdj, confAdj,
-                label: 'Efficiency Model',
+                label: 'KenPom Model',
                 desc: 'KenPom efficiency + style clash + experience + momentum'
             };
         }
@@ -857,9 +1023,8 @@
         // Uses Four Factors to find how each team performs
         // against opponents with a similar profile to the other
         // ═══════════════════════════════════════════════════════
-        function modelSimilarOpponents(t1, t2, hca1, hca2) {
+        function modelSimilarOpponents(t1, t2, hca1, hca2, extra = {}) {
             const AVG_EFF = 100.0;
-            const GAME_SD = 11.0;
 
             // Four Factors style profile for each team
             // We compare how each team's offensive strengths match up
@@ -892,8 +1057,15 @@
             const t1RecordBonus = (t1WinPct - 0.5) * 2; // -1 to +1 scale
             const t2RecordBonus = (t2WinPct - 0.5) * 2;
 
-            const margin = (t1AdjEM - t2AdjEM) + (t1RecordBonus - t2RecordBonus) * 0.5 + (hca1 - hca2);
+            // Enrichment adjustments (style clash, experience, injuries, etc.)
+            const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
+            const expAdj = extra.experience ? extra.experience.adj : 0;
+            const injAdj = extra.injuryAdj || 0;
+            const enrichAdj = styleAdj + expAdj + injAdj;
+
+            const margin = (t1AdjEM - t2AdjEM) + (t1RecordBonus - t2RecordBonus) * 0.5 + enrichAdj + (hca1 - hca2);
             const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+            const GAME_SD = 11.0 * Math.sqrt(avgTempo / 67);
             const scaledMargin = margin * (avgTempo / 67); // scale to actual game tempo
 
             const t1Score = (AVG_EFF + scaledMargin / 2) * (avgTempo / 100);
@@ -905,7 +1077,7 @@
                 tempo: avgTempo,
                 t1SOS, t2SOS,
                 label: 'Similar Opponents',
-                desc: 'SOS-weighted efficiency with record quality'
+                desc: 'SOS-weighted efficiency with style clash + experience + injuries'
             };
         }
 
@@ -914,15 +1086,24 @@
         // Uses the Connor Rating (luck-regressed, SOS-weighted,
         // coach-adjusted, diminishing returns) for predictions
         // ═══════════════════════════════════════════════════════
-        function modelConRat(t1, t2, hca1, hca2) {
-            const GAME_SD = 11.0;
+        function modelConRat(t1, t2, hca1, hca2, extra = {}) {
             const avgTempo = ((t1.AdjTempo || 67) + (t2.AdjTempo || 67)) / 2;
+            const GAME_SD = 11.0 * Math.sqrt(avgTempo / 67);
 
             const cr1 = calcConRat(t1);
             const cr2 = calcConRat(t2);
 
-            // ConRat margin + HCA
-            const margin = (cr1 - cr2) + (hca1 - hca2);
+            // Enrichment adjustments (injuries, experience, style clash)
+            // ConRat already captures continuity/experience at the team level,
+            // so use a reduced weight for the matchup-relative experience adj
+            const styleAdj = extra.styleClash ? extra.styleClash.adj * 0.5 : 0;
+            const expAdj = extra.experience ? extra.experience.adj * 0.3 : 0;
+            const injAdj = extra.injuryAdj || 0;
+            const momAdj = extra.momentum ? extra.momentum.adj * 0.5 : 0;
+            const enrichAdj = styleAdj + expAdj + injAdj + momAdj;
+
+            // ConRat margin + HCA + enrichment
+            const margin = (cr1 - cr2) + enrichAdj + (hca1 - hca2);
 
             // Scale scores from ConRat margin
             const AVG_EFF = 100.0;
@@ -935,36 +1116,33 @@
                 cr1, cr2,
                 tempo: avgTempo,
                 label: 'ConRat Model',
-                desc: 'Connor Rating: luck-regressed, SOS-weighted, coach-adjusted'
+                desc: 'Connor Rating v3 + injuries + style + experience + momentum'
             };
         }
 
         // ═══════════════════════════════════════════════════════
-        // MODEL 3: Possession-Level Monte Carlo Simulation
-        // Each game simulates individual possessions with outcomes:
-        //   TO → lost possession (steal = opponent transition bonus)
-        //   2PT attempt → make/miss (block-adjusted), OREB on miss
-        //   3PT attempt → make/miss, OREB on miss (reduced rate)
-        //   FT trip → foul-based free throws
-        // Enriched with:
+        // MODEL 3: Possession-Level Monte Carlo Simulation (v2)
+        // Two-half game simulation with 5 advanced features:
+        //   1. Steal → Transition Scoring (steals create fast-break points ~1.1 PPP)
+        //   2. Star Player Impact (star possessions have higher shooting + variance)
+        //   3. Two-Half Strategic Shifts (trailing team jacks 3s, leader burns clock)
+        //   4. Foul Accumulation (7 fouls → 1-and-1, 10 → double bonus; star foul trouble)
+        //   5. Momentum Streaks (makes boost next-possession shooting, misses reduce it)
+        // Plus existing enrichments:
         //   • Matchup-adjusted rates (off + def - avg)
-        //   • Height → OR% bonus (bigger team boards better)
-        //   • Block/steal matchup (two-way: helps & hurts)
-        //   • Correlated game factor (refs/arena affect both teams)
-        //   • Bench depth → shooting volatility modifier
-        //   • Tempo tug-of-war (extreme pace team imposes style)
-        //   • Coach clutch + FT clutch in close games
-        //   • Style/experience/momentum/conference enrichment
+        //   • Height → OR% bonus • Block matchup • Correlated game factor
+        //   • Bench depth → volatility • Tempo tug-of-war • Coach/FT clutch
         // ═══════════════════════════════════════════════════════
         function modelMonteCarlo(t1, t2, hca1, hca2, numSims = 5000, extra = {}) {
             const ff1 = extra.ff1, ff2 = extra.ff2;
             const ms1 = extra.ms1, ms2 = extra.ms2;
             const ht1 = extra.ht1, ht2 = extra.ht2;
+            const pd1 = extra.pd1, pd2 = extra.pd2;
 
             // ── LEAGUE AVERAGES ──
             const AVG_TO = 17.5, AVG_OR = 28, AVG_FTR = 30, AVG_FTP = 71;
             const AVG_FG2 = 50, AVG_FG3 = 34, AVG_3RATE = 36, AVG_BLK = 9.5;
-            const AVG_EFG = 50, AVG_BENCH = 30;
+            const AVG_EFG = 50, AVG_BENCH = 30, AVG_STL = 9.5;
 
             // ── OFFENSIVE STATS (team's own rates) ──
             const t1_TO  = ff1 ? (ff1.TO_Pct  || AVG_TO) : AVG_TO;
@@ -977,8 +1155,16 @@
             const t2_FG2 = ms2 ? (ms2.FG2Pct  || AVG_FG2) : AVG_FG2;
             const t1_FG3 = ms1 ? (ms1.FG3Pct  || AVG_FG3) : AVG_FG3;
             const t2_FG3 = ms2 ? (ms2.FG3Pct  || AVG_FG3) : AVG_FG3;
-            const t1_3Rate = ms1 ? (ms1.F3GRate || AVG_3RATE) : AVG_3RATE;
-            const t2_3Rate = ms2 ? (ms2.F3GRate || AVG_3RATE) : AVG_3RATE;
+            // 3PT shot selection: blend misc-stats F3GRate with point distribution data
+            // pd.OffFg3 = % of points from 3s (higher = more 3-reliant)
+            // Convert to approximate attempt rate: OffFg3% of points ≈ OffFg3 * 0.95 attempt rate
+            const t1_3RateBase = ms1 ? (ms1.F3GRate || AVG_3RATE) : AVG_3RATE;
+            const t2_3RateBase = ms2 ? (ms2.F3GRate || AVG_3RATE) : AVG_3RATE;
+            // Matchup-adjust: if opponent defense allows high 3PT share, team shoots more 3s
+            const t1_pd3Adj = pd1 && pd2 ? (pd2.DefFg3 - 33) * 0.15 : 0; // avg DefFg3 ≈ 33%
+            const t2_pd3Adj = pd2 && pd1 ? (pd1.DefFg3 - 33) * 0.15 : 0;
+            const t1_3Rate = clamp(t1_3RateBase + t1_pd3Adj, 20, 55);
+            const t2_3Rate = clamp(t2_3RateBase + t2_pd3Adj, 20, 55);
             const t1_FTP = ms1 ? (ms1.FTPct || AVG_FTP) : AVG_FTP;
             const t2_FTP = ms2 ? (ms2.FTPct || AVG_FTP) : AVG_FTP;
 
@@ -1000,6 +1186,9 @@
             const t2_Blk = ms2 ? (ms2.BlockPct || AVG_BLK) : AVG_BLK;
             const t1_OppBlk = ms1 ? (ms1.OppBlockPct || AVG_BLK) : AVG_BLK;
             const t2_OppBlk = ms2 ? (ms2.OppBlockPct || AVG_BLK) : AVG_BLK;
+            // Steal rates (for transition scoring) — API returns decimal, convert to %
+            const t1_Stl = ms1 ? ((ms1.StlRate || 0) * 100 || AVG_STL) : AVG_STL;
+            const t2_Stl = ms2 ? ((ms2.StlRate || 0) * 100 || AVG_STL) : AVG_STL;
 
             // ── MATCHUP-ADJUSTED RATES (additive: off + def_opp - avg) ──
             // T1 offense vs T2 defense
@@ -1017,6 +1206,9 @@
             const m_t2_FG2 = clamp((t2_FG2 + t1_OppFG2) / 2 - t2_blkAdj, 30, 65);
             const m_t1_FG3 = clamp((t1_FG3 + t2_OppFG3) / 2, 22, 44);
             const m_t2_FG3 = clamp((t2_FG3 + t1_OppFG3) / 2, 22, 44);
+            // Matchup-adjusted steal rates (defense steal vs offense vulnerability)
+            const m_t2StealRate = clamp((t2_Stl + AVG_STL) / 2, 5, 16);
+            const m_t1StealRate = clamp((t1_Stl + AVG_STL) / 2, 5, 16);
 
             // ── HEIGHT → REBOUNDING EDGE ──
             const t1Hgt = ht1 ? (ht1.AvgHgt || 77.5) : 77.5;
@@ -1050,13 +1242,31 @@
             const coachEdge = clamp((c1Exp - c2Exp) * 0.04, -0.8, 0.8);
             const ftClutchEdge = (t1_FTP - t2_FTP) * 0.08;
 
-            // ── ENRICHMENT ADJUSTMENTS (style, experience, momentum, conference, injuries) ──
-            const styleAdj = extra.styleClash ? extra.styleClash.adj : 0;
-            const expAdj = extra.experience ? extra.experience.adj : 0;
+            // ── ENRICHMENT ADJUSTMENTS ──
+            // MC already captures style clash + experience via matchup-adjusted rates
+            // Only apply injury and momentum adjustments (which MC doesn't simulate)
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
-            const confAdj = extra.confStrength ? extra.confStrength.adj : 0;
             const injAdj = extra.injuryAdj || 0;
-            const totalAdj = styleAdj + expAdj + momAdj + confAdj + injAdj;
+            // Scale by gamePoss/100 since MC scores are in game-point space
+            const totalAdj = (momAdj + injAdj) * (gameTempoCtr / 100);
+
+            // ── STAR PLAYER IMPACT ──
+            const stars1 = extra.stars1 || [], stars2 = extra.stars2 || [];
+            function calcStarImpact(stars) {
+                if (!stars || stars.length === 0) return { usage: 0, fg2Bonus: 0, fg3Bonus: 0 };
+                let totalUsage = 0, wFG2 = 0, wFG3 = 0;
+                for (const s of stars) {
+                    const imp = s.impact || 5;
+                    const u = imp >= 9 ? 0.30 : imp >= 8 ? 0.22 : imp >= 7 ? 0.15 : 0.08;
+                    totalUsage += u;
+                    wFG2 += (imp >= 9 ? 3.0 : imp >= 8 ? 2.0 : 1.0) * u;
+                    wFG3 += (imp >= 9 ? 2.0 : imp >= 8 ? 1.5 : 0.5) * u;
+                }
+                const cap = Math.min(totalUsage, 0.45);
+                return { usage: cap, fg2Bonus: totalUsage > 0 ? wFG2 / totalUsage : 0, fg3Bonus: totalUsage > 0 ? wFG3 / totalUsage : 0 };
+            }
+            const t1Star = calcStarImpact(stars1);
+            const t2Star = calcStarImpact(stars2);
 
             // ── CALIBRATION ──
             // Compute expected efficiency from KenPom's matchup model
@@ -1066,62 +1276,116 @@
             const kpT1ExpOE = (t1.AdjOE || AVG_EFF) + (t2.AdjDE || AVG_EFF) - AVG_EFF;
             const kpT2ExpOE = (t2.AdjOE || AVG_EFF) + (t1.AdjDE || AVG_EFF) - AVG_EFF;
 
-            // ── POSSESSION SIMULATION FUNCTION ──
-            function simPossessions(poss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct) {
+            // ── HALF POSSESSION SIMULATION (transition, momentum, fouls, stars) ──
+            function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
+                             defStealRate, starUsage, starFG2, starFG3, initMom) {
                 let points = 0, possUsed = 0, makes2 = 0, makes3 = 0, tos = 0;
                 let ftMade = 0, ftAtt = 0, orebs = 0, attempts = 0;
-                let possLeft = Math.round(poss);
-                const maxPoss = possLeft + 20; // cap to prevent OREB loops
+                let transitionPts = 0; // points opponent scores on steals
+                let possLeft = Math.round(halfPoss);
+                const maxPoss = possLeft + 10;
+                let mom = initMom; // momentum: -2 to +3
+                let defFouls = 0; // team fouls this half
+
                 while (possLeft > 0 && possUsed < maxPoss) {
                     possLeft--; possUsed++;
 
-                    // Turnover?
-                    if (Math.random() * 100 < toPct) { tos++; continue; }
+                    // ── STAR POSSESSION (higher shooting; foul trouble reduces usage via parameter) ──
+                    const isStar = Math.random() < starUsage;
+                    const sFG2 = isStar ? starFG2 : 0;
+                    const sFG3 = isStar ? starFG3 : 0;
 
-                    // Free throw trip? ~(FTR/100 * 0.38) probability per non-TO possession
-                    // FTR = FTA/FGA, but not every possession has an FGA
-                    if (Math.random() < ftr / 100 * 0.38) {
-                        const numFTs = Math.random() < 0.25 ? 3 : 2; // 3-shot foul ~25%
-                        for (let f = 0; f < numFTs; f++) {
-                            ftAtt++;
-                            if (Math.random() * 100 < ftPct) { points++; ftMade++; }
+                    // ── MOMENTUM BOOST (±1.2% shooting max) ──
+                    const momFG = mom * 0.4;
+
+                    // ── TURNOVER? ──
+                    if (Math.random() * 100 < toPct) {
+                        tos++;
+                        mom = Math.max(mom - 1, -2);
+                        // Steal → transition scoring: P(steal|TO) ≈ stealRate/toPct, ~60% of steals create fast breaks
+                        if (Math.random() < (defStealRate / Math.max(toPct, 8)) * 0.65) {
+                            const r = Math.random();
+                            if (r < 0.55) transitionPts += 2;      // layup/dunk
+                            else if (r < 0.70) transitionPts += 3;  // transition 3
                         }
                         continue;
                     }
 
-                    // Shot attempt
+                    // ── FOUL TRACKING (~20% of possessions draw contact) ──
+                    const drewFoul = Math.random() < 0.20;
+                    if (drewFoul) defFouls++;
+
+                    // ── BONUS FT (non-shooting foul in bonus) ──
+                    if (drewFoul && defFouls >= 7 && Math.random() < 0.45) {
+                        let bonusMade = 0;
+                        if (defFouls >= 10) {
+                            // Double bonus: 2 FTs
+                            for (let f = 0; f < 2; f++) {
+                                ftAtt++;
+                                if (Math.random() * 100 < ftPct) { points++; ftMade++; bonusMade++; }
+                            }
+                        } else {
+                            // 1-and-1
+                            ftAtt++;
+                            if (Math.random() * 100 < ftPct) {
+                                points++; ftMade++; bonusMade++;
+                                ftAtt++;
+                                if (Math.random() * 100 < ftPct) { points++; ftMade++; bonusMade++; }
+                            }
+                        }
+                        mom = bonusMade > 0 ? Math.min(mom + 0.5, 3) : Math.max(mom - 0.5, -2);
+                        continue;
+                    }
+
+                    // ── SHOOTING FOUL → FT TRIP (only if no non-shooting foul already) ──
+                    if (!drewFoul && Math.random() < ftr / 100 * 0.38) {
+                        defFouls++;
+                        const numFTs = Math.random() < 0.25 ? 3 : 2;
+                        let made = 0;
+                        for (let f = 0; f < numFTs; f++) {
+                            ftAtt++;
+                            if (Math.random() * 100 < ftPct) { points++; ftMade++; made++; }
+                        }
+                        mom = made > 0 ? Math.min(mom + 0.5, 3) : Math.max(mom - 0.5, -2);
+                        continue;
+                    }
+
+                    // ── SHOT ATTEMPT ──
                     attempts++;
                     const is3pt = Math.random() * 100 < rate3;
                     if (is3pt) {
-                        if (Math.random() * 100 < fg3) {
+                        if (Math.random() * 100 < fg3 + sFG3 + momFG * 0.5) {
                             points += 3; makes3++;
-                            // And-1 three (rare, ~2%)
+                            mom = Math.min(mom + 1.5, 3); // 3PT = big momentum
                             if (Math.random() < 0.02) {
+                                defFouls++;
                                 ftAtt++;
                                 if (Math.random() * 100 < ftPct) { points++; ftMade++; }
                             }
                         } else {
-                            // Missed 3: OREB chance (long rebounds → reduced rate)
+                            mom = Math.max(mom - 0.5, -2);
                             if (Math.random() * 100 < orPct * 0.80) { possLeft++; orebs++; }
                         }
                     } else {
-                        if (Math.random() * 100 < fg2) {
+                        if (Math.random() * 100 < fg2 + sFG2 + momFG * 0.7) {
                             points += 2; makes2++;
-                            // And-1 on 2PT (~6%)
+                            mom = Math.min(mom + 1, 3);
                             if (Math.random() < 0.06) {
+                                defFouls++;
                                 ftAtt++;
                                 if (Math.random() * 100 < ftPct) { points++; ftMade++; }
                             }
                         } else {
-                            // Missed 2: OREB chance (full rate)
+                            mom = Math.max(mom - 0.5, -2);
                             if (Math.random() * 100 < orPct) { possLeft++; orebs++; }
                         }
                     }
                 }
-                return { points, possUsed, makes2, makes3, tos, ftMade, ftAtt, orebs, attempts };
+                return { points, possUsed, makes2, makes3, tos, ftMade, ftAtt, orebs, attempts,
+                         transitionPts, momentum: mom, defFouls };
             }
 
-            // ── SIMULATION LOOP ──
+            // ── SIMULATION LOOP (two-half with strategic adjustments) ──
             let t1Wins = 0, t2Wins = 0, ties = 0;
             let totalT1Score = 0, totalT2Score = 0;
             let marginDist = [];
@@ -1132,24 +1396,19 @@
             let totalT1_TOs = 0, totalT2_TOs = 0;
             let totalT1_ORebs = 0, totalT2_ORebs = 0;
             let totalT1_FTM = 0, totalT2_FTM = 0;
+            let totalTransition = 0;
 
             const t1AdjEM = (t1.AdjEM || 0), t2AdjEM = (t2.AdjEM || 0);
             const t1Favored = (t1AdjEM + hca1 * 2) > (t2AdjEM + hca2 * 2);
 
-            const SHOT_SWING_SD = 3.2; // game-to-game shooting % swing
+            const SHOT_SWING_SD = 3.2;
 
             for (let i = 0; i < numSims; i++) {
-                // Correlated game factor (refs/arena/energy — affects both teams)
                 const gameFactor = randNormal(0, 1.2);
-
-                // Game tempo (tug-of-war with variance)
                 const gamePoss = clamp(randNormal(gameTempoCtr, 3.0), 55, 85);
-
-                // Game-level shooting swings (hot/cold night)
                 const t1Swing = randNormal(0, SHOT_SWING_SD) * t1VolMod;
                 const t2Swing = randNormal(0, SHOT_SWING_SD) * t2VolMod;
 
-                // This game's matchup-adjusted rates with per-game variance
                 const g_t1_FG2 = clamp(m_t1_FG2 + t1Swing * 0.7 + gameFactor * 0.25, 28, 68);
                 const g_t2_FG2 = clamp(m_t2_FG2 + t2Swing * 0.7 + gameFactor * 0.25, 28, 68);
                 const g_t1_FG3 = clamp(m_t1_FG3 + t1Swing * 1.0 + gameFactor * 0.15, 18, 48);
@@ -1159,21 +1418,85 @@
                 const g_t1_OR  = clamp(m_t1_OR + t1HgtORBonus + randNormal(0, 2.5), 12, 45);
                 const g_t2_OR  = clamp(m_t2_OR - t1HgtORBonus + randNormal(0, 2.5), 12, 45);
 
-                // Simulate possessions for each team
-                const r1 = simPossessions(gamePoss, g_t1_FG2, g_t1_FG3, g_t1_TO, g_t1_OR, t1_3Rate, m_t1_FTR, t1_FTP);
-                const r2 = simPossessions(gamePoss, g_t2_FG2, g_t2_FG3, g_t2_TO, g_t2_OR, t2_3Rate, m_t2_FTR, t2_FTP);
+                // ── STAR FOUL TROUBLE (~8% chance per game) ──
+                const t1StarFT = t1Star.usage > 0 && Math.random() < 0.08;
+                const t2StarFT = t2Star.usage > 0 && Math.random() < 0.08;
 
-                // Raw scores from possession sim
-                let s1 = r1.points;
-                let s2 = r2.points;
+                // ── TWO-HALF SIMULATION ──
+                let s1 = 0, s2 = 0;
+                let t1Mom = 0, t2Mom = 0;
+                let gP1 = 0, gP2 = 0, g2_1 = 0, g2_2 = 0, g3_1 = 0, g3_2 = 0;
+                let gTO1 = 0, gTO2 = 0, gOR1 = 0, gOR2 = 0, gFT1 = 0, gFT2 = 0;
 
-                // Calibration: nudge toward KenPom expected efficiency
-                // Compute what KenPom expects for this game's pace
+                for (let half = 0; half < 2; half++) {
+                    const halfPoss = gamePoss / 2;
+
+                    // ── HALFTIME STRATEGIC ADJUSTMENTS (2nd half only) ──
+                    let t1_3Adj = 0, t2_3Adj = 0, t1_TOAdj = 0, t2_TOAdj = 0;
+                    let t1_FG2Adj = 0, t2_FG2Adj = 0;
+                    if (half === 1) {
+                        const margin = s1 - s2;
+                        if (margin > 8) {
+                            // T2 trailing: more 3s, more aggressive → higher TO
+                            t2_3Adj = Math.min(margin * 0.5, 7);
+                            t2_TOAdj = Math.min(margin * 0.12, 1.5);
+                            t1_3Adj = -2; t1_FG2Adj = 1; // T1 leading: deliberate
+                        } else if (margin < -8) {
+                            t1_3Adj = Math.min(-margin * 0.5, 7);
+                            t1_TOAdj = Math.min(-margin * 0.12, 1.5);
+                            t2_3Adj = -2; t2_FG2Adj = 1;
+                        }
+                    }
+
+                    // Star foul trouble degrades shooting in 2nd half
+                    const t1SFT = t1StarFT && half === 1;
+                    const t2SFT = t2StarFT && half === 1;
+                    const t1StarDeg = t1SFT ? -1.5 : 0;
+                    const t2StarDeg = t2SFT ? -1.5 : 0;
+
+                    // T1 offense this half
+                    const r1 = simHalf(halfPoss,
+                        g_t1_FG2 + t1_FG2Adj + t1StarDeg, g_t1_FG3 + t1StarDeg * 0.7,
+                        g_t1_TO + t1_TOAdj, g_t1_OR,
+                        clamp(t1_3Rate + t1_3Adj, 20, 55), m_t1_FTR, t1_FTP,
+                        m_t2StealRate,
+                        t1SFT ? t1Star.usage * 0.3 : t1Star.usage,
+                        t1Star.fg2Bonus, t1Star.fg3Bonus,
+                        t1Mom);
+
+                    // T2 offense this half
+                    const r2 = simHalf(halfPoss,
+                        g_t2_FG2 + t2_FG2Adj + t2StarDeg, g_t2_FG3 + t2StarDeg * 0.7,
+                        g_t2_TO + t2_TOAdj, g_t2_OR,
+                        clamp(t2_3Rate + t2_3Adj, 20, 55), m_t2_FTR, t2_FTP,
+                        m_t1StealRate,
+                        t2SFT ? t2Star.usage * 0.3 : t2Star.usage,
+                        t2Star.fg2Bonus, t2Star.fg3Bonus,
+                        t2Mom);
+
+                    // Score: own offense + transition from opponent's steals
+                    s1 += r1.points + r2.transitionPts;
+                    s2 += r2.points + r1.transitionPts;
+
+                    // Carry momentum (dampened between halves)
+                    t1Mom = r1.momentum * (half === 0 ? 0.3 : 1);
+                    t2Mom = r2.momentum * (half === 0 ? 0.3 : 1);
+
+                    // Accumulate per-game stats
+                    gP1 += r1.possUsed; gP2 += r2.possUsed;
+                    g2_1 += r1.makes2; g2_2 += r2.makes2;
+                    g3_1 += r1.makes3; g3_2 += r2.makes3;
+                    gTO1 += r1.tos; gTO2 += r2.tos;
+                    gOR1 += r1.orebs; gOR2 += r2.orebs;
+                    gFT1 += r1.ftMade; gFT2 += r2.ftMade;
+                    totalTransition += r1.transitionPts + r2.transitionPts;
+                }
+
+                // Calibration: light anchor toward KenPom expected efficiency (18%)
                 const kpS1 = kpT1ExpOE * (gamePoss / 100);
                 const kpS2 = kpT2ExpOE * (gamePoss / 100);
-                // Blend: 70% possession sim + 30% KenPom expected (anchoring)
-                s1 = s1 * 0.70 + kpS1 * 0.30;
-                s2 = s2 * 0.70 + kpS2 * 0.30;
+                s1 = s1 * 0.82 + kpS1 * 0.18;
+                s2 = s2 * 0.82 + kpS2 * 0.18;
 
                 // Apply enrichment and HCA
                 s1 += totalAdj / 2 + hca1;
@@ -1199,13 +1522,12 @@
                 if (Math.abs(m) >= 15) blowouts++;
                 if (Math.abs(m) <= 5) closeGames++;
 
-                // Accumulate stats for averages
-                totalT1Poss += r1.possUsed; totalT2Poss += r2.possUsed;
-                totalT1_3Made += r1.makes3; totalT2_3Made += r2.makes3;
-                totalT1_2Made += r1.makes2; totalT2_2Made += r2.makes2;
-                totalT1_TOs += r1.tos; totalT2_TOs += r2.tos;
-                totalT1_ORebs += r1.orebs; totalT2_ORebs += r2.orebs;
-                totalT1_FTM += r1.ftMade; totalT2_FTM += r2.ftMade;
+                totalT1Poss += gP1; totalT2Poss += gP2;
+                totalT1_3Made += g3_1; totalT2_3Made += g3_2;
+                totalT1_2Made += g2_1; totalT2_2Made += g2_2;
+                totalT1_TOs += gTO1; totalT2_TOs += gTO2;
+                totalT1_ORebs += gOR1; totalT2_ORebs += gOR2;
+                totalT1_FTM += gFT1; totalT2_FTM += gFT2;
             }
 
             const t1WinPct = (t1Wins + ties * 0.5) / numSims;
@@ -1231,6 +1553,8 @@
                 heightEdge: t1HgtORBonus, t1Hgt, t2Hgt, t1HgtEff, t2HgtEff,
                 t1EffSD: SHOT_SWING_SD * t1VolMod, t2EffSD: SHOT_SWING_SD * t2VolMod,
                 tempo: gameTempoCtr, numSims,
+                t1Star, t2Star,
+                avgTransition: totalTransition / numSims,
                 // Possession-level stats (per-game averages)
                 t1AvgPoss: totalT1Poss / numSims, t2AvgPoss: totalT2Poss / numSims,
                 t1Avg3s: totalT1_3Made / numSims, t2Avg3s: totalT2_3Made / numSims,
@@ -1242,7 +1566,7 @@
                 m_t1_FG2, m_t2_FG2, m_t1_FG3, m_t2_FG3,
                 m_t1_TO, m_t2_TO, m_t1_OR, m_t2_OR,
                 label: 'Monte Carlo',
-                desc: `${numSims.toLocaleString()} possession-level simulations`
+                desc: `${numSims.toLocaleString()} two-half sims (transition, stars, fouls, momentum)`
             };
         }
 
@@ -1253,7 +1577,6 @@
 
             const t1 = matchupTeam1;
             const t2 = matchupTeam2;
-            const HCA = 3.75;
             const year = document.getElementById('global-year').value || '2026';
 
             // Show loading state
@@ -1261,9 +1584,11 @@
             resultEl.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-orange-400"></i><p class="text-sm text-gray-400 mt-2">Running deep analysis...</p></div>';
             resultEl.classList.remove('hidden');
 
+            // Conference-tier HCA (power = 4.2, mid = 3.6, small = 3.0)
             let hca1 = 0, hca2 = 0;
-            if (matchupLocation === 'team1') hca1 = HCA;
-            if (matchupLocation === 'team2') hca2 = HCA;
+            if (matchupLocation === 'team1') hca1 = getHCA(t1.ConfShort);
+            if (matchupLocation === 'team2') hca2 = getHCA(t2.ConfShort);
+            const HCA = hca1 || hca2 || 0;
 
             // Fetch full datasets and filter by TeamName (ratings API has no TeamID)
             const archiveDate = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -1271,8 +1596,12 @@
             const findTeam = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
             let ff1, ff2, ht1, ht2, pd1, pd2, arch1, arch2, ms1, ms2, confMap = {};
             let injuryData = null;
+            let vegasOdds = null;
+            let starsAll = {};
+            window._matchupIntel = null;
             try {
-                const [ffAll, htAll, pdAll, archAll, confAll, msAll, injData] = await Promise.all([
+                const gameDate = document.getElementById('global-date').value || new Date().toISOString().split('T')[0];
+                const [ffAll, htAll, pdAll, archAll, confAll, msAll, injData, oddsAll, intelAll, starsData] = await Promise.all([
                     fetchAPI(`/four-factors?year=${year}`),
                     fetchAPI(`/height?year=${year}`),
                     fetchAPI(`/pointdist?year=${year}`),
@@ -1280,8 +1609,12 @@
                     fetchAPI(`/conf-ratings?year=${year}`).catch(() => []),
                     fetchAPI(`/misc-stats?year=${year}`).catch(() => []),
                     fetchAPI(`/injuries/matchup?team1=${encodeURIComponent(t1Name)}&team2=${encodeURIComponent(t2Name)}`).catch(() => null),
+                    fetchAPI(`/odds?date=${gameDate}`).catch(() => []),
+                    fetchAPI(`/game-intel?date=${gameDate}`).catch(() => []),
+                    fetchAPI('/stars').catch(() => ({})),
                 ]);
                 injuryData = injData;
+                starsAll = starsData || {};
                 // Build conference rating lookup
                 const seen = {};
                 (Array.isArray(confAll) ? confAll : []).forEach(c => {
@@ -1297,6 +1630,43 @@
                 arch2 = findTeam(archAll, t2Name);
                 ms1 = findTeam(msAll, t1Name);
                 ms2 = findTeam(msAll, t2Name);
+                // Find Vegas odds for this matchup
+                if (Array.isArray(oddsAll)) {
+                    const nt1 = t1Name.toLowerCase().replace(/\./g, '').trim();
+                    const nt2 = t2Name.toLowerCase().replace(/\./g, '').trim();
+                    for (const od of oddsAll) {
+                        const sh = (od.home || '').toLowerCase().replace(/\./g, '').trim();
+                        const shf = (od.home_full || '').toLowerCase().replace(/\./g, '').trim();
+                        const sa = (od.away || '').toLowerCase().replace(/\./g, '').trim();
+                        const saf = (od.away_full || '').toLowerCase().replace(/\./g, '').trim();
+                        // t1=visitor, t2=home in typical matchup flow
+                        if (((nt2.includes(sh) || sh.includes(nt2) || nt2.includes(shf) || shf.includes(nt2)) &&
+                             (nt1.includes(sa) || sa.includes(nt1) || nt1.includes(saf) || saf.includes(nt1))) ||
+                            ((nt1.includes(sh) || sh.includes(nt1) || nt1.includes(shf) || shf.includes(nt1)) &&
+                             (nt2.includes(sa) || sa.includes(nt2) || nt2.includes(saf) || saf.includes(nt2)))) {
+                            vegasOdds = od;
+                            break;
+                        }
+                    }
+                }
+                // Find game intel (line movement + refs) for this matchup
+                if (Array.isArray(intelAll)) {
+                    const nt1 = t1Name.toLowerCase().replace(/\./g, '').trim();
+                    const nt2 = t2Name.toLowerCase().replace(/\./g, '').trim();
+                    for (const gi of intelAll) {
+                        const sh = (gi.home || '').toLowerCase().replace(/\./g, '').trim();
+                        const shf = (gi.home_full || '').toLowerCase().replace(/\./g, '').trim();
+                        const sa = (gi.away || '').toLowerCase().replace(/\./g, '').trim();
+                        const saf = (gi.away_full || '').toLowerCase().replace(/\./g, '').trim();
+                        if (((nt2.includes(sh) || sh.includes(nt2) || nt2.includes(shf) || shf.includes(nt2)) &&
+                             (nt1.includes(sa) || sa.includes(nt1) || nt1.includes(saf) || saf.includes(nt1))) ||
+                            ((nt1.includes(sh) || sh.includes(nt1) || nt1.includes(shf) || shf.includes(nt1)) &&
+                             (nt2.includes(sa) || sa.includes(nt2) || nt2.includes(saf) || saf.includes(nt2)))) {
+                            window._matchupIntel = gi;
+                            break;
+                        }
+                    }
+                }
             } catch (e) {
                 console.log('Some supplemental data failed to load:', e);
             }
@@ -1311,32 +1681,56 @@
             const t1InjPenalty = injuryData?.team1_impact?.adj_em_penalty || 0;
             const t2InjPenalty = injuryData?.team2_impact?.adj_em_penalty || 0;
             const injuryAdj = t2InjPenalty - t1InjPenalty; // positive = t1 healthier
-            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2, ht1, ht2, ms1, ms2, ff1, ff2, injuryAdj };
+            const stars1 = (starsAll && starsAll[t1Name]) || [];
+            const stars2 = (starsAll && starsAll[t2Name]) || [];
+            const extra = { styleClash, experience, momentum, confStrength, pd1, pd2, ht1, ht2, ms1, ms2, ff1, ff2, injuryAdj, stars1, stars2 };
+
+            // Merge supplemental data into team objects for ConRat v3
+            t1._ff = ff1; t1._ms = ms1; t1._ht = ht1;
+            t2._ff = ff2; t2._ms = ms2; t2._ht = ht2;
 
             // Run all four models with enrichment data
             const eff = modelEfficiency(t1, t2, hca1, hca2, extra);
-            const sim = modelSimilarOpponents(t1, t2, hca1, hca2);
-            const cr = modelConRat(t1, t2, hca1, hca2);
+            const sim = modelSimilarOpponents(t1, t2, hca1, hca2, extra);
+            const cr = modelConRat(t1, t2, hca1, hca2, extra);
             const mc = modelMonteCarlo(t1, t2, hca1, hca2, 5000, extra);
 
             // Dynamic composite weights based on data quality
-            // More data → trust MC & Efficiency more; weak schedule → lean on ConRat/SOS models
+            // More data → trust MC more; weak schedule → lean on ConRat/SOS models
             const hasRichData = !!(ff1 && ff2 && ms1 && ms2 && ht1 && ht2);
             const avgSOS = ((t1.SOS || 0) + (t2.SOS || 0)) / 2;
             const avgGames = ((t1.Wins||0) + (t1.Losses||0) + (t2.Wins||0) + (t2.Losses||0)) / 2;
-            // Base weights: Eff 25%, Similar 15%, ConRat 20%, MC 40%
-            let wEff = 0.25, wSim = 0.15, wCR = 0.20, wMC = 0.40;
-            if (!hasRichData) { wMC -= 0.10; wEff += 0.05; wCR += 0.05; } // less MC data → rely on efficiency
-            if (avgGames < 15) { wEff -= 0.05; wCR += 0.05; } // early season → ConRat more stable
-            if (Math.abs(avgSOS) > 5) { wSim += 0.05; wMC -= 0.05; } // strong SOS signal → trust SOS model
+            // Base weights: KenPom 10%, Similar 10%, ConRat 20%, MC 60%
+            let wEff = 0.10, wSim = 0.10, wCR = 0.20, wMC = 0.60;
+            if (!hasRichData) { wMC -= 0.10; wEff += 0.05; wCR += 0.05; } // less MC data → rely on KenPom
+            if (avgGames < 15) { wMC -= 0.05; wCR += 0.05; } // early season → ConRat more stable
+            if (Math.abs(avgSOS) > 5) { wSim += 0.03; wMC -= 0.03; } // strong SOS signal → trust SOS model
             // Normalize to sum to 1
             const wTotal = wEff + wSim + wCR + wMC;
             wEff /= wTotal; wSim /= wTotal; wCR /= wTotal; wMC /= wTotal;
 
-            const compositeT1Win = eff.t1WinProb * wEff + sim.t1WinProb * wSim + cr.t1WinProb * wCR + mc.t1WinProb * wMC;
-            const compositeMargin = eff.margin * wEff + sim.margin * wSim + cr.margin * wCR + mc.margin * wMC;
-            const compositeT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
-            const compositeT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
+            const rawCompositeMargin = eff.margin * wEff + sim.margin * wSim + cr.margin * wCR + mc.margin * wMC;
+            // Apply Vegas-style spread calibration (dampens extreme margins)
+            const compositeMargin = calibrateSpread(rawCompositeMargin);
+            const rawT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
+            const rawT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
+            const scoreMid = (rawT1Score + rawT2Score) / 2;
+            const compositeT1Score = scoreMid + compositeMargin / 2;
+            const compositeT2Score = scoreMid - compositeMargin / 2;
+            // Derive win prob from calibrated margin
+            const compositeAvgTempo = eff.tempo * wEff + sim.tempo * wSim + cr.tempo * wCR + mc.tempo * wMC;
+            const compositeSD = 11.0 * Math.sqrt(compositeAvgTempo / 67);
+            const compositeT1Win = gaussianCDF(compositeMargin / compositeSD);
+
+            // Model agreement score (0-100%): how much do the 4 models agree?
+            // Low agreement = unpredictable game, high variance
+            const modelProbs = [eff.t1WinProb, sim.t1WinProb, cr.t1WinProb, mc.t1WinProb];
+            const probMean = modelProbs.reduce((a, b) => a + b, 0) / 4;
+            const probVariance = modelProbs.reduce((sum, p) => sum + Math.pow(p - probMean, 2), 0) / 4;
+            // Max variance is 0.25 (two models at 0%, two at 100%). Scale to 0-100%.
+            const modelAgreement = Math.round(Math.max(0, (1 - probVariance / 0.0625)) * 100);
+            const modelConfidence = modelAgreement >= 85 ? 'High' : modelAgreement >= 65 ? 'Moderate' : 'Low';
+            const confidenceColor = modelAgreement >= 85 ? 'text-green-400' : modelAgreement >= 65 ? 'text-yellow-400' : 'text-red-400';
 
             const winner = compositeT1Score > compositeT2Score ? t1 : t2;
             const loser = compositeT1Score > compositeT2Score ? t2 : t1;
@@ -1379,6 +1773,42 @@
                         <p class="text-gray-400 text-xs uppercase tracking-wider mb-1">Composite Prediction</p>
                         <p class="text-3xl font-bold text-orange-400">${winner.TeamName}</p>
                         <p class="text-sm text-gray-400 mt-1">${(winnerProb * 100).toFixed(0)}% chance to win • ${spread.toFixed(1)} pt spread</p>
+                        ${vegasOdds ? `<div class="mt-2 inline-flex items-center gap-3 bg-gray-900/60 rounded-lg px-4 py-2 border border-cyan-500/30">
+                            <span class="text-[10px] text-gray-500 uppercase tracking-wider">DraftKings</span>
+                            <span class="text-sm font-bold text-cyan-400">${vegasOdds.details}</span>
+                            <span class="text-[10px] text-gray-500">O/U ${vegasOdds.over_under}</span>
+                            ${vegasOdds.spread !== null ? (() => {
+                                const vegasMargin = Math.abs(vegasOdds.spread);
+                                const ourMargin = spread;
+                                // Use home_favorite flag to determine if both sides agree on the winner
+                                // Our winner is always stored in 'winner', check if it matches home/away
+                                const wNorm = winner.TeamName.toLowerCase().replace(/\./g, '').trim();
+                                const t2Norm = t2.TeamName.toLowerCase().replace(/\./g, '').trim();
+                                const ourFavHome = wNorm === t2Norm; // t2 is the home team in matchup flow
+                                // Also check via odds team names for robustness
+                                const vegasHomeFull = (vegasOdds.home_full || '').toLowerCase().replace(/\./g, '').trim();
+                                const vegasHomeShort = (vegasOdds.home || '').toLowerCase().replace(/\./g, '').trim();
+                                const winnerIsVegasHome = wNorm.includes(vegasHomeShort) || vegasHomeShort.includes(wNorm) || wNorm.includes(vegasHomeFull) || vegasHomeFull.includes(wNorm);
+                                const sameWinner = vegasOdds.home_favorite === (ourFavHome || winnerIsVegasHome);
+                                const diff = sameWinner ? Math.abs(ourMargin - vegasMargin).toFixed(1) : (ourMargin + vegasMargin).toFixed(1);
+                                return '<span class=\"text-[10px] ' + (sameWinner ? 'text-green-400' : 'text-red-400') + '\">' + (sameWinner ? 'Same side' : 'Disagree') + ' (' + diff + 'pts off)</span>';
+                            })() : ''}
+                        </div>` : ''}
+                        ${(() => {
+                            const intel = window._matchupIntel;
+                            if (!intel) return '';
+                            let parts = [];
+                            if (intel.line_movement !== null && intel.line_movement !== 0) {
+                                const mv = intel.line_movement;
+                                const mvColor = Math.abs(mv) >= 2 ? 'text-yellow-400 font-bold' : 'text-gray-400';
+                                parts.push('<span class=\"text-[10px] ' + mvColor + '\">Line: ' + (intel.open_spread !== null ? intel.open_spread + ' → ' : '') + intel.current_spread + (Math.abs(mv) >= 2 ? ' ⚡' : '') + '</span>');
+                            }
+                            if (intel.officials && intel.officials.length > 0) {
+                                parts.push('<span class=\"text-[10px] text-gray-500\"><i class=\"fas fa-gavel mr-1\"></i>' + intel.officials.map(o => o.name).join(', ') + '</span>');
+                            }
+                            if (parts.length === 0) return '';
+                            return '<div class=\"mt-1.5 flex flex-wrap items-center justify-center gap-3\">' + parts.join('') + '</div>';
+                        })()}
                     </div>
 
                     <!-- Score Prediction -->
@@ -1412,7 +1842,7 @@
                             </div>
                         </div>
                         
-                        ${probBar('<i class="fas fa-calculator mr-1 text-blue-400"></i>Efficiency Model', eff.t1WinProb)}
+                        ${probBar('<i class="fas fa-calculator mr-1 text-blue-400"></i>KenPom Model', eff.t1WinProb)}
                         ${probBar('<i class="fas fa-users mr-1 text-purple-400"></i>Similar Opponents', sim.t1WinProb)}
                         ${probBar('<i class="fas fa-bolt mr-1 text-cyan-400"></i>ConRat Model', cr.t1WinProb)}
                         ${probBar('<i class="fas fa-dice mr-1 text-green-400"></i>' + mc.numSims.toLocaleString() + ' Simulations', mc.t1WinProb)}
@@ -1423,10 +1853,14 @@
                     </div>
 
                     <!-- Key Stats Grid -->
-                    <div class="grid grid-cols-4 gap-2 text-center text-sm mb-4">
+                    <div class="grid grid-cols-5 gap-2 text-center text-sm mb-4">
                         <div class="bg-gray-800 rounded-lg p-2">
                             <p class="text-gray-400 text-xs">Spread</p>
                             <p class="font-bold text-orange-400">${winner.TeamName.length > 10 ? winner.TeamName.substring(0,10) + '..' : winner.TeamName} -${spread.toFixed(1)}</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-2">
+                            <p class="text-gray-400 text-xs">Confidence</p>
+                            <p class="font-bold ${confidenceColor}">${modelConfidence} <span class="text-xs text-gray-500">${modelAgreement}%</span></p>
                         </div>
                         <div class="bg-gray-800 rounded-lg p-2">
                             <p class="text-gray-400 text-xs">Tempo</p>
@@ -1685,7 +2119,7 @@
                             80% range: ${mc.p10 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p10).toFixed(0)} to ${mc.p90 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p90).toFixed(0)} • 50% range: ${mc.p25 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p25).toFixed(0)} to ${mc.p75 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p75).toFixed(0)}
                         </div>
                         <div class="mt-2 text-center text-xs text-gray-600">
-                            Weights: Eff ${(wEff*100).toFixed(0)}% • SOS ${(wSim*100).toFixed(0)}% • ConRat ${(wCR*100).toFixed(0)}% • MC ${(wMC*100).toFixed(0)}%
+                            Weights: KenPom ${(wEff*100).toFixed(0)}% • SOS ${(wSim*100).toFixed(0)}% • ConRat ${(wCR*100).toFixed(0)}% • MC ${(wMC*100).toFixed(0)}%
                         </div>
                     </div>
 
@@ -1716,13 +2150,40 @@
                         <p class="text-xs text-yellow-400"><i class="fas fa-exclamation-triangle mr-1"></i>Luck factor: ${t1.TeamName} (${t1Luck > 0 ? '+' : ''}${t1Luck.toFixed(3)}), ${t2.TeamName} (${t2Luck > 0 ? '+' : ''}${t2Luck.toFixed(3)})</p>
                     </div>` : ''}
 
+                    <!-- Save Pick Button -->
+                    <div class="text-center mb-4">
+                        <button onclick="savePick()" id="save-pick-btn" class="px-6 py-2.5 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold rounded-lg text-sm transition-all">
+                            <i class="fas fa-bookmark mr-2"></i>Save Pick
+                        </button>
+                        <span id="save-pick-status" class="ml-2 text-xs text-gray-400"></span>
+                    </div>
+
                     <div class="text-center text-xs text-gray-500 border-t border-gray-600 pt-3">
-                        <p>Dynamic composite: Eff ${(wEff*100).toFixed(0)}% + SOS ${(wSim*100).toFixed(0)}% + ConRat ${(wCR*100).toFixed(0)}% + MC ${(wMC*100).toFixed(0)}% • HCA ${HCA}pts • σ=11</p>
+                        <p>Dynamic composite: KenPom ${(wEff*100).toFixed(0)}% + SOS ${(wSim*100).toFixed(0)}% + ConRat ${(wCR*100).toFixed(0)}% + MC ${(wMC*100).toFixed(0)}% • HCA ${HCA.toFixed(1)}pts • σ=${compositeSD.toFixed(1)} (tempo-adj)</p>
                         <p class="mt-1">MC Engine: Possession-level sim (2PT/3PT/TO/FT/OREB) • Matchup-adjusted rates • Correlated game factor • Two-way blocks • Height→OR% • Bench volatility</p>
                         <p class="mt-0.5">Enriched with: Four Factors style clash • Experience/Continuity • 28-day momentum • Conference strength • Coach clutch • FT clutch</p>
                     </div>
                 </div>
             `;
+            // Store current prediction data for save
+            window._lastPrediction = {
+                team1: t1.TeamName, team2: t2.TeamName,
+                location: matchupLocation,
+                predicted_winner: winner.TeamName,
+                predicted_spread: parseFloat(spread.toFixed(1)),
+                predicted_t1_score: parseFloat(compositeT1Score.toFixed(1)),
+                predicted_t2_score: parseFloat(compositeT2Score.toFixed(1)),
+                win_probability: parseFloat((winnerProb * 100).toFixed(1)),
+                model_agreement: modelAgreement,
+                confidence: modelConfidence,
+                raw_spread: parseFloat(rawCompositeMargin.toFixed(1)),
+                vegas_spread: vegasOdds ? vegasOdds.spread : null,
+                vegas_details: vegasOdds ? vegasOdds.details : null,
+                vegas_ou: vegasOdds ? vegasOdds.over_under : null,
+                line_movement: window._matchupIntel ? window._matchupIntel.line_movement : null,
+                open_spread: window._matchupIntel ? window._matchupIntel.open_spread : null,
+                officials: window._matchupIntel ? (window._matchupIntel.officials || []).map(o => o.name).join(', ') : null,
+            };
             document.getElementById('matchup-result').classList.remove('hidden');
         }
 
@@ -1758,11 +2219,25 @@
             const container = document.getElementById('compare-content');
             container.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl"></i></div>';
             
-            const teamData = await Promise.all(
-                compareTeams.map(t => fetchAPI(`/ratings?year=${year}&team_id=${t.id}`))
-            );
+            // Fetch ratings + supplemental data for ConRat calculation
+            const [ratingsData, ffData, htData, msData] = await Promise.all([
+                Promise.all(compareTeams.map(t => fetchAPI(`/ratings?year=${year}&team_id=${t.id}`))),
+                fetchAPI(`/four-factors?year=${year}`).catch(() => []),
+                fetchAPI(`/height?year=${year}`).catch(() => []),
+                fetchAPI(`/misc-stats?year=${year}`).catch(() => [])
+            ]);
             
-            const teams = teamData.map((d, i) => ({ ...compareTeams[i], data: Array.isArray(d) ? d[0] : d }));
+            const findSupp = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
+            const teams = ratingsData.map((d, i) => {
+                const data = Array.isArray(d) ? d[0] : d;
+                // Merge supplemental data for ConRat
+                if (data) {
+                    data._ff = findSupp(ffData, data.TeamName);
+                    data._ms = findSupp(msData, data.TeamName);
+                    data._ht = findSupp(htData, data.TeamName);
+                }
+                return { ...compareTeams[i], data };
+            });
             
             container.innerHTML = `
                 <div class="grid grid-cols-${teams.length} gap-4">
@@ -1776,20 +2251,22 @@
                 </div>
                 <div class="mt-6 space-y-2">
                     ${[
+                        ['ConRat', 'Connor Rating', t => t.data ? calcConRat(t.data).toFixed(1) : '-', true],
                         ['AdjEM', 'Efficiency Margin', t => t.data?.AdjEM?.toFixed(1), true],
                         ['AdjOE', 'Offense', t => t.data?.AdjOE?.toFixed(1), true],
                         ['AdjDE', 'Defense', t => t.data?.AdjDE?.toFixed(1), false],
                         ['AdjTempo', 'Tempo', t => t.data?.AdjTempo?.toFixed(1), null],
                         ['SOS', 'Strength of Schedule', t => t.data?.SOS?.toFixed(2), true],
+                        ['NCSOS', 'Non-Conf SOS', t => t.data?.NCSOS?.toFixed(2), true],
                         ['Luck', 'Luck', t => t.data?.Luck?.toFixed(3), null]
                     ].map(([key, label, fn, higherBetter]) => {
                         const vals = teams.map(t => parseFloat(fn(t)) || 0);
                         const best = higherBetter === null ? null : (higherBetter ? Math.max(...vals) : Math.min(...vals));
                         return `
                             <div class="grid grid-cols-${teams.length + 1} gap-4 py-2 border-b border-gray-700">
-                                <div class="text-gray-400 text-sm">${label}</div>
+                                <div class="text-gray-400 text-sm ${key === 'ConRat' ? 'font-bold text-orange-400' : ''}">${label}</div>
                                 ${teams.map((t, i) => `
-                                    <div class="text-center font-semibold ${vals[i] === best ? 'text-green-400' : ''}">${fn(t) || '-'}</div>
+                                    <div class="text-center font-semibold ${vals[i] === best ? 'text-green-400' : ''} ${key === 'ConRat' ? 'text-lg' : ''}">${fn(t) || '-'}</div>
                                 `).join('')}
                             </div>
                         `;
@@ -1888,7 +2365,7 @@
             document.getElementById(`tab-${tab}`).classList.remove('text-gray-400');
             
             // Show/hide date filter
-            document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive' && tab !== 'recap');
+            document.getElementById('date-filter').classList.toggle('hidden', tab !== 'games' && tab !== 'archive' && tab !== 'recap' && tab !== 'picks');
             
             // Auto-set date when switching to date-based tabs
             if ((tab === 'games' || tab === 'archive') && !document.getElementById('global-date').value) {
@@ -1947,7 +2424,8 @@
                 conferences: loadConferences,
                 games: loadGames,
                 recap: loadRecap,
-                archive: loadArchive
+                archive: loadArchive,
+                picks: loadPicks
             };
             if (loaders[currentTab]) await loaders[currentTab]();
         }
@@ -1975,7 +2453,25 @@
             if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
             
             let allTeams = Array.isArray(data) ? data.slice(0, 400) : [];
-            
+
+            // Fetch supplemental data for ConRat v3 (four-factors, misc-stats, height)
+            try {
+                const [ffData, msData, htData] = await Promise.all([
+                    fetchAPI(`/four-factors?year=${year}`),
+                    fetchAPI(`/misc-stats?year=${year}`),
+                    fetchAPI(`/height?year=${year}`)
+                ]);
+                const ffMap = {}, msMap = {}, htMap = {};
+                if (Array.isArray(ffData)) ffData.forEach(f => { ffMap[f.TeamName] = f; });
+                if (Array.isArray(msData)) msData.forEach(m => { msMap[m.TeamName] = m; });
+                if (Array.isArray(htData)) htData.forEach(h => { htMap[h.TeamName] = h; });
+                allTeams.forEach(t => {
+                    t._ff = ffMap[t.TeamName] || null;
+                    t._ms = msMap[t.TeamName] || null;
+                    t._ht = htMap[t.TeamName] || null;
+                });
+            } catch (e) { console.log('Supplemental data for ConRat v3 not loaded:', e); }
+
             // Add ConRat to each team
             allTeams.forEach(t => { t._conRat = calcConRat(t); });
             // Assign AdjEM rank (sort descending)
@@ -2289,11 +2785,193 @@
                 </table>`;
         }
 
+        // ═══════════════════════════════════════════════════════
+        // PREDICTION LOG: Save, Load, and Track Picks
+        // ═══════════════════════════════════════════════════════
+        async function savePick() {
+            if (!window._lastPrediction) return;
+            const btn = document.getElementById('save-pick-btn');
+            const status = document.getElementById('save-pick-status');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving...';
+            try {
+                const dateInput = document.getElementById('global-date').value || new Date().toISOString().split('T')[0];
+                const body = { ...window._lastPrediction, game_date: dateInput };
+                const resp = await fetch(`${API_BASE}/predictions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    btn.innerHTML = '<i class="fas fa-check mr-2"></i>Saved!';
+                    btn.classList.remove('from-green-600', 'to-green-700');
+                    btn.classList.add('from-gray-600', 'to-gray-700');
+                    status.textContent = `Pick #${data.id} saved`;
+                } else {
+                    throw new Error(data.error || 'Save failed');
+                }
+            } catch (e) {
+                btn.innerHTML = '<i class="fas fa-times mr-2"></i>Error';
+                status.textContent = e.message;
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-bookmark mr-2"></i>Save Pick';
+                }, 2000);
+            }
+        }
+
+        async function loadPicks() {
+            const { date } = getFilters();
+            const accContainer = document.getElementById('picks-accuracy');
+            const container = document.getElementById('picks-results');
+
+            // Fetch accuracy stats + predictions
+            let accData, preds;
+            try {
+                const [accResp, predResp] = await Promise.all([
+                    fetch(`${API_BASE}/predictions/accuracy`),
+                    fetch(`${API_BASE}/predictions${date ? '?date=' + date : ''}`)
+                ]);
+                accData = await accResp.json();
+                preds = await predResp.json();
+            } catch (e) {
+                container.innerHTML = '<div class="text-center text-red-400 py-8">Error loading picks</div>';
+                return;
+            }
+
+            // Accuracy dashboard
+            if (accData && accData.completed > 0) {
+                const pickColor = accData.pick_accuracy >= 65 ? 'text-green-400' : accData.pick_accuracy >= 50 ? 'text-yellow-400' : 'text-red-400';
+                const atsColor = accData.ats_accuracy >= 55 ? 'text-green-400' : accData.ats_accuracy >= 48 ? 'text-yellow-400' : 'text-red-400';
+                accContainer.innerHTML = `
+                    <div class="bg-gradient-to-r from-gray-800 to-gray-700 rounded-xl p-5 border border-gray-600">
+                        <h3 class="text-lg font-bold text-white mb-4"><i class="fas fa-chart-line mr-2 text-orange-400"></i>Model Accuracy Dashboard</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                            <div class="bg-gray-900/60 rounded-lg p-3">
+                                <p class="text-2xl font-bold ${pickColor}">${accData.pick_accuracy}%</p>
+                                <p class="text-xs text-gray-400 mt-1">Straight Up</p>
+                                <p class="text-xs text-gray-500">${accData.pick_record}</p>
+                            </div>
+                            <div class="bg-gray-900/60 rounded-lg p-3">
+                                <p class="text-2xl font-bold ${atsColor}">${accData.ats_accuracy}%</p>
+                                <p class="text-xs text-gray-400 mt-1">vs Spread</p>
+                                <p class="text-xs text-gray-500">${accData.ats_record}</p>
+                            </div>
+                            <div class="bg-gray-900/60 rounded-lg p-3">
+                                <p class="text-2xl font-bold text-blue-400">${accData.avg_spread_error}</p>
+                                <p class="text-xs text-gray-400 mt-1">Avg Error</p>
+                                <p class="text-xs text-gray-500">pts off</p>
+                            </div>
+                            <div class="bg-gray-900/60 rounded-lg p-3">
+                                <p class="text-2xl font-bold text-purple-400">${accData.median_spread_error}</p>
+                                <p class="text-xs text-gray-400 mt-1">Median Error</p>
+                                <p class="text-xs text-gray-500">pts off</p>
+                            </div>
+                            <div class="bg-gray-900/60 rounded-lg p-3">
+                                <p class="text-2xl font-bold text-orange-400">${accData.completed}</p>
+                                <p class="text-xs text-gray-400 mt-1">Graded</p>
+                                <p class="text-xs text-gray-500">${accData.pending || 0} pending</p>
+                            </div>
+                        </div>
+                    </div>`;
+            } else {
+                accContainer.innerHTML = `
+                    <div class="bg-gray-800 rounded-xl p-5 border border-gray-700 text-center">
+                        <p class="text-gray-400"><i class="fas fa-chart-line mr-2"></i>No graded picks yet. Save picks from the matchup predictor and enter results to track accuracy.</p>
+                    </div>`;
+            }
+
+            // Picks list
+            if (!Array.isArray(preds) || preds.length === 0) {
+                container.innerHTML = '<div class="text-center text-gray-400 py-8"><i class="fas fa-bookmark mr-2"></i>No picks saved' + (date ? ' for this date' : '') + '. Run a matchup prediction and click "Save Pick".</div>';
+                return;
+            }
+
+            container.innerHTML = preds.map(p => {
+                const isGraded = p.result_entered;
+                const borderColor = isGraded ? (p.pick_correct ? 'border-green-500/50' : 'border-red-500/50') : 'border-gray-700';
+                const resultBadge = isGraded
+                    ? (p.pick_correct
+                        ? '<span class="px-2 py-0.5 bg-green-900/50 text-green-400 rounded text-xs font-bold">WIN</span>'
+                        : '<span class="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs font-bold">LOSS</span>')
+                    : '<span class="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-xs font-bold">PENDING</span>';
+                const atsBadge = isGraded
+                    ? (p.ats_correct
+                        ? '<span class="px-1.5 py-0.5 bg-green-900/30 text-green-400 rounded text-[10px]">ATS ✓</span>'
+                        : '<span class="px-1.5 py-0.5 bg-red-900/30 text-red-400 rounded text-[10px]">ATS ✗</span>')
+                    : '';
+                const confBadge = p.confidence === 'High' ? 'text-green-400' : p.confidence === 'Moderate' ? 'text-yellow-400' : 'text-red-400';
+
+                return `
+                <div class="bg-gray-800 rounded-lg p-4 mb-3 border ${borderColor} transition-all">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            ${resultBadge} ${atsBadge}
+                            <span class="text-xs text-gray-500">${p.game_date}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs ${confBadge}">${p.confidence} (${p.model_agreement}%)</span>
+                            ${!isGraded ? `<button onclick="promptResult('${p.id}','${(p.team1||'').replace(/'/g,"\\'")}','${(p.team2||'').replace(/'/g,"\\'")}') " class="text-xs bg-blue-600/30 hover:bg-blue-600/50 text-blue-400 px-2 py-1 rounded"><i class="fas fa-pencil-alt mr-1"></i>Enter Result</button>` : ''}
+                            <button onclick="deletePick('${p.id}')" class="text-xs text-gray-600 hover:text-red-400 px-1"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3 text-center">
+                        <div>
+                            <p class="font-bold ${p.predicted_winner === p.team1 ? 'text-orange-400' : 'text-gray-300'}">${p.team1}</p>
+                            <p class="text-lg font-bold">${p.predicted_t1_score?.toFixed(0) || '-'}</p>
+                            ${isGraded ? `<p class="text-xs text-gray-500">Actual: <span class="text-white font-bold">${p.actual_t1_score}</span></p>` : ''}
+                        </div>
+                        <div class="flex flex-col items-center justify-center">
+                            <p class="text-xs text-gray-500">${p.location === 'neutral' ? 'Neutral' : p.location === 'team1' ? '@ ' + p.team1 : '@ ' + p.team2}</p>
+                            <p class="text-sm font-bold text-orange-400 mt-1">${p.predicted_winner} -${p.predicted_spread}</p>
+                            ${p.vegas_details ? `<p class="text-[10px] text-cyan-400 font-semibold">${p.vegas_details}</p>` : ''}
+                            <p class="text-[10px] text-gray-500">${p.win_probability}% win prob</p>
+                            ${isGraded ? `<p class="text-[10px] text-gray-500 mt-1">Error: ${p.spread_error} pts</p>` : ''}
+                        </div>
+                        <div>
+                            <p class="font-bold ${p.predicted_winner === p.team2 ? 'text-orange-400' : 'text-gray-300'}">${p.team2}</p>
+                            <p class="text-lg font-bold">${p.predicted_t2_score?.toFixed(0) || '-'}</p>
+                            ${isGraded ? `<p class="text-xs text-gray-500">Actual: <span class="text-white font-bold">${p.actual_t2_score}</span></p>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function promptResult(predId, team1, team2) {
+            const t1Score = prompt(`Enter ${team1 || 'Team 1'} final score:`);
+            if (t1Score === null) return;
+            const t2Score = prompt(`Enter ${team2 || 'Team 2'} final score:`);
+            if (t2Score === null) return;
+            if (isNaN(t1Score) || isNaN(t2Score)) { alert('Please enter valid numbers'); return; }
+
+            fetch(`${API_BASE}/predictions/${predId}/result`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actual_t1_score: parseInt(t1Score), actual_t2_score: parseInt(t2Score) })
+            })
+            .then(r => r.json())
+            .then(() => loadPicks())
+            .catch(e => alert('Error: ' + e.message));
+        }
+
+        function deletePick(predId) {
+            if (!confirm('Delete this pick?')) return;
+            fetch(`${API_BASE}/predictions/${predId}`, { method: 'DELETE' })
+                .then(() => loadPicks())
+                .catch(e => alert('Error: ' + e.message));
+        }
+
         async function loadGames() {
             const { date } = getFilters();
             if (!date) { document.getElementById('games-results').innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">Select a date to view games</div>'; return; }
             
-            const data = await fetchAPI(`/fanmatch?date=${date}`);
+            const [data, oddsData, intelData] = await Promise.all([
+                fetchAPI(`/fanmatch?date=${date}`),
+                fetchAPI(`/odds?date=${date}`).catch(() => []),
+                fetchAPI(`/game-intel?date=${date}`).catch(() => [])
+            ]);
             const container = document.getElementById('games-results');
             
             if (data.error) {
@@ -2305,14 +2983,95 @@
             }
             if (!Array.isArray(data) || data.length === 0) { container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-8">No games found for this date</div>'; return; }
             
-            // Sort by thrill score descending (best games first)
-            const sorted = [...data].sort((a, b) => (b.ThrillScore || 0) - (a.ThrillScore || 0));
+            // Build odds lookup by normalized name
+            const oddsMap = {};
+            if (Array.isArray(oddsData)) {
+                oddsData.forEach(o => {
+                    const key = (o.home || '').toLowerCase().replace(/\./g, '').trim() + '|' + (o.away || '').toLowerCase().replace(/\./g, '').trim();
+                    const keyFull = (o.home_full || '').toLowerCase().replace(/\./g, '').trim() + '|' + (o.away_full || '').toLowerCase().replace(/\./g, '').trim();
+                    oddsMap[key] = o;
+                    oddsMap[keyFull] = o;
+                });
+            }
+            // Build intel lookup (line movement + refs)
+            const intelMap = {};
+            if (Array.isArray(intelData)) {
+                intelData.forEach(g => {
+                    const key = (g.home || '').toLowerCase().replace(/\./g, '').trim() + '|' + (g.away || '').toLowerCase().replace(/\./g, '').trim();
+                    const keyFull = (g.home_full || '').toLowerCase().replace(/\./g, '').trim() + '|' + (g.away_full || '').toLowerCase().replace(/\./g, '').trim();
+                    intelMap[key] = g;
+                    intelMap[keyFull] = g;
+                });
+            }
+            function findIntel(kpHome, kpVisitor) {
+                const nh = kpHome.toLowerCase().replace(/\./g, '').trim();
+                const nv = kpVisitor.toLowerCase().replace(/\./g, '').trim();
+                let g = intelMap[nh + '|' + nv];
+                if (g) return g;
+                if (Array.isArray(intelData)) {
+                    for (const gi of intelData) {
+                        const sh = (gi.home || '').toLowerCase().replace(/\./g, '').trim();
+                        const shf = (gi.home_full || '').toLowerCase().replace(/\./g, '').trim();
+                        const sa = (gi.away || '').toLowerCase().replace(/\./g, '').trim();
+                        const saf = (gi.away_full || '').toLowerCase().replace(/\./g, '').trim();
+                        if ((nh.includes(sh) || sh.includes(nh) || nh.includes(shf) || shf.includes(nh)) &&
+                            (nv.includes(sa) || sa.includes(nv) || nv.includes(saf) || saf.includes(nv)))
+                            return gi;
+                    }
+                }
+                return null;
+            }
+            function findOdds(kpHome, kpVisitor) {
+                const nh = kpHome.toLowerCase().replace(/\./g, '').trim();
+                const nv = kpVisitor.toLowerCase().replace(/\./g, '').trim();
+                let o = oddsMap[nh + '|' + nv];
+                if (o) return o;
+                // Partial match
+                if (Array.isArray(oddsData)) {
+                    for (const od of oddsData) {
+                        const sh = (od.home || '').toLowerCase().replace(/\./g, '').trim();
+                        const shf = (od.home_full || '').toLowerCase().replace(/\./g, '').trim();
+                        const sa = (od.away || '').toLowerCase().replace(/\./g, '').trim();
+                        const saf = (od.away_full || '').toLowerCase().replace(/\./g, '').trim();
+                        if ((nh.includes(sh) || sh.includes(nh) || nh.includes(shf) || shf.includes(nh)) &&
+                            (nv.includes(sa) || sa.includes(nv) || nv.includes(saf) || saf.includes(nv)))
+                            return od;
+                    }
+                }
+                return null;
+            }
+            
+            // Pre-compute discrepancy for each game using absolute margins
+            const enriched = data.map(g => {
+                const odds = findOdds(g.Home || '', g.Visitor || '');
+                const kpMargin = Math.abs((g.HomePred || 0) - (g.VisitorPred || 0));
+                const vegasMargin = odds ? Math.abs(odds.spread) : null;
+                // Check if KenPom and Vegas agree on the favorite
+                const kpFavHome = (g.HomePred || 0) > (g.VisitorPred || 0);
+                const vegasFavHome = odds ? odds.home_favorite : null;
+                const sameSide = odds ? (kpFavHome === vegasFavHome) : null;
+                const discrepancy = vegasMargin !== null
+                    ? (sameSide ? Math.abs(kpMargin - vegasMargin) : kpMargin + vegasMargin)
+                    : -1;
+                return { ...g, _odds: odds, _discrepancy: discrepancy, _sameSide: sameSide };
+            });
+            // Sort: widest discrepancies first; games without odds go last
+            const sorted = enriched.sort((a, b) => b._discrepancy - a._discrepancy);
             
             container.innerHTML = sorted.slice(0, 50).map(g => {
-                const homeWP = (g.HomeWP || 0) * 100;
+                const homeWP = g.HomeWP || 0;
                 const visWP = 100 - homeWP;
                 const homeFavored = homeWP >= 50;
                 const margin = Math.abs(g.HomePred - g.VisitorPred);
+                const odds = g._odds;
+                const vegasLine = odds ? odds.details : null;
+                const vegasSpread = odds ? odds.spread : null;
+                const vegasOU = odds ? odds.over_under : null;
+                const discrepancy = g._discrepancy;
+                const intel = findIntel(g.Home || '', g.Visitor || '');
+                const lineMove = intel ? intel.line_movement : null;
+                const openSpread = intel ? intel.open_spread : null;
+                const officials = intel ? (intel.officials || []) : [];
                 return `
                 <div class="bg-gray-800 rounded-lg p-4 border border-gray-700 hover:border-orange-500/40 transition-all">
                     <div class="flex items-center justify-between mb-3">
@@ -2323,9 +3082,13 @@
                             <p class="text-xs mt-1 ${!homeFavored ? 'text-orange-400 font-semibold' : 'text-gray-500'}">${visWP.toFixed(0)}%</p>
                         </div>
                         <div class="px-3 text-center">
-                            <span class="text-gray-500 text-xs">@</span>
+                            <span class="text-gray-500 text-xs">${odds && odds.neutral_site ? '🏟 Neutral' : '@'}</span>
                             <p class="text-xs text-gray-500 mt-1">${g.PredTempo?.toFixed(0) || '-'} poss</p>
-                            <p class="text-xs text-gray-600 mt-1">by ${margin.toFixed(0)}</p>
+                            <p class="text-xs text-gray-600 mt-1">KP by ${margin.toFixed(0)}</p>
+                            ${vegasLine ? `<p class="text-[10px] text-cyan-400 mt-1 font-semibold">${vegasLine}</p>` : ''}
+                            ${vegasOU ? `<p class="text-[10px] text-gray-500">O/U ${vegasOU}</p>` : ''}
+                            ${lineMove !== null && lineMove !== 0 ? `<p class="text-[10px] ${Math.abs(lineMove) >= 2 ? 'text-yellow-400 font-bold' : 'text-gray-400'} mt-0.5">Line: ${openSpread !== null ? openSpread + ' → ' : ''}${intel.current_spread}${Math.abs(lineMove) >= 2 ? ' ⚡' : ''}</p>` : ''}
+                            ${discrepancy > 0 ? `<p class="text-[10px] ${discrepancy >= 5 ? 'text-red-400 font-bold' : discrepancy >= 3 ? 'text-yellow-400' : 'text-gray-500'} mt-0.5">${discrepancy.toFixed(1)}pt gap</p>` : ''}
                         </div>
                         <div class="text-center flex-1">
                             <p class="text-xs text-gray-500">#${g.HomeRank || '?'}</p>
@@ -2336,11 +3099,14 @@
                     </div>
                     <div class="flex items-center justify-between border-t border-gray-700 pt-2">
                         <span class="text-xs text-gray-500">Thrill: <span class="${(g.ThrillScore || 0) >= 60 ? 'text-green-400' : (g.ThrillScore || 0) >= 40 ? 'text-yellow-400' : 'text-gray-400'}">${g.ThrillScore?.toFixed(1) || '-'}</span></span>
-                        <button onclick="predictGame('${(g.Visitor || '').replace(/'/g, "\\'")}',' ${(g.Home || '').replace(/'/g, "\\'")}')"
+                        <button onclick="predictGame('${(g.Visitor || '').replace(/'/g, "\\'")}',' ${(g.Home || '').replace(/'/g, "\\'")}'${odds && odds.neutral_site ? ', true' : ''})"
                             class="text-xs bg-orange-500/20 hover:bg-orange-500/40 text-orange-400 px-3 py-1 rounded transition-all">
                             <i class="fas fa-exchange-alt mr-1"></i>Predict
                         </button>
                     </div>
+                    ${officials.length > 0 ? `<div class="border-t border-gray-700/50 pt-1.5 mt-1.5">
+                        <p class="text-[9px] text-gray-600"><i class="fas fa-gavel mr-1"></i>${officials.map(o => o.name).join(', ')}</p>
+                    </div>` : ''}
                 </div>`;
             }).join('');
         }
@@ -2362,11 +3128,18 @@
             const nextDate = new Date(recapDate); nextDate.setDate(nextDate.getDate() + 1);
             const nextDateStr = nextDate.toISOString().split('T')[0];
 
-            // Fetch fanmatch + game-day archive + next-day archive (for single-day diff)
-            const [fanmatch, archDay, archNext] = await Promise.all([
+            // Fetch fanmatch + game-day archive + next-day archive + ESPN scores + supplemental data
+            const [fanmatch, archDay, archNext, espnScores, ffAll, htAll, confAll, msAll, pdAll, starsAll] = await Promise.all([
                 fetchAPI(`/fanmatch?date=${date}`),
                 fetchAPI(`/archive?date=${date}`),
-                fetchAPI(`/archive?date=${nextDateStr}`)
+                fetchAPI(`/archive?date=${nextDateStr}`),
+                fetchAPI(`/scores?date=${date}`).catch(() => []),
+                fetchAPI(`/four-factors?year=${year}`).catch(() => []),
+                fetchAPI(`/height?year=${year}`).catch(() => []),
+                fetchAPI(`/conf-ratings?year=${year}`).catch(() => []),
+                fetchAPI(`/misc-stats?year=${year}`).catch(() => []),
+                fetchAPI(`/pointdist?year=${year}`).catch(() => []),
+                fetchAPI('/stars').catch(() => ({}))
             ]);
 
             if (fanmatch.error) {
@@ -2392,7 +3165,50 @@
             const nextMap = {};
             if (hasNext) archNext.forEach(t => { nextMap[t.TeamName] = t; });
 
-            const HCA = 3.75;
+            // Build supplemental lookup maps for composite model
+            const findTeam = (arr, name) => (Array.isArray(arr) ? arr : []).find(t => t.TeamName === name) || null;
+            const confMap = {};
+            if (Array.isArray(confAll)) confAll.forEach(c => { if (c.ConfShort && c.Rating) confMap[c.ConfShort] = c.Rating; });
+
+            // ESPN score matching: normalize names for fuzzy lookup
+            function normName(n) {
+                return (n || '').toLowerCase().replace(/\./g, '').replace(/[']/g, '').replace(/\s+/g, ' ')
+                    .replace(/ (bulldogs|wildcats|tigers|bears|eagles|hawks|huskies|knights|lions|panthers|warriors|wolves|cougars|cardinals|aggies|longhorns|gators|seminoles|wolverines|spartans|buckeyes|badgers|hoosiers|hawkeyes|boilermakers|terrapins|cornhuskers|illini|fighting irish|volunteers|razorbacks|crimson tide|rebels|commodores|gamecocks|mountaineers|cyclones|jayhawks|sooners|cowboys|red raiders|horned frogs|bears|bruins|trojans|beavers|ducks|sun devils|utes|buffaloes|golden gophers|nittany lions|scarlet knights|orange|blue devils|tar heels|demon deacons|yellow jackets|cavaliers|hokies|wolfpack|pirates|golden eagles|flyers|musketeers|blue jays|friars|hoyas|red storm|terriers|colonials|bonnies|explorers|dukes|billikens|spiders|rams|monarchs|phoenix|gaels|broncos|toreros|waves|dons|pilots|zags|lumberjacks|anteaters|highlanders|matadors|gauchos|mustangs|aztecs|falcons|rockets|bobcats|penguins|thundering herd|golden flashes|redhawks|zips|chippewas|broncos|cardinals|sycamores|braves|leathernecks|redbirds|salukis|shockers|jaguars|panthers|flames|bison|mastodons|kangaroos|grizzlies)$/i, '')
+                    .trim();
+            }
+            const scoreMap = {};
+            const hasScores = Array.isArray(espnScores) && espnScores.length > 0;
+            if (hasScores) {
+                espnScores.forEach(s => {
+                    // Index by multiple name variants for robust matching
+                    const keys = [
+                        normName(s.home) + '|' + normName(s.away),
+                        normName(s.home_full) + '|' + normName(s.away_full),
+                        normName(s.home) + '|' + normName(s.away_full),
+                        normName(s.home_full) + '|' + normName(s.away),
+                    ];
+                    keys.forEach(k => { scoreMap[k] = s; });
+                });
+            }
+            function findScore(kpHome, kpVisitor) {
+                const nh = normName(kpHome), nv = normName(kpVisitor);
+                // Try direct match
+                let s = scoreMap[nh + '|' + nv];
+                if (s) return s;
+                // Try partial match: find any score entry where both home & away partially match
+                if (hasScores) {
+                    for (const sc of espnScores) {
+                        const sh = normName(sc.home), shf = normName(sc.home_full);
+                        const sa = normName(sc.away), saf = normName(sc.away_full);
+                        if ((nh.includes(sh) || sh.includes(nh) || nh.includes(shf) || shf.includes(nh)) &&
+                            (nv.includes(sa) || sa.includes(nv) || nv.includes(saf) || saf.includes(nv))) {
+                            return sc;
+                        }
+                    }
+                }
+                return null;
+            }
+
             const games = [];
 
             for (const g of fanmatch) {
@@ -2403,35 +3219,66 @@
                 let homeEMChg, visEMChg, homeRkChg, visRkChg;
 
                 if (hasNext && nextMap[home] && nextMap[visitor]) {
-                    // Single-day diff: next-day AdjEM minus game-day AdjEM
                     homeEMChg = nextMap[home].AdjEM - dH.AdjEM;
                     visEMChg  = nextMap[visitor].AdjEM - dV.AdjEM;
-                    homeRkChg = (dH.RankAdjEM || 0) - (nextMap[home].RankAdjEM || 0); // lower rank# = better
+                    homeRkChg = (dH.RankAdjEM || 0) - (nextMap[home].RankAdjEM || 0);
                     visRkChg  = (dV.RankAdjEM || 0) - (nextMap[visitor].RankAdjEM || 0);
                 } else {
-                    // Fallback for latest date: AdjEMChg reflects game-to-current
                     homeEMChg = dH.AdjEMChg || 0;
                     visEMChg  = dV.AdjEMChg || 0;
                     homeRkChg = dH.RankChg || 0;
                     visRkChg  = dV.RankChg || 0;
                 }
 
-                // Result signal: positive = home outperformed visitor
+                // Actual scores from ESPN
+                const sc = findScore(home, visitor);
+                const hasActual = !!sc;
+                const actualHomeScore = hasActual ? sc.home_score : null;
+                const actualAwayScore = hasActual ? sc.away_score : null;
+                const actualMargin = hasActual ? (actualHomeScore - actualAwayScore) : null;
+                const actualWinner = hasActual ? (actualMargin >= 0 ? home : visitor) : null;
+
+                // Fallback to inferred winner if no ESPN score
                 const resultSignal = homeEMChg - visEMChg;
-                const inferredWinner = resultSignal >= 0 ? home : visitor;
-                const confidence = Math.abs(resultSignal);
+                const inferredWinner = hasActual ? actualWinner : (resultSignal >= 0 ? home : visitor);
+                const confidence = hasActual ? Math.abs(actualMargin) : Math.abs(resultSignal);
 
                 // KenPom's prediction
                 const kpPredMargin = (g.HomePred || 0) - (g.VisitorPred || 0);
                 const kpPredWinner = kpPredMargin >= 0 ? home : visitor;
 
-                // Our model: pre-game AdjEM diff + HCA
-                const ourMargin = (dH.AdjEM - dV.AdjEM) + HCA;
-                const ourPredWinner = ourMargin >= 0 ? home : visitor;
+                // Our model: 4-model composite (KenPom + Similar + ConRat + MC)
+                const ff1 = findTeam(ffAll, visitor), ff2 = findTeam(ffAll, home);
+                const ht1 = findTeam(htAll, visitor), ht2 = findTeam(htAll, home);
+                const ms1 = findTeam(msAll, visitor), ms2 = findTeam(msAll, home);
+                const pd1 = findTeam(pdAll, visitor), pd2 = findTeam(pdAll, home);
+                dV._ff = ff1; dV._ms = ms1; dV._ht = ht1;
+                dH._ff = ff2; dH._ms = ms2; dH._ht = ht2;
+                const styleClash = calcStyleClash(ff1, ff2);
+                const experience = calcExperienceAdj(ht1, ht2);
+                const confStrength = calcConfAdj(dV, dH, confMap);
+                const HCA = getHCA(dH.ConfShort);
+                const stars1 = (starsAll && starsAll[visitor]) || [];
+                const stars2 = (starsAll && starsAll[home]) || [];
+                const extra = { styleClash, experience, confStrength, ff1, ff2, ht1, ht2, ms1, ms2, pd1, pd2, injuryAdj: 0, stars1, stars2 };
+                const eff = modelEfficiency(dV, dH, 0, HCA, extra);
+                const sim = modelSimilarOpponents(dV, dH, 0, HCA, extra);
+                const cr = modelConRat(dV, dH, 0, HCA, extra);
+                const mc = modelMonteCarlo(dV, dH, 0, HCA, 1000, extra);
+                // Composite: KenPom 10%, Similar 10%, ConRat 20%, MC 60%, calibrated
+                const ourMargin = calibrateSpread(eff.margin * 0.10 + sim.margin * 0.10 + cr.margin * 0.20 + mc.margin * 0.60);
+                const ourPredWinner = ourMargin >= 0 ? visitor : home;
 
                 const ourCorrect = ourPredWinner === inferredWinner;
                 const kpCorrect  = kpPredWinner === inferredWinner;
-                const ourSurprise = Math.abs(ourMargin) * (ourCorrect ? 0 : 1) + confidence * (ourCorrect ? 0 : 1);
+
+                // Spread error: how far off was our predicted margin from the actual margin?
+                // ourMargin is visitor-relative (positive = visitor favored)
+                // Convert to home-relative: ourPredHome = -ourMargin
+                // actualMargin is home-relative (positive = home won by X)
+                const ourPredHome = -ourMargin;
+                const ourSpreadError = hasActual ? Math.abs(ourPredHome - actualMargin) : null;
+                const kpSpreadError = hasActual ? Math.abs(kpPredMargin - actualMargin) : null;
 
                 games.push({
                     home, visitor, homeRank: g.HomeRank, visRank: g.VisitorRank,
@@ -2440,7 +3287,9 @@
                     ourMargin, ourPredWinner, ourCorrect,
                     homeEMChg, visEMChg, homeRkChg, visRkChg,
                     resultSignal, inferredWinner, confidence,
-                    ourSurprise, thrillScore: g.ThrillScore || 0
+                    thrillScore: g.ThrillScore || 0,
+                    hasActual, actualHomeScore, actualAwayScore, actualMargin, actualWinner,
+                    ourSpreadError, kpSpreadError
                 });
             }
 
@@ -2449,49 +3298,71 @@
                 return;
             }
 
-            // Sort: biggest upsets / surprises first
-            const byMiss = [...games].sort((a, b) => b.confidence - a.confidence);
+            // Sort: biggest margin games first (by actual margin if available, else confidence)
+            const byMiss = [...games].sort((a, b) => (b.hasActual ? Math.abs(b.actualMargin) : b.confidence) - (a.hasActual ? Math.abs(a.actualMargin) : a.confidence));
             const ourRight = games.filter(g => g.ourCorrect).length;
             const kpRight  = games.filter(g => g.kpCorrect).length;
             const total = games.length;
+            const scored = games.filter(g => g.hasActual).length;
             const ourPct = ((ourRight / total) * 100).toFixed(0);
             const kpPct  = ((kpRight / total) * 100).toFixed(0);
             const bothRight  = games.filter(g => g.ourCorrect && g.kpCorrect).length;
             const weOnlyRight = games.filter(g => g.ourCorrect && !g.kpCorrect).length;
             const kpOnlyRight = games.filter(g => !g.ourCorrect && g.kpCorrect).length;
             const bothWrong  = games.filter(g => !g.ourCorrect && !g.kpCorrect).length;
-            const bigUpsets  = games.filter(g => !g.kpCorrect && g.confidence > 1.0);
+
+            // Spread accuracy stats (only for games with actual scores)
+            const scoredGames = games.filter(g => g.hasActual);
+            const ourErrors = scoredGames.map(g => g.ourSpreadError).filter(e => e !== null);
+            const kpErrors = scoredGames.map(g => g.kpSpreadError).filter(e => e !== null);
+            const ourAvgErr = ourErrors.length > 0 ? (ourErrors.reduce((a, b) => a + b, 0) / ourErrors.length).toFixed(1) : '-';
+            const kpAvgErr = kpErrors.length > 0 ? (kpErrors.reduce((a, b) => a + b, 0) / kpErrors.length).toFixed(1) : '-';
+            const ourMedErr = ourErrors.length > 0 ? ourErrors.sort((a, b) => a - b)[Math.floor(ourErrors.length / 2)].toFixed(1) : '-';
+            const kpMedErr = kpErrors.length > 0 ? kpErrors.sort((a, b) => a - b)[Math.floor(kpErrors.length / 2)].toFixed(1) : '-';
 
             const recapDateFmt = recapDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+            const scoreSource = scored > 0 ? `${scored}/${total} games with final scores from ESPN` : 'No ESPN scores available — using inferred winners';
 
             container.innerHTML = `
                 <div class="text-center mb-6">
                     <h2 class="text-2xl font-bold text-white mb-1"><i class="fas fa-clipboard-check mr-2 text-orange-400"></i>Game Recap</h2>
                     <p class="text-gray-400">${recapDateFmt} &mdash; ${total} games analyzed</p>
-                    <p class="text-xs text-gray-500 mt-1">Winners inferred from KenPom AdjEM movement on game day</p>
+                    <p class="text-xs ${scored > 0 ? 'text-green-400' : 'text-yellow-400'} mt-1"><i class="fas fa-${scored > 0 ? 'check-circle' : 'exclamation-circle'} mr-1"></i>${scoreSource}</p>
                 </div>
 
                 <!-- Accuracy Summary -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <div class="grid grid-cols-2 md:grid-cols-${scored > 0 ? '6' : '4'} gap-3 mb-6">
                     <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(ourPct) >= parseInt(kpPct) ? 'border-green-500/40' : 'border-gray-700'}">
                         <p class="text-3xl font-bold ${parseInt(ourPct) >= 70 ? 'text-green-400' : parseInt(ourPct) >= 55 ? 'text-yellow-400' : 'text-red-400'}">${ourPct}%</p>
-                        <p class="text-xs text-gray-400 mt-1">Our Model</p>
-                        <p class="text-xs text-gray-500">${ourRight}/${total} correct</p>
+                        <p class="text-xs text-gray-400 mt-1">Our SU Pick</p>
+                        <p class="text-xs text-gray-500">${ourRight}/${total}</p>
                     </div>
                     <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(kpPct) > parseInt(ourPct) ? 'border-blue-500/40' : 'border-gray-700'}">
                         <p class="text-3xl font-bold ${parseInt(kpPct) >= 70 ? 'text-blue-400' : parseInt(kpPct) >= 55 ? 'text-yellow-400' : 'text-red-400'}">${kpPct}%</p>
-                        <p class="text-xs text-gray-400 mt-1">KenPom</p>
-                        <p class="text-xs text-gray-500">${kpRight}/${total} correct</p>
+                        <p class="text-xs text-gray-400 mt-1">KenPom SU</p>
+                        <p class="text-xs text-gray-500">${kpRight}/${total}</p>
                     </div>
+                    ${scored > 0 ? `
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseFloat(ourAvgErr) <= parseFloat(kpAvgErr) ? 'border-green-500/40' : 'border-gray-700'}">
+                        <p class="text-3xl font-bold ${parseFloat(ourAvgErr) <= 10 ? 'text-green-400' : parseFloat(ourAvgErr) <= 14 ? 'text-yellow-400' : 'text-red-400'}">${ourAvgErr}</p>
+                        <p class="text-xs text-gray-400 mt-1">Our Avg Error</p>
+                        <p class="text-xs text-gray-500">pts off spread</p>
+                    </div>
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseFloat(kpAvgErr) < parseFloat(ourAvgErr) ? 'border-blue-500/40' : 'border-gray-700'}">
+                        <p class="text-3xl font-bold ${parseFloat(kpAvgErr) <= 10 ? 'text-blue-400' : parseFloat(kpAvgErr) <= 14 ? 'text-yellow-400' : 'text-red-400'}">${kpAvgErr}</p>
+                        <p class="text-xs text-gray-400 mt-1">KP Avg Error</p>
+                        <p class="text-xs text-gray-500">pts off spread</p>
+                    </div>
+                    ` : ''}
                     <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-700">
                         <p class="text-3xl font-bold text-purple-400">${weOnlyRight}</p>
                         <p class="text-xs text-gray-400 mt-1">Only We Got Right</p>
                         <p class="text-xs text-gray-500">KenPom missed</p>
                     </div>
                     <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-700">
-                        <p class="text-3xl font-bold text-orange-400">${bigUpsets.length}</p>
-                        <p class="text-xs text-gray-400 mt-1">Big Upsets</p>
-                        <p class="text-xs text-gray-500">AdjEM swing &gt; 1.0</p>
+                        <p class="text-3xl font-bold text-orange-400">${bothWrong}</p>
+                        <p class="text-xs text-gray-400 mt-1">Both Wrong</p>
+                        <p class="text-xs text-gray-500">${weOnlyRight + kpOnlyRight} split</p>
                     </div>
                 </div>
 
@@ -2508,27 +3379,32 @@
 
                 <!-- Game-by-Game Results -->
                 <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-                    <h3 class="text-sm font-bold text-white mb-3"><i class="fas fa-list mr-1 text-orange-400"></i>All Games (sorted by rating swing)</h3>
+                    <h3 class="text-sm font-bold text-white mb-3"><i class="fas fa-list mr-1 text-orange-400"></i>All Games (sorted by margin)</h3>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm">
                             <thead class="bg-gray-700">
                                 <tr>
                                     <th class="px-2 py-2 text-left">Matchup</th>
-                                    <th class="px-2 py-2 text-center tooltip" data-tip="KenPom predicted score margin">KP Pred</th>
-                                    <th class="px-2 py-2 text-center tooltip" data-tip="Our model predicted margin (AdjEM diff + HCA)">Our Pred</th>
-                                    <th class="px-2 py-2 text-center tooltip" data-tip="AdjEM change for each team on game day">Rating Swing</th>
-                                    <th class="px-2 py-2 text-center tooltip" data-tip="Rank change (positive = moved up)">Rk&Delta;</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="Actual final score">Score</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="KenPom predicted margin">KP Pred</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="Our model predicted margin">Our Pred</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="How many points off our spread was">Our Err</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="How many points off KenPom's spread was">KP Err</th>
                                     <th class="px-2 py-2 text-center">Us</th>
                                     <th class="px-2 py-2 text-center">KP</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${byMiss.map((g, i) => {
-                                    const isUpset = !g.kpCorrect && g.confidence > 0.5;
+                                    const isUpset = !g.kpCorrect && (g.hasActual ? Math.abs(g.actualMargin) > 3 : g.confidence > 0.5);
                                     const rowBg = i % 2 === 0 ? '' : 'bg-gray-700/20';
                                     const ourSpread = Math.abs(g.ourMargin).toFixed(1);
                                     const kpSpread = Math.abs(g.kpPredMargin).toFixed(0);
-                                    const winnerName = g.inferredWinner;
+                                    const scoreStr = g.hasActual
+                                        ? `<span class="${g.actualWinner === g.visitor ? 'text-white font-bold' : 'text-gray-400'}">${g.actualAwayScore}</span><span class="text-gray-600 mx-0.5">-</span><span class="${g.actualWinner === g.home ? 'text-white font-bold' : 'text-gray-400'}">${g.actualHomeScore}</span>`
+                                        : '<span class="text-gray-600">-</span>';
+                                    const ourErrStr = g.ourSpreadError !== null ? `<span class="${g.ourSpreadError <= 5 ? 'text-green-400' : g.ourSpreadError <= 10 ? 'text-yellow-400' : 'text-red-400'}">${g.ourSpreadError.toFixed(1)}</span>` : '-';
+                                    const kpErrStr = g.kpSpreadError !== null ? `<span class="${g.kpSpreadError <= 5 ? 'text-green-400' : g.kpSpreadError <= 10 ? 'text-yellow-400' : 'text-red-400'}">${g.kpSpreadError.toFixed(1)}</span>` : '-';
                                     return `<tr class="${rowBg} ${isUpset ? 'border-l-2 border-orange-500' : ''} hover:bg-gray-700/50">
                                         <td class="px-2 py-2 whitespace-nowrap">
                                             <span class="text-xs text-gray-500">#${g.visRank}</span>
@@ -2538,22 +3414,15 @@
                                             <span class="font-medium ${g.inferredWinner === g.home ? 'text-green-400' : ''}">${g.home}</span>
                                             ${isUpset ? '<span class="ml-1 text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded">UPSET</span>' : ''}
                                         </td>
+                                        <td class="px-2 py-2 text-center text-xs">${scoreStr}</td>
                                         <td class="px-2 py-2 text-center text-xs">
                                             <span class="${g.kpCorrect ? 'text-gray-300' : 'text-red-400'}">${g.kpPredWinner} -${kpSpread}</span>
                                         </td>
                                         <td class="px-2 py-2 text-center text-xs">
                                             <span class="${g.ourCorrect ? 'text-gray-300' : 'text-red-400'}">${g.ourPredWinner} -${ourSpread}</span>
                                         </td>
-                                        <td class="px-2 py-2 text-center text-xs whitespace-nowrap">
-                                            <span class="${g.visEMChg >= 0 ? 'text-green-400' : 'text-red-400'}">${g.visitor.split(' ').pop()} ${g.visEMChg >= 0 ? '+' : ''}${g.visEMChg.toFixed(2)}</span>
-                                            <span class="text-gray-600 mx-0.5">/</span>
-                                            <span class="${g.homeEMChg >= 0 ? 'text-green-400' : 'text-red-400'}">${g.home.split(' ').pop()} ${g.homeEMChg >= 0 ? '+' : ''}${g.homeEMChg.toFixed(2)}</span>
-                                        </td>
-                                        <td class="px-2 py-2 text-center text-xs whitespace-nowrap">
-                                            <span class="${g.visRkChg > 0 ? 'text-green-400' : g.visRkChg < 0 ? 'text-red-400' : 'text-gray-500'}">${g.visRkChg > 0 ? '+' : ''}${g.visRkChg}</span>
-                                            <span class="text-gray-600 mx-0.5">/</span>
-                                            <span class="${g.homeRkChg > 0 ? 'text-green-400' : g.homeRkChg < 0 ? 'text-red-400' : 'text-gray-500'}">${g.homeRkChg > 0 ? '+' : ''}${g.homeRkChg}</span>
-                                        </td>
+                                        <td class="px-2 py-2 text-center text-xs">${ourErrStr}</td>
+                                        <td class="px-2 py-2 text-center text-xs">${kpErrStr}</td>
                                         <td class="px-2 py-2 text-center">${g.ourCorrect ? '<i class="fas fa-check text-green-400"></i>' : '<i class="fas fa-times text-red-400"></i>'}</td>
                                         <td class="px-2 py-2 text-center">${g.kpCorrect ? '<i class="fas fa-check text-blue-400"></i>' : '<i class="fas fa-times text-red-400"></i>'}</td>
                                     </tr>`;
@@ -2564,13 +3433,13 @@
                 </div>
 
                 <div class="text-center text-xs text-gray-600 mt-4">
-                    <p>Winners inferred from AdjEM changes on ${date}. Teams whose rating rose likely won; teams whose rating fell likely lost.</p>
-                    <p class="mt-0.5">Our model: pre-game AdjEM diff + ${HCA}pt HCA. Future: full MC simulation + learning from results.</p>
+                    <p>${scored > 0 ? 'Final scores from ESPN. ' : 'Winners inferred from AdjEM changes. '}Our model: 4-model composite (KenPom 10% + SOS 10% + ConRat 20% + MC 60%) with calibrated spread + tier-based HCA.</p>
+                    <p class="mt-0.5">Spread error = |predicted margin - actual margin|. Lower is better. Green &le; 5pts, Yellow &le; 10pts, Red &gt; 10pts.</p>
                 </div>
             `;
         }
 
-        async function predictGame(visitor, home) {
+        async function predictGame(visitor, home, neutralSite) {
             // Load teams before opening modal (openMatchupModal resets allTeamsData)
             const year = document.getElementById('global-year').value || '2026';
             const data = await fetchAPI(`/ratings?year=${year}`);
@@ -2589,7 +3458,7 @@
             document.getElementById('matchup-team2-info').classList.add('hidden');
             document.getElementById('matchup-result').classList.add('hidden');
             document.getElementById('predict-btn').disabled = true;
-            setMatchupLocation('team2'); // visitor @ home
+            setMatchupLocation(neutralSite ? 'neutral' : 'team2'); // neutral site or visitor @ home
 
             if (t1) selectMatchupTeam(1, t1);
             if (t2) selectMatchupTeam(2, t2);
