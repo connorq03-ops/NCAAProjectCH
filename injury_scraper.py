@@ -6,6 +6,7 @@ impact estimates for game simulations.
 """
 
 import os
+import re
 import json
 import hashlib
 import requests
@@ -96,7 +97,7 @@ class InjuryFetcher:
     def fetch_google_news(self, team_name: str, max_results: int = 10) -> List[Dict]:
         """Fetch team-specific injury news from Google News RSS."""
         # Use quotes around team name to avoid partial matches (e.g. "Arkansas" matching "Kansas")
-        query = f'"{team_name}" college basketball injury 2026'
+        query = f'"{team_name}" basketball injury OR out OR questionable OR day-to-day 2026'
         try:
             resp = self.session.get(
                 GOOGLE_NEWS_RSS + requests.utils.quote(query),
@@ -106,7 +107,7 @@ class InjuryFetcher:
             soup = BeautifulSoup(resp.text, 'xml')
             items = soup.find_all('item')
             results = []
-            cutoff = datetime.now() - timedelta(days=45)
+            cutoff = datetime.now() - timedelta(days=14)
             for item in items[:max_results]:
                 title = item.find('title').text if item.find('title') else ''
                 pub_date = item.find('pubDate').text if item.find('pubDate') else ''
@@ -325,7 +326,7 @@ NEWS:
     def get_matchup_injuries(self, team1: str, team2: str) -> Dict[str, Any]:
         """Get injury impact analysis for a specific matchup."""
         cache_key = f"matchup_{team1}_vs_{team2}"
-        cached = self.cache.get(cache_key, max_age_minutes=60)
+        cached = self.cache.get(cache_key, max_age_minutes=30)
         if cached and 'team1_injuries' in cached:
             return cached
 
@@ -464,15 +465,21 @@ NEWS ARTICLES:
         }
 
     def _apply_star_overrides(self, injuries: List[Dict]) -> List[Dict]:
-        """Override Claude's impact scores with our star player database when we have a match."""
+        """Override Claude's impact scores AND team names with our star player database."""
         for inj in injuries:
             player_name = inj.get('player', '')
             star = get_star_player(player_name)
             if star:
                 old_impact = inj.get('impact_score', 5)
+                old_team = inj.get('team', '')
                 inj['impact_score'] = star['impact']
                 inj['is_starter'] = star['tier'] in ('superstar', 'star', 'key_star', 'starter')
+                inj['position'] = star['position']
                 inj['star_verified'] = True
+                # Fix team assignment (handles transfers — Claude often uses old team)
+                if old_team.lower().strip() != star['team'].lower().strip():
+                    inj['team'] = star['team']
+                    print(f"[InjuryAnalyzer] Star team fix: {player_name} '{old_team}' -> '{star['team']}' (transfer/misattribution)")
                 if old_impact != star['impact']:
                     print(f"[InjuryAnalyzer] Star override: {player_name} impact {old_impact} -> {star['impact']} ({star['tier']})")
             else:
@@ -488,14 +495,20 @@ NEWS ARTICLES:
         if s == t:
             return True
         # Normalize common variations
-        replacements = {'.': '', "'": '', 'st ': 'state ', 'uconn': 'connecticut'}
+        replacements = {'.': '', "'": '', 'uconn': 'connecticut'}
         s_clean = s
         t_clean = t
         for old, new in replacements.items():
             s_clean = s_clean.replace(old, new)
             t_clean = t_clean.replace(old, new)
+        # Expand abbreviations AFTER dot removal: "st" -> "state"
+        s_clean = re.sub(r'\bst\b', 'state', s_clean)
+        t_clean = re.sub(r'\bst\b', 'state', t_clean)
         if s_clean == t_clean:
             return True
-        if len(t_clean) >= 5 and (s_clean.startswith(t_clean) or t_clean.startswith(s_clean)):
+        # Only allow startswith if the FULL last word matches (prevents "Michigan" matching "Michigan State")
+        s_words = s_clean.split()
+        t_words = t_clean.split()
+        if len(s_words) > 0 and len(t_words) > 0 and s_words == t_words:
             return True
         return False
