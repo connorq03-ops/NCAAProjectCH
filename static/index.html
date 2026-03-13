@@ -1434,10 +1434,24 @@
             const momentum = calcMomentum(arch1, arch2, t1, t2);
             const confStrength = calcConfAdj(t1, t2, confMap);
 
-            // Injury adjustments
-            const t1InjPenalty = injuryData?.team1_impact?.adj_em_penalty || 0;
-            const t2InjPenalty = injuryData?.team2_impact?.adj_em_penalty || 0;
-            const injuryAdj = t2InjPenalty - t1InjPenalty; // positive = t1 healthier
+            // Injury adjustments - recalculate penalty based only on "Out" status injuries (what's displayed)
+            const calcDisplayedPenalty = (injuries) => {
+                if (!injuries || !Array.isArray(injuries)) return 0;
+                const outInjuries = injuries.filter(i => i.status === 'Out');
+                if (outInjuries.length === 0) return 0;
+                let total = 0;
+                outInjuries.forEach(i => {
+                    const score = i.impact_score || 5;
+                    total += score * 1.0; // "Out" = full weight
+                });
+                return Math.round(total * 0.4 * 10) / 10; // 0.4 pts per impact point
+            };
+            const t1InjPenalty = calcDisplayedPenalty(injuryData?.team1_injuries);
+            const t2InjPenalty = calcDisplayedPenalty(injuryData?.team2_injuries);
+            // For model calculations, use full backend penalty (includes Questionable/Doubtful)
+            const t1InjPenaltyFull = injuryData?.team1_impact?.adj_em_penalty || 0;
+            const t2InjPenaltyFull = injuryData?.team2_impact?.adj_em_penalty || 0;
+            const injuryAdj = t2InjPenaltyFull - t1InjPenaltyFull; // positive = t1 healthier
             const stars1 = (starsAll && starsAll[t1Name]) || [];
             const stars2 = (starsAll && starsAll[t2Name]) || [];
             const extra = { styleClash, experience, momentum, confStrength, pd1, pd2, ht1, ht2, ms1, ms2, ff1, ff2, injuryAdj, stars1, stars2 };
@@ -1634,13 +1648,13 @@
                     </div>
 
                     <!-- Injury Report -->
-                    ${injuryData && (injuryData.team1_injuries?.length || injuryData.team2_injuries?.length) ? `
+                    ${injuryData && (injuryData.team1_injuries?.filter(i => i.status === 'Out').length || injuryData.team2_injuries?.filter(i => i.status === 'Out').length) ? `
                     <div class="bg-gray-800/40 rounded-xl p-4 mb-4 border ${injuryData.team1_impact?.severity === 'critical' || injuryData.team2_impact?.severity === 'critical' ? 'border-red-500/50' : injuryData.team1_impact?.severity === 'significant' || injuryData.team2_impact?.severity === 'significant' ? 'border-orange-500/40' : 'border-gray-700'}">
                         <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-medkit mr-1 text-red-400"></i>Injury Intelligence <span class="text-xs font-normal text-gray-500 ml-1">via Claude AI + ESPN/Google News</span></h4>
                         <div class="grid grid-cols-2 gap-3 mb-3">
                             <div class="bg-gray-900/50 rounded-lg p-3">
                                 <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName}</p>
-                                ${injuryData.team1_injuries?.length ? injuryData.team1_injuries.map(i => `
+                                ${injuryData.team1_injuries?.filter(i => i.status === 'Out').length ? injuryData.team1_injuries.filter(i => i.status === 'Out').map(i => `
                                     <div class="flex items-center gap-2 mb-1.5">
                                         <span class="inline-block w-2 h-2 rounded-full ${i.status === 'Out' ? 'bg-red-500' : i.status === 'Doubtful' ? 'bg-orange-500' : i.status === 'Questionable' ? 'bg-yellow-500' : 'bg-green-500'}"></span>
                                         <span class="text-xs text-white font-medium">${i.player}</span>
@@ -1655,7 +1669,7 @@
                             </div>
                             <div class="bg-gray-900/50 rounded-lg p-3">
                                 <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName}</p>
-                                ${injuryData.team2_injuries?.length ? injuryData.team2_injuries.map(i => `
+                                ${injuryData.team2_injuries?.filter(i => i.status === 'Out').length ? injuryData.team2_injuries.filter(i => i.status === 'Out').map(i => `
                                     <div class="flex items-center gap-2 mb-1.5">
                                         <span class="inline-block w-2 h-2 rounded-full ${i.status === 'Out' ? 'bg-red-500' : i.status === 'Doubtful' ? 'bg-orange-500' : i.status === 'Questionable' ? 'bg-yellow-500' : 'bg-green-500'}"></span>
                                         <span class="text-xs text-white font-medium">${i.player}</span>
@@ -1669,9 +1683,9 @@
                                 </div>
                             </div>
                         </div>
-                        ${Math.abs(injuryAdj) > 0.5 ? `<div class="text-center text-xs ${injuryAdj > 0 ? 'text-green-400' : 'text-red-400'}">
-                            <i class="fas fa-balance-scale mr-1"></i>Net injury edge: ${injuryAdj > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(injuryAdj).toFixed(1)} pts (healthier)
-                        </div>` : '<div class="text-center text-xs text-gray-500">Injury impact roughly equal</div>'}
+                        ${(t1InjPenalty > 0 || t2InjPenalty > 0) ? (Math.abs(t2InjPenalty - t1InjPenalty) > 0.5 ? `<div class="text-center text-xs ${(t2InjPenalty - t1InjPenalty) > 0 ? 'text-green-400' : 'text-red-400'}">
+                            <i class="fas fa-balance-scale mr-1"></i>Net injury edge: ${(t2InjPenalty - t1InjPenalty) > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(t2InjPenalty - t1InjPenalty).toFixed(1)} pts (healthier)
+                        </div>` : '<div class="text-center text-xs text-gray-500">Injury impact roughly equal</div>') : ''}
                     </div>
                     ` : injuryData ? `
                     <div class="bg-gray-800/40 rounded-xl p-3 mb-4 border border-gray-700">

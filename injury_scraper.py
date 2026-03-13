@@ -16,6 +16,8 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import anthropic
 from star_players import get_star_player, get_team_stars, build_star_context
+from nba_players import filter_nba_players
+from roster_verifier import verify_roster
 
 load_dotenv()
 
@@ -233,6 +235,10 @@ NEWS HEADLINES:
         try:
             response_text = self._ask_claude(prompt)
             injuries = self._parse_json_response(response_text)
+            # Filter out NBA/pro players
+            injuries = filter_nba_players(injuries)
+            # Verify players are on current rosters
+            injuries = verify_roster(injuries)
         except Exception as e:
             print(f"[InjuryAnalyzer] Claude error: {e}")
             injuries = []
@@ -284,7 +290,12 @@ NEWS HEADLINES:
         prompt = f"""Analyze these news articles about {team_name} basketball and extract CURRENT injury statuses.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}.
 
-CRITICAL: Only include players who ACTUALLY PLAY FOR {team_name}. Do NOT include players from other teams even if they appear in the articles. Be careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State"). Verify each player's team from the article context.
+VERIFICATION PROTOCOL:
+1. CROSS-REFERENCE: If a player appears in multiple articles, use the MOST RECENT article's status
+2. RECENCY CHECK: Prioritize articles from the last 7 days. Ignore articles older than 14 days unless no recent info exists
+3. RETURN-TO-PLAY: If any article mentions a player "returned", "back in lineup", "cleared to play", or "available" - DO NOT include them
+4. TEAM VERIFICATION: Only include players who ACTUALLY PLAY FOR {team_name}. Be careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State")
+5. CONFIDENCE: Only include injuries you are confident about based on multiple sources or very recent single source
 {star_context}
 For each injured player on {team_name}, provide:
 - team: "{team_name}"
@@ -295,8 +306,9 @@ For each injured player on {team_name}, provide:
 - is_starter: true/false
 - impact_score: 1-10 (USE the KEY PLAYERS REFERENCE above if the player is listed there)
 - date_reported: Most recent report date (YYYY-MM-DD)
+- confidence: "high" (multiple recent sources or official report) or "medium" (single recent source) or "low" (old/unclear source)
 
-Only include players with ACTIVE injuries (not returned players). Use the most recent article for each player's status.
+IMPORTANT: Only include players with ACTIVE injuries confirmed in the last 7 days. Exclude anyone mentioned as returned/available.
 Return ONLY a JSON array. If no current injuries for {team_name}, return [].
 
 NEWS:
@@ -305,10 +317,16 @@ NEWS:
         try:
             response_text = self._ask_claude(prompt)
             injuries = self._parse_json_response(response_text)
+            # Filter out NBA/pro players
+            injuries = filter_nba_players(injuries)
+            # Override impact scores / fix team names BEFORE team filter
+            injuries = self._apply_star_overrides(injuries)
+            # Verify players are on current rosters
+            injuries = verify_roster(injuries)
             # Post-processing: drop any injuries misattributed to wrong team
             injuries = [i for i in injuries if self._team_match(i.get('team', ''), team_name)]
-            # Override impact scores with star player database
-            injuries = self._apply_star_overrides(injuries)
+            # Filter out low-confidence and stale reports
+            injuries = self._filter_by_confidence_and_recency(injuries)
         except Exception as e:
             print(f"[InjuryAnalyzer] Claude error for {team_name}: {e}")
             injuries = []
@@ -339,7 +357,13 @@ NEWS:
         prompt = f"""Analyze these injury news articles for an upcoming game: {team1} vs {team2}.
 Today's date is {datetime.now().strftime('%Y-%m-%d')}.
 
-CRITICAL: Only include players who ACTUALLY PLAY FOR either {team1} or {team2}. Do NOT include players from other teams that happen to appear in the articles. Be very careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State", "Michigan" vs "Michigan State"). Verify each player's team from the article context before including them.
+VERIFICATION PROTOCOL:
+1. CROSS-REFERENCE: If a player appears in multiple articles, use the MOST RECENT article's status
+2. RECENCY CHECK: Prioritize articles from the last 7 days. Ignore articles older than 14 days unless no recent info exists
+3. RETURN-TO-PLAY: If any article mentions a player "returned", "back in lineup", "cleared to play", "available", or "will play" - DO NOT include them as injured
+4. TEAM VERIFICATION: Only include players who ACTUALLY PLAY FOR either {team1} or {team2}. Be very careful with similar team names (e.g. "Kansas" vs "Arkansas", "Mississippi" vs "Mississippi State", "Indiana" vs "Indiana State", "Michigan" vs "Michigan State")
+5. STATUS ACCURACY: If an article says "expected to play" or "game-time decision", use "Questionable" not "Out"
+6. CONFIDENCE: Only include injuries you are confident about based on multiple sources or very recent single source
 
 KEY PLAYERS REFERENCE (use these impact scores when the player matches):
 {star_ref}
@@ -353,8 +377,9 @@ For each player with a CURRENT injury affecting either {team1} or {team2}, provi
 - injury: Brief injury type
 - is_starter: true/false
 - impact_score: 1-10 (USE the KEY PLAYERS REFERENCE above if the player is listed there)
+- confidence: "high" (multiple recent sources or official report) or "medium" (single recent source) or "low" (old/unclear source)
 
-Only include ACTIVE injuries — not players who have returned. Use most recent information.
+IMPORTANT: Only include players with ACTIVE injuries confirmed in the last 7 days. Exclude anyone mentioned as returned/available/will play.
 Return ONLY a JSON array. If both teams are healthy, return [].
 
 NEWS ARTICLES:
@@ -363,6 +388,12 @@ NEWS ARTICLES:
         try:
             response_text = self._ask_claude(prompt)
             all_injuries = self._parse_json_response(response_text)
+            # Filter out NBA/pro players
+            all_injuries = filter_nba_players(all_injuries)
+            # Verify players are on current rosters
+            all_injuries = verify_roster(all_injuries)
+            # Filter out low-confidence and stale reports
+            all_injuries = self._filter_by_confidence_and_recency(all_injuries)
             # Post-processing: override impact scores with star player database
             all_injuries = self._apply_star_overrides(all_injuries)
         except Exception as e:
@@ -463,6 +494,41 @@ NEWS ARTICLES:
             "summary": summary,
             "severity": severity
         }
+
+    def _filter_by_confidence_and_recency(self, injuries: List[Dict]) -> List[Dict]:
+        """Filter out low-confidence injuries and stale reports."""
+        filtered = []
+        now = datetime.now()
+        
+        for inj in injuries:
+            # Check confidence level
+            confidence = inj.get('confidence', 'medium').lower()
+            if confidence == 'low':
+                print(f"[InjuryAnalyzer] Filtered out {inj.get('player', 'Unknown')} - low confidence")
+                continue
+            
+            # Check report date recency
+            date_str = inj.get('date_reported', '')
+            if date_str:
+                try:
+                    report_date = datetime.strptime(date_str, '%Y-%m-%d')
+                    days_old = (now - report_date).days
+                    
+                    # Filter out reports older than 14 days
+                    if days_old > 14:
+                        print(f"[InjuryAnalyzer] Filtered out {inj.get('player', 'Unknown')} - report is {days_old} days old")
+                        continue
+                    
+                    # Warn on reports 7-14 days old
+                    if days_old > 7:
+                        print(f"[InjuryAnalyzer] Warning: {inj.get('player', 'Unknown')} injury report is {days_old} days old")
+                except ValueError:
+                    # Invalid date format, keep but warn
+                    print(f"[InjuryAnalyzer] Warning: Invalid date format for {inj.get('player', 'Unknown')}: {date_str}")
+            
+            filtered.append(inj)
+        
+        return filtered
 
     def _apply_star_overrides(self, injuries: List[Dict]) -> List[Dict]:
         """Override Claude's impact scores AND team names with our star player database."""
