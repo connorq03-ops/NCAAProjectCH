@@ -16,6 +16,12 @@ from injury_scraper import InjuryAnalyzer
 from star_players import get_team_stars, STAR_PLAYERS
 from star_scraper import build_dynamic_stars
 from backtester import Backtester
+from bracket_simulator import BracketSimulator
+from bracket_data import (
+    REGIONS, FIRST_FOUR, SEED_MAP, REGION_MAP,
+    FINAL_FOUR_PAIRINGS, ROUND_NAMES,
+    get_all_team_names, normalize_team_name,
+)
 
 load_dotenv()
 
@@ -898,6 +904,186 @@ def get_ats_history():
 def get_cache_stats():
     """Return cache hit/miss stats and rate limit info."""
     return jsonify(api_cache.stats())
+
+
+# ═══════════════════════════════════════════════════════
+# Bracket Simulator Endpoints
+# ═══════════════════════════════════════════════════════
+
+_bracket_sim = BracketSimulator(client, api_cache)
+_bracket_sim_state = {
+    'status': 'idle',       # idle | running | complete | error
+    'progress': 0,
+    'message': '',
+    'results': None,
+    'error': None,
+    'started_at': None,
+    'completed_at': None,
+}
+_bracket_sim_lock = threading.Lock()
+
+
+def _run_bracket_sim(num_tournaments, num_sims_per_game):
+    """Background thread target for bracket simulation."""
+    global _bracket_sim_state
+    try:
+        with _bracket_sim_lock:
+            _bracket_sim_state['status'] = 'running'
+            _bracket_sim_state['progress'] = 0
+            _bracket_sim_state['message'] = 'Prefetching KenPom data...'
+            _bracket_sim_state['started_at'] = time.time()
+
+        # Prefetch all team data
+        num_teams = _bracket_sim.prefetch_data()
+        with _bracket_sim_lock:
+            _bracket_sim_state['message'] = f'Loaded {num_teams} teams. Starting simulations...'
+            _bracket_sim_state['progress'] = 5
+
+        def progress_cb(pct, msg):
+            with _bracket_sim_lock:
+                _bracket_sim_state['progress'] = 5 + pct * 0.95
+                _bracket_sim_state['message'] = msg
+
+        results = _bracket_sim.run(
+            num_tournaments=num_tournaments,
+            num_sims_per_game=num_sims_per_game,
+            progress_callback=progress_cb)
+
+        with _bracket_sim_lock:
+            _bracket_sim_state['status'] = 'complete'
+            _bracket_sim_state['progress'] = 100
+            _bracket_sim_state['message'] = 'Simulation complete'
+            _bracket_sim_state['results'] = results
+            _bracket_sim_state['completed_at'] = time.time()
+            _bracket_sim_state['error'] = None
+
+        # Cache results persistently (24-hour TTL)
+        api_cache.set('bracket_sim_results', {}, results)
+
+    except Exception as e:
+        with _bracket_sim_lock:
+            _bracket_sim_state['status'] = 'error'
+            _bracket_sim_state['message'] = str(e)
+            _bracket_sim_state['error'] = str(e)
+            _bracket_sim_state['completed_at'] = time.time()
+
+
+@app.route('/api/bracket-simulate', methods=['POST'])
+def start_bracket_simulation():
+    """Trigger a bracket simulation (runs in background thread).
+
+    Body (optional): {num_tournaments: 1000, num_sims_per_game: 500}
+    """
+    with _bracket_sim_lock:
+        if _bracket_sim_state['status'] == 'running':
+            return jsonify({
+                'error': 'Simulation already running',
+                'progress': _bracket_sim_state['progress'],
+                'message': _bracket_sim_state['message'],
+            }), 409
+
+    body = request.get_json(force=True, silent=True) or {}
+    num_tournaments = min(body.get('num_tournaments', 1000), 10000)
+    num_sims_per_game = min(body.get('num_sims_per_game', 500), 2000)
+
+    with _bracket_sim_lock:
+        _bracket_sim_state['status'] = 'running'
+        _bracket_sim_state['progress'] = 0
+        _bracket_sim_state['message'] = 'Initializing...'
+        _bracket_sim_state['results'] = None
+        _bracket_sim_state['error'] = None
+
+    thread = threading.Thread(
+        target=_run_bracket_sim,
+        args=(num_tournaments, num_sims_per_game),
+        daemon=True)
+    thread.start()
+
+    return jsonify({
+        'status': 'started',
+        'num_tournaments': num_tournaments,
+        'num_sims_per_game': num_sims_per_game,
+    }), 202
+
+
+@app.route('/api/bracket-simulate/status', methods=['GET'])
+def bracket_simulation_status():
+    """Check the status of a running bracket simulation."""
+    with _bracket_sim_lock:
+        elapsed = None
+        if _bracket_sim_state['started_at']:
+            end = _bracket_sim_state['completed_at'] or time.time()
+            elapsed = round(end - _bracket_sim_state['started_at'], 1)
+        return jsonify({
+            'status': _bracket_sim_state['status'],
+            'progress': round(_bracket_sim_state['progress'], 1),
+            'message': _bracket_sim_state['message'],
+            'elapsed_seconds': elapsed,
+            'has_results': _bracket_sim_state['results'] is not None,
+            'error': _bracket_sim_state['error'],
+        })
+
+
+@app.route('/api/bracket-results', methods=['GET'])
+def get_bracket_results():
+    """Get cached bracket simulation results."""
+    # Check in-memory first
+    with _bracket_sim_lock:
+        if _bracket_sim_state['results']:
+            return jsonify(_bracket_sim_state['results'])
+
+    # Fall back to persistent cache
+    cached = api_cache.get('bracket_sim_results', {}, ttl=86400)
+    if cached:
+        return jsonify(cached)
+
+    return jsonify({'error': 'No simulation results available. POST /api/bracket-simulate first.'}), 404
+
+
+@app.route('/api/bracket', methods=['GET'])
+def get_bracket_data():
+    """Get raw bracket structure (regions, First Four, seeds)."""
+    return jsonify({
+        'regions': {name: [(t1, t2) for t1, t2 in matchups]
+                    for name, matchups in REGIONS.items()},
+        'first_four': FIRST_FOUR,
+        'seed_map': SEED_MAP,
+        'region_map': REGION_MAP,
+        'final_four_pairings': FINAL_FOUR_PAIRINGS,
+        'round_names': ROUND_NAMES,
+        'total_teams': len(get_all_team_names()),
+    })
+
+
+@app.route('/api/bracket-team/<team_name>', methods=['GET'])
+def get_bracket_team(team_name):
+    """Get detailed bracket simulation results for a specific team."""
+    normalized = normalize_team_name(team_name)
+
+    # Check in-memory results
+    with _bracket_sim_lock:
+        results = _bracket_sim_state.get('results')
+
+    if not results:
+        cached = api_cache.get('bracket_sim_results', {}, ttl=86400)
+        if cached:
+            results = cached
+
+    if not results:
+        return jsonify({'error': 'No simulation results. POST /api/bracket-simulate first.'}), 404
+
+    team_probs = results.get('team_probs', {})
+    data = team_probs.get(normalized)
+    if not data:
+        return jsonify({'error': f'Team "{normalized}" not found in results'}), 404
+
+    return jsonify({
+        'team': normalized,
+        'seed': data['seed'],
+        'region': REGION_MAP.get(normalized),
+        'rounds': data['rounds'],
+        'champion_prob': data['champion_prob'],
+    })
 
 
 @app.route('/')
