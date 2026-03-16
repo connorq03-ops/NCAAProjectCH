@@ -40,9 +40,11 @@ function calcStarImpact(stars) {
     return { usage: cap, fg2Bonus: totalUsage > 0 ? wFG2 / totalUsage : 0, fg3Bonus: totalUsage > 0 ? wFG3 / totalUsage : 0 };
 }
 
-function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
-                 defStealRate, starUsage, starFG2, starFG3, initMom,
-                 benchDepth, isSecondHalf, incomingLead, defProfile) {
+function simHalf(cfg) {
+    const { halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
+            defStealRate, starUsage, starFG2, starFG3, initMom,
+            benchDepth, isSecondHalf, incomingLead, defProfile,
+            starFoulState, starFoulProneness, foulClimate, streakiness } = cfg;
     let points = 0, possUsed = 0, makes2 = 0, makes3 = 0, tos = 0;
     let ftMade = 0, ftAtt = 0, orebs = 0, attempts = 0;
     let transitionPts = 0;
@@ -61,6 +63,33 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
     let crunchTimePoss = 0;
     let desperationPoss = 0;
     let intentionalFoulPoss = 0;
+
+    // ── Plan 06: Player Foul Trouble ──
+    const MAX_FOULS = 5;
+    const FOUL_SIT_THRESHOLD_H1 = 2;
+    const FOUL_SIT_THRESHOLD_H2 = 4;
+    const FOUL_RETURN_PCT = 0.80;
+    let starFouls = starFoulState ? starFoulState.fouls : 0;
+    let starIsSitting = starFoulState ? starFoulState.isSitting : false;
+    let starSatPoss = 0;
+    let starFouledOut = false;
+    const baseStarFoulRate = 0.035 + (starFoulProneness || 0) * 0.02;
+
+    // ── Plan 08: Three-Point Streak Tracking ──
+    const teamStreakiness = streakiness || 1.0;
+    let streak3 = 0;
+    const STREAK_DECAY = 0.65;
+    const HOT_BONUS_PER = 1.2 * teamStreakiness;
+    const COLD_PENALTY_PER = 1.0 * teamStreakiness;
+    const MAX_STREAK_EFFECT = 5.0 * teamStreakiness;
+    const STREAK_RATE_BONUS = 0.8 * teamStreakiness;
+    const STREAK_RATE_PENALTY = 0.6 * teamStreakiness;
+    let maxHotStreak = 0, maxColdStreak = 0;
+    let hotPossessions = 0, coldPossessions = 0;
+
+    // ── Plan 09: Referee Foul Climate ──
+    const refClimate = foulClimate || 1.0;
+    let bonusReachedPoss = -1;
 
     while (possLeft > 0 && possUsed < maxPoss) {
         possLeft--; possUsed++;
@@ -91,6 +120,18 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
                 gs_3RateAdj = -6;
                 gs_toPctAdj = -1;
                 gs_ftrAdj = 4;
+                // Plan 07: Leading by 8+ in crunch → burn clock aggressively
+                if (runningLead >= 8 && Math.random() < 0.15) {
+                    if (Math.random() * 100 < fg2 * 0.60) {
+                        points += 2; makes2++; runningLead += 2;
+                        mom = Math.min(mom + 0.3, 3);
+                    }
+                    possLeft--; possUsed++;
+                    continue;
+                }
+            } else if (isCrunchTime && (-runningLead) >= 6) {
+                // Plan 07: Trailing by 6+ in crunch → quick shots, push pace
+                if (Math.random() < 0.10) { possLeft++; }
             } else if (isLateHalf && runningLead >= 10) {
                 gs_3RateAdj = -3;
                 gs_toPctAdj = -0.5;
@@ -106,6 +147,27 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
         const fatigueTOMod = 1 + fatiguePenalty * 0.5;
         totalFatiguePenalty += fatiguePenalty;
 
+        // ── Plan 06: Star Foul Trouble Check ──
+        if (!starIsSitting && !starFouledOut && Math.random() < baseStarFoulRate) {
+            starFouls++;
+            if (starFouls >= MAX_FOULS) {
+                starFouledOut = true;
+                starIsSitting = true;
+            } else if (!isSecondHalf && starFouls >= FOUL_SIT_THRESHOLD_H1) {
+                starIsSitting = true;
+            } else if (isSecondHalf && starFouls >= FOUL_SIT_THRESHOLD_H2) {
+                starIsSitting = true;
+            }
+        }
+        // Star Return from Foul Trouble
+        if (starIsSitting && !starFouledOut) {
+            const returnThreshold = isSecondHalf ? PHASE_CRUNCH_START - 0.05 : FOUL_RETURN_PCT;
+            if (progressPct >= returnThreshold) {
+                starIsSitting = false;
+            }
+        }
+        if (starIsSitting) starSatPoss++;
+
         // ── Bench Rotation: Star Rest ──
         const restWindowStart = Math.floor(halfPoss * 0.28);
         const restWindowEnd = Math.floor(halfPoss * 0.52);
@@ -115,7 +177,10 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
         if (isRestPoss) restPossCount++;
         const effectiveStarUsage = isRestPoss ? starUsage * 0.15 : starUsage;
 
-        const isStar = Math.random() < effectiveStarUsage;
+        // Plan 06: Override star usage when sitting due to foul trouble
+        const foulTroubleStarUsage = starIsSitting ? starUsage * 0.10 : effectiveStarUsage;
+
+        const isStar = Math.random() < foulTroubleStarUsage;
         const sFG2 = isStar ? starFG2 : 0;
         const sFG3 = isStar ? starFG3 : 0;
 
@@ -139,9 +204,12 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
             continue;
         }
 
-        const drewFoul = Math.random() < 0.20;
+        // Plan 09: Foul probability scaled by referee climate
+        const baseFoulProb = 0.20 * refClimate;
+        const drewFoul = Math.random() < baseFoulProb;
         if (drewFoul) defFouls++;
 
+        if (drewFoul && defFouls >= 7 && bonusReachedPoss === -1) bonusReachedPoss = possUsed;
         if (drewFoul && defFouls >= 7 && Math.random() < 0.45) {
             let bonusMade = 0;
             if (defFouls >= 10) {
@@ -161,7 +229,8 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
             continue;
         }
 
-        if (!drewFoul && Math.random() < ftr / 100 * 0.38) {
+        // Plan 09: FTR-based shooting foul, scaled by referee foul climate
+        if (!drewFoul && Math.random() < (ftr * refClimate) / 100 * 0.38) {
             defFouls++;
             const numFTs = Math.random() < 0.25 ? 3 : 2;
             let made = 0;
@@ -189,11 +258,20 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
         }
 
         attempts++;
-        const is3pt = Math.random() * 100 < clamp(rate3 + gs_3RateAdj, 15, 65);
+        // Plan 08: Streak-modified 3PT rate and accuracy
+        const streakRateAdj = streak3 > 0
+            ? Math.min(streak3 * STREAK_RATE_BONUS, 4)
+            : Math.max(streak3 * STREAK_RATE_PENALTY, -3);
+        const streakFGAdj = streak3 > 0
+            ? Math.min(streak3 * HOT_BONUS_PER, MAX_STREAK_EFFECT)
+            : Math.max(streak3 * COLD_PENALTY_PER, -MAX_STREAK_EFFECT);
+
+        const is3pt = Math.random() * 100 < clamp(rate3 + gs_3RateAdj + streakRateAdj, 15, 65);
         if (is3pt) {
-            if (Math.random() * 100 < (fg3 + sFG3 * disruptStarMod + momFG * 0.5 - gs_fgPenalty + disrupt3Mod) * fatigueFGMod) {
+            if (Math.random() * 100 < (fg3 + sFG3 * disruptStarMod + momFG * 0.5 - gs_fgPenalty + disrupt3Mod + streakFGAdj) * fatigueFGMod) {
                 points += 3; makes3++; runningLead += 3;
                 mom = Math.min(mom + 1.5, 3);
+                streak3 = streak3 > 0 ? streak3 + 1 : 1;
                 if (Math.random() < 0.02) {
                     defFouls++;
                     ftAtt++;
@@ -201,9 +279,11 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
                 }
             } else {
                 mom = Math.max(mom - 0.5, -2);
+                streak3 = streak3 < 0 ? streak3 - 1 : -1;
                 if (Math.random() * 100 < orPct * 0.80) { possLeft++; orebs++; }
             }
         } else {
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             if (Math.random() * 100 < (fg2 + sFG2 * disruptStarMod + momFG * 0.7 - gs_fgPenalty * 0.5 + disrupt2Mod) * fatigueFGMod) {
                 points += 2; makes2++; runningLead += 2;
                 mom = Math.min(mom + 1, 3);
@@ -217,13 +297,22 @@ function simHalf(halfPoss, fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
                 if (Math.random() * 100 < orPct) { possLeft++; orebs++; }
             }
         }
+        // Plan 08: Track streak extremes
+        if (streak3 > maxHotStreak) maxHotStreak = streak3;
+        if (streak3 < -maxColdStreak) maxColdStreak = -streak3;
+        if (streak3 >= 2) hotPossessions++;
+        if (streak3 <= -2) coldPossessions++;
     }
     return { points, possUsed, makes2, makes3, tos, ftMade, ftAtt, orebs, attempts,
              transitionPts, momentum: mom, defFouls,
              avgFatiguePenalty: possUsed > 0 ? totalFatiguePenalty / possUsed : 0,
              restPossessions: restPossCount,
              crunchTimePoss, desperationPoss, intentionalFoulPoss,
-             finalLead: runningLead };
+             finalLead: runningLead,
+             starFoulState: { fouls: starFouls, isSitting: starIsSitting, fouledOut: starFouledOut },
+             starSatPoss, starFouledOut,
+             bonusReachedAtPoss: bonusReachedPoss,
+             maxHotStreak, maxColdStreak, hotPossessions, coldPossessions };
 }
 
 function simOvertime(fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
@@ -322,10 +411,47 @@ self.onmessage = function(e) {
     let t1SloppyGames = 0, t1DisciplinedGames = 0;
     let t2SloppyGames = 0, t2DisciplinedGames = 0;
 
+    // ── Plan 07: Tempo Tracking ──
+    const t1Pull = p.t1PreferredTempo || p.gameTempoCtr;
+    const t2Pull = p.t2PreferredTempo || p.gameTempoCtr;
+    const t1Ctrl = p.t1TempoControl || 0.50;
+    const t2Ctrl = p.t2TempoControl || 0.50;
+    let totalContestedTempo = 0;
+    let h1TempoTotal = 0, h2TempoTotal = 0;
+
+    // ── Plan 06: Foul Trouble Tracking ──
+    let t1StarSatTotal = 0, t2StarSatTotal = 0;
+    let t1StarFouledOutGames = 0, t2StarFouledOutGames = 0;
+    let t1StarFoulTroubleGames = 0, t2StarFoulTroubleGames = 0;
+
+    // ── Plan 08: Streak Tracking ──
+    let t1TotalHotPoss = 0, t2TotalHotPoss = 0;
+    let t1TotalColdPoss = 0, t2TotalColdPoss = 0;
+    let t1MaxHotEver = 0, t2MaxHotEver = 0;
+
+    // ── Plan 09: Referee Stats Tracking ──
+    const refClimate = p.refFoulClimate || 1.0;
+    let totalT1DefFouls = 0, totalT2DefFouls = 0;
+    let t1EarlyBonusGames = 0, t2EarlyBonusGames = 0;
+
     for (let i = 0; i < p.numSims; i++) {
         // ── Shared game environment factor ──
         const gameFactor = randNormal(0, 1.2);
-        const gamePoss = clamp(randNormal(p.gameTempoCtr, 3.0), 55, 85);
+
+        // ── Plan 07: Contested Tempo ──
+        // Each team pulls toward their preferred pace, weighted by control rating
+        const totalCtrl = t1Ctrl + t2Ctrl;
+        const contestedTempo = (t1Pull * t1Ctrl + t2Pull * t2Ctrl) / totalCtrl;
+        const tempoNoise = randNormal(0, 2.5);
+        // Defensive-leaning slow teams win the tempo battle slightly more often
+        const defTempoEdge = (t1Ctrl > t2Ctrl && t1Pull < t2Pull) ? -0.5 :
+                             (t2Ctrl > t1Ctrl && t2Pull < t1Pull) ? -0.5 : 0;
+        let gamePoss = clamp(contestedTempo + tempoNoise + defTempoEdge, 55, 85);
+        totalContestedTempo += gamePoss;
+
+        // ── Plan 07: Tempo Mismatch Chaos ──
+        const tempoMismatch = Math.abs(t1Pull - t2Pull);
+        const mismatchChaos = tempoMismatch > 6 ? clamp((tempoMismatch - 6) * 0.008, 0, 0.04) : 0;
 
         // ── Correlated game-style factors per team ──
         const t1Style = generateGameStyle(p.t1VolMod, p.t1StyleBias || 0);
@@ -344,10 +470,19 @@ self.onmessage = function(e) {
         else if (t2Style.disciplineLabel === 'disciplined') t2DisciplinedGames++;
 
         // Apply correlated style adjustments
-        let g_t1_FG2 = clamp(p.m_t1_FG2 + t1Style.fg2Adj + gameFactor * 0.25, 28, 68);
-        let g_t2_FG2 = clamp(p.m_t2_FG2 + t2Style.fg2Adj + gameFactor * 0.25, 28, 68);
-        let g_t1_FG3 = clamp(p.m_t1_FG3 + t1Style.fg3Adj + gameFactor * 0.15, 18, 48);
-        let g_t2_FG3 = clamp(p.m_t2_FG3 + t2Style.fg3Adj + gameFactor * 0.15, 18, 48);
+        let g_t1_FG2 = clamp(p.m_t1_FG2 + t1Style.fg2Adj + gameFactor * 0.25 + randNormal(0, mismatchChaos * 15), 28, 68);
+        let g_t2_FG2 = clamp(p.m_t2_FG2 + t2Style.fg2Adj + gameFactor * 0.25 + randNormal(0, mismatchChaos * 15), 28, 68);
+        let g_t1_FG3 = clamp(p.m_t1_FG3 + t1Style.fg3Adj + gameFactor * 0.15 + randNormal(0, mismatchChaos * 10), 18, 48);
+        let g_t2_FG3 = clamp(p.m_t2_FG3 + t2Style.fg3Adj + gameFactor * 0.15 + randNormal(0, mismatchChaos * 10), 18, 48);
+
+        // ── Plan 07: Tempo Winner Bonus ──
+        const t1TempoDelta = Math.abs(gamePoss - t1Pull);
+        const t2TempoDelta = Math.abs(gamePoss - t2Pull);
+        if (t1TempoDelta < t2TempoDelta - 2) {
+            g_t1_FG2 += 0.2; g_t2_FG2 -= 0.12;
+        } else if (t2TempoDelta < t1TempoDelta - 2) {
+            g_t2_FG2 += 0.2; g_t1_FG2 -= 0.12;
+        }
         let g_t1_TO  = clamp(p.m_t1_TO + t1Style.toAdj, 6, 30);
         let g_t2_TO  = clamp(p.m_t2_TO + t2Style.toAdj, 6, 30);
         const g_t1_OR  = clamp(p.m_t1_OR + p.t1HgtORBonus + t1Style.orAdj, 12, 45);
@@ -373,47 +508,88 @@ self.onmessage = function(e) {
         if (t2_TOVarBoost > 0) g_t2_TO = clamp(g_t2_TO + randNormal(0, t2_TOVarBoost), 6, 30);
         if (t1_TOVarBoost > 0) g_t1_TO = clamp(g_t1_TO + randNormal(0, t1_TOVarBoost), 6, 30);
 
-        const t1StarFT = t1Star.usage > 0 && Math.random() < 0.08;
-        const t2StarFT = t2Star.usage > 0 && Math.random() < 0.08;
-
         let s1 = 0, s2 = 0;
         let t1Mom = 0, t2Mom = 0;
         let gP1 = 0, gP2 = 0, g2_1 = 0, g2_2 = 0, g3_1 = 0, g3_2 = 0;
         let gTO1 = 0, gTO2 = 0, gOR1 = 0, gOR2 = 0, gFT1 = 0, gFT2 = 0;
 
+        // Plan 06: Per-game foul state (carried between halves)
+        let t1StarFoulState = { fouls: 0, isSitting: false };
+        let t2StarFoulState = { fouls: 0, isSitting: false };
+        let gameT1SatPoss = 0, gameT2SatPoss = 0;
+        let gameT1FouledOut = false, gameT2FouledOut = false;
+
         for (let half = 0; half < 2; half++) {
-            const halfPoss = gamePoss / 2;
+            // ── Plan 07: Half-Specific Tempo ──
+            let halfTempoAdj = 0;
+            if (half === 1) {
+                const halftimeMargin = s1 - s2;
+                // Trailing team pushes pace, leading team slows it
+                if (Math.abs(halftimeMargin) > 5) {
+                    const trailingTeamWantsFast = halftimeMargin > 0
+                        ? (t2Pull > contestedTempo)
+                        : (t1Pull > contestedTempo);
+                    const paceShift = clamp(Math.abs(halftimeMargin) * 0.15, 0, 3);
+                    halfTempoAdj = trailingTeamWantsFast ? paceShift : -paceShift * 0.5;
+                }
+                // Close games in second half tend to slow down
+                if (Math.abs(halftimeMargin) <= 3) {
+                    halfTempoAdj -= 0.8;
+                }
+            }
+            const halfPoss = Math.round((gamePoss + halfTempoAdj) / 2);
+            if (half === 0) h1TempoTotal += halfPoss * 2;
+            else h2TempoTotal += halfPoss * 2;
 
             // Game-state adjustments now handled per-possession inside simHalf()
             const t1IncomingLead = half === 0 ? 0 : (s1 - s2);
             const t2IncomingLead = half === 0 ? 0 : (s2 - s1);
 
-            const t1SFT = t1StarFT && half === 1;
-            const t2SFT = t2StarFT && half === 1;
-            const t1StarDeg = t1SFT ? -1.5 : 0;
-            const t2StarDeg = t2SFT ? -1.5 : 0;
+            const r1 = simHalf({
+                halfPoss,
+                fg2: g_t1_FG2, fg3: g_t1_FG3,
+                toPct: g_t1_TO, orPct: g_t1_OR,
+                rate3: clamp(g_t1_3Rate, 20, 55), ftr: g_t1_FTR, ftPct: p.t1_FTP,
+                defStealRate: p.m_t2StealRate,
+                starUsage: t1Star.usage,
+                starFG2: t1Star.fg2Bonus, starFG3: t1Star.fg3Bonus,
+                initMom: t1Mom,
+                benchDepth: p.t1Bench || 30, isSecondHalf: half === 1, incomingLead: t1IncomingLead,
+                defProfile: p.t2DefProfile || { perimeter: 0, interior: 0, overall: 0 },
+                starFoulState: t1StarFoulState,
+                starFoulProneness: p.t1StarFoulProneness || 0,
+                foulClimate: refClimate,
+                streakiness: p.t1Streakiness || 1.0,
+            });
 
-            const r1 = simHalf(halfPoss,
-                g_t1_FG2 + t1StarDeg, g_t1_FG3 + t1StarDeg * 0.7,
-                g_t1_TO, g_t1_OR,
-                clamp(g_t1_3Rate, 20, 55), g_t1_FTR, p.t1_FTP,
-                p.m_t2StealRate,
-                t1SFT ? t1Star.usage * 0.3 : t1Star.usage,
-                t1Star.fg2Bonus, t1Star.fg3Bonus,
-                t1Mom,
-                p.t1Bench || 30, half === 1, t1IncomingLead,
-                p.t2DefProfile || { perimeter: 0, interior: 0, overall: 0 });
+            const r2 = simHalf({
+                halfPoss,
+                fg2: g_t2_FG2, fg3: g_t2_FG3,
+                toPct: g_t2_TO, orPct: g_t2_OR,
+                rate3: clamp(g_t2_3Rate, 20, 55), ftr: g_t2_FTR, ftPct: p.t2_FTP,
+                defStealRate: p.m_t1StealRate,
+                starUsage: t2Star.usage,
+                starFG2: t2Star.fg2Bonus, starFG3: t2Star.fg3Bonus,
+                initMom: t2Mom,
+                benchDepth: p.t2Bench || 30, isSecondHalf: half === 1, incomingLead: t2IncomingLead,
+                defProfile: p.t1DefProfile || { perimeter: 0, interior: 0, overall: 0 },
+                starFoulState: t2StarFoulState,
+                starFoulProneness: p.t2StarFoulProneness || 0,
+                foulClimate: refClimate,
+                streakiness: p.t2Streakiness || 1.0,
+            });
 
-            const r2 = simHalf(halfPoss,
-                g_t2_FG2 + t2StarDeg, g_t2_FG3 + t2StarDeg * 0.7,
-                g_t2_TO, g_t2_OR,
-                clamp(g_t2_3Rate, 20, 55), g_t2_FTR, p.t2_FTP,
-                p.m_t1StealRate,
-                t2SFT ? t2Star.usage * 0.3 : t2Star.usage,
-                t2Star.fg2Bonus, t2Star.fg3Bonus,
-                t2Mom,
-                p.t2Bench || 30, half === 1, t2IncomingLead,
-                p.t1DefProfile || { perimeter: 0, interior: 0, overall: 0 });
+            // Plan 06: Carry foul state to next half
+            t1StarFoulState = r1.starFoulState || { fouls: 0, isSitting: false };
+            t2StarFoulState = r2.starFoulState || { fouls: 0, isSitting: false };
+            if (half === 0) {
+                if (t1StarFoulState.fouls < 4) t1StarFoulState.isSitting = false;
+                if (t2StarFoulState.fouls < 4) t2StarFoulState.isSitting = false;
+            }
+            gameT1SatPoss += r1.starSatPoss || 0;
+            gameT2SatPoss += r2.starSatPoss || 0;
+            if (r1.starFouledOut) gameT1FouledOut = true;
+            if (r2.starFouledOut) gameT2FouledOut = true;
 
             s1 += r1.points + r2.transitionPts;
             s2 += r2.points + r1.transitionPts;
@@ -435,7 +611,29 @@ self.onmessage = function(e) {
             totalCrunchPoss += r1.crunchTimePoss + r2.crunchTimePoss;
             totalDesperationPoss += r1.desperationPoss + r2.desperationPoss;
             totalIntentionalFouls += r1.intentionalFoulPoss + r2.intentionalFoulPoss;
+
+            // Plan 08: Streak accumulators
+            t1TotalHotPoss += r1.hotPossessions || 0;
+            t2TotalHotPoss += r2.hotPossessions || 0;
+            t1TotalColdPoss += r1.coldPossessions || 0;
+            t2TotalColdPoss += r2.coldPossessions || 0;
+            if ((r1.maxHotStreak || 0) > t1MaxHotEver) t1MaxHotEver = r1.maxHotStreak;
+            if ((r2.maxHotStreak || 0) > t2MaxHotEver) t2MaxHotEver = r2.maxHotStreak;
+
+            // Plan 09: Referee foul accumulators
+            totalT1DefFouls += r1.defFouls;
+            totalT2DefFouls += r2.defFouls;
+            if (r1.bonusReachedAtPoss > 0 && r1.bonusReachedAtPoss < 20) t1EarlyBonusGames++;
+            if (r2.bonusReachedAtPoss > 0 && r2.bonusReachedAtPoss < 20) t2EarlyBonusGames++;
         }
+
+        // Plan 06: Per-game foul trouble accumulators
+        t1StarSatTotal += gameT1SatPoss;
+        t2StarSatTotal += gameT2SatPoss;
+        if (gameT1FouledOut) t1StarFouledOutGames++;
+        if (gameT2FouledOut) t2StarFouledOutGames++;
+        if (gameT1SatPoss >= 3) t1StarFoulTroubleGames++;
+        if (gameT2SatPoss >= 3) t2StarFoulTroubleGames++;
 
         const kpS1 = p.kpT1ExpOE * (gamePoss / 100);
         const kpS2 = p.kpT2ExpOE * (gamePoss / 100);
@@ -549,6 +747,15 @@ self.onmessage = function(e) {
         t1HgtEff: p.t1HgtEff, t2HgtEff: p.t2HgtEff,
         t1EffSD: 3.2 * p.t1VolMod, t2EffSD: 3.2 * p.t2VolMod,
         tempo: p.gameTempoCtr, numSims,
+        tempoStats: {
+            avgContested: totalContestedTempo / numSims,
+            t1Preferred: t1Pull,
+            t2Preferred: t2Pull,
+            avgH1Tempo: h1TempoTotal / numSims,
+            avgH2Tempo: h2TempoTotal / numSims,
+            t1TempoControl: t1Ctrl,
+            t2TempoControl: t2Ctrl,
+        },
         t1Star, t2Star,
         avgTransition: totalTransition / numSims,
         t1AvgPoss: totalT1Poss / numSims, t2AvgPoss: totalT2Poss / numSims,
@@ -590,7 +797,32 @@ self.onmessage = function(e) {
             doubleOTGames, tripleOTGames,
             doubleOTRate: doubleOTGames / numSims,
         },
+        foulTrouble: {
+            t1AvgSatPoss: t1StarSatTotal / numSims,
+            t2AvgSatPoss: t2StarSatTotal / numSims,
+            t1FouledOutRate: t1StarFouledOutGames / numSims,
+            t2FouledOutRate: t2StarFouledOutGames / numSims,
+            t1FoulTroubleRate: t1StarFoulTroubleGames / numSims,
+            t2FoulTroubleRate: t2StarFoulTroubleGames / numSims,
+        },
+        streakStats: {
+            t1AvgHotPoss: t1TotalHotPoss / (numSims * 2),
+            t2AvgHotPoss: t2TotalHotPoss / (numSims * 2),
+            t1AvgColdPoss: t1TotalColdPoss / (numSims * 2),
+            t2AvgColdPoss: t2TotalColdPoss / (numSims * 2),
+            t1MaxHotStreak: t1MaxHotEver,
+            t2MaxHotStreak: t2MaxHotEver,
+            t1Streakiness: p.t1Streakiness || 1.0,
+            t2Streakiness: p.t2Streakiness || 1.0,
+        },
+        refStats: {
+            foulClimate: refClimate,
+            t1AvgFoulsDrawn: totalT1DefFouls / (numSims * 2),
+            t2AvgFoulsDrawn: totalT2DefFouls / (numSims * 2),
+            t1EarlyBonusRate: t1EarlyBonusGames / (numSims * 2),
+            t2EarlyBonusRate: t2EarlyBonusGames / (numSims * 2),
+        },
         label: 'Monte Carlo',
-        desc: `${numSims.toLocaleString()} two-half sims (defense-profiled, style-correlated, game-state, fatigue, transition, stars, fouls, momentum)`
+        desc: `${numSims.toLocaleString()} two-half sims (contested-tempo, foul-trouble, 3PT-streaks, ref-climate, defense-profiled, style-correlated, game-state, fatigue, transition, stars, momentum)`
     });
 };

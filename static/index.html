@@ -1267,11 +1267,33 @@
             const t2HgtEff = ht2 ? (ht2.HgtEff || 0) : 0;
             const t1HgtORBonus = clamp((t1Hgt - t2Hgt) * 0.8 + (t1HgtEff - t2HgtEff) * 0.4, -3, 3);
 
-            // ── TEMPO TUG-OF-WAR ──
+            // ── TEMPO TUG-OF-WAR (Plan 07: Contested Tempo) ──
             const t1Tempo = t1.AdjTempo || 67, t2Tempo = t2.AdjTempo || 67;
-            const t1Dev = Math.abs(t1Tempo - 67), t2Dev = Math.abs(t2Tempo - 67);
-            const tempoWeight = (t1Dev + t2Dev > 0) ? t1Dev / (t1Dev + t2Dev) : 0.5;
-            const gameTempoCtr = t1Tempo * tempoWeight + t2Tempo * (1 - tempoWeight);
+            const AVG_TEMPO = 67.5;
+
+            // Tempo Control Score: 0.30 (weak) to 0.70 (elite)
+            // Higher = team imposes its preferred pace more effectively
+            function calcTempoControl(adjDE, toRate, adjTempo) {
+                let control = 0.50;
+                // Elite defenses control pace (force half-court sets)
+                const defEliteness = clamp((100 - adjDE) / 10, -1, 1);
+                control += defEliteness * 0.06;
+                // Low turnover teams control pace (fewer chaotic possessions)
+                const toCarefulness = clamp((AVG_TO - toRate) / 5, -1, 1);
+                control += toCarefulness * 0.04;
+                // Extreme tempo teams have stronger control (game-plan for pace)
+                const tempoExtremeness = Math.abs(adjTempo - AVG_TEMPO);
+                control += tempoExtremeness * 0.008;
+                return clamp(control, 0.30, 0.70);
+            }
+
+            const t1_AdjDE = t1.AdjDE || 100, t2_AdjDE = t2.AdjDE || 100;
+            const t1TempoControl = calcTempoControl(t1_AdjDE, t1_TO, t1Tempo);
+            const t2TempoControl = calcTempoControl(t2_AdjDE, t2_TO, t2Tempo);
+
+            // Contested tempo center: weighted by each team's control rating
+            const totalCtrl = t1TempoControl + t2TempoControl;
+            const gameTempoCtr = (t1Tempo * t1TempoControl + t2Tempo * t2TempoControl) / totalCtrl;
 
             // ── DEFENSIVE DISRUPTION PROFILES ──
             function calcDefensiveProfile(dto, dor, doppFg2, doppFg3, stl, blk) {
@@ -1316,6 +1338,37 @@
             const coachEdge = clamp((c1Exp - c2Exp) * 0.04, -0.8, 0.8);
             const ftClutchEdge = (t1_FTP - t2_FTP) * 0.08;
 
+            // ── Plan 06: Star Foul Proneness ──
+            const s1arr = extra.stars1 || [], s2arr = extra.stars2 || [];
+            const s1HasHighUsage = s1arr.some(s => (s.impact || 0) >= 8);
+            const s2HasHighUsage = s2arr.some(s => (s.impact || 0) >= 8);
+            const t1StarFoulProneness = clamp(
+                (t1_FTR - AVG_FTR) * 0.02
+                + (t2_Stl - AVG_STL) * 0.03
+                + (s1HasHighUsage ? 0.15 : 0)
+                , 0, 1);
+            const t2StarFoulProneness = clamp(
+                (t2_FTR - AVG_FTR) * 0.02
+                + (t1_Stl - AVG_STL) * 0.03
+                + (s2HasHighUsage ? 0.15 : 0)
+                , 0, 1);
+
+            // ── Plan 08: 3PT Streak Volatility ──
+            function calc3PTStreakiness(rate3, fg3, tempo) {
+                let s = 1.0;
+                s += (rate3 - 33) / 10 * 0.15;
+                s -= Math.abs(fg3 - 33) * 0.02;
+                s += (tempo - 67.5) * 0.01;
+                return clamp(s, 0.6, 1.5);
+            }
+            const t1Streakiness = calc3PTStreakiness(t1_3RateBase, t1_FG3, t1Tempo);
+            const t2Streakiness = calc3PTStreakiness(t2_3RateBase, t2_FG3, t2Tempo);
+
+            // ── Plan 09: Referee Foul Climate ──
+            let refFoulClimate = 1.0;
+            // Future: integrate actual referee data from game-intel endpoint
+            // For now, default to 1.0 (average) — the worker handles this gracefully
+
             // ── ENRICHMENT ADJUSTMENTS ──
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
             const injAdj = extra.injuryAdj || 0;
@@ -1332,6 +1385,8 @@
             // Pack all parameters for the worker
             const workerParams = {
                 numSims, hca1, hca2, gameTempoCtr,
+                t1PreferredTempo: t1Tempo, t2PreferredTempo: t2Tempo,
+                t1TempoControl, t2TempoControl,
                 m_t1_FG2, m_t2_FG2, m_t1_FG3: m_t1_FG3_final, m_t2_FG3: m_t2_FG3_final,
                 m_t1_TO, m_t2_TO, m_t1_OR, m_t2_OR,
                 m_t1_FTR, m_t2_FTR, m_t1StealRate, m_t2StealRate,
@@ -1344,6 +1399,9 @@
                 coachEdge, ftClutchEdge, c1Exp, c2Exp,
                 totalAdj, kpT1ExpOE, kpT2ExpOE, t1Favored,
                 stars1: extra.stars1 || [], stars2: extra.stars2 || [],
+                t1StarFoulProneness, t2StarFoulProneness,
+                t1Streakiness, t2Streakiness,
+                refFoulClimate,
             };
 
             // Dispatch to Web Worker (non-blocking)
@@ -1895,9 +1953,10 @@
                                 <p class="text-xs mt-1 ${Math.abs(mc.heightEdge || 0) > 0.5 ? (mc.heightEdge > 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs(mc.heightEdge || 0) < 0.2 ? 'Even boards' : (mc.heightEdge > 0 ? t1.TeamName : t2.TeamName) + ' OR edge'}</p>
                             </div>
                             <div class="bg-gray-900/50 rounded-lg p-3 text-center">
-                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Tempo</p>
-                                <p class="text-lg font-bold">${mc.tempo?.toFixed(1) || '?'}</p>
-                                <p class="text-xs text-gray-500 mt-1">${t1.AdjTempo?.toFixed(0)} v ${t2.AdjTempo?.toFixed(0)} pref</p>
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Tempo Battle</p>
+                                <p class="text-lg font-bold">${mc.tempoStats?.avgContested?.toFixed(1) || mc.tempo?.toFixed(1) || '?'}</p>
+                                <p class="text-xs text-gray-500 mt-1">${mc.tempoStats?.t1Preferred?.toFixed(0) || t1.AdjTempo?.toFixed(0)} <span class="text-gray-600">(${((mc.tempoStats?.t1TempoControl || 0.5) * 100).toFixed(0)}%)</span> v ${mc.tempoStats?.t2Preferred?.toFixed(0) || t2.AdjTempo?.toFixed(0)} <span class="text-gray-600">(${((mc.tempoStats?.t2TempoControl || 0.5) * 100).toFixed(0)}%)</span></p>
+                                <p class="text-xs text-gray-600 mt-0.5">H1: ${mc.tempoStats?.avgH1Tempo?.toFixed(1) || '?'} · H2: ${mc.tempoStats?.avgH2Tempo?.toFixed(1) || '?'}</p>
                             </div>
                             <div class="bg-gray-900/50 rounded-lg p-3 text-center">
                                 <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Volatility</p>
@@ -1942,6 +2001,65 @@
                                 <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Bench Depth</p>
                                 <p class="text-lg font-bold">${(ht1?.Bench || 30).toFixed(0)} <span class="text-gray-500 text-sm">v</span> ${(ht2?.Bench || 30).toFixed(0)}</p>
                                 <p class="text-xs mt-1 ${Math.abs((mc.t1AvgFatigue || 0) - (mc.t2AvgFatigue || 0)) > 0.005 ? ((mc.t1AvgFatigue || 0) < (mc.t2AvgFatigue || 0) ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs((mc.t1AvgFatigue || 0) - (mc.t2AvgFatigue || 0)) < 0.005 ? 'Even depth' : ((mc.t1AvgFatigue || 0) < (mc.t2AvgFatigue || 0) ? t1.TeamName : t2.TeamName) + ' fresher'}</p>
+                            </div>
+                        </div>
+
+                        <!-- Star Foul Trouble (Plan 06) -->
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName} — Foul Trouble</p>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">Trouble rate</span><span class="font-bold text-yellow-400">${((mc.foulTrouble?.t1FoulTroubleRate || 0) * 100).toFixed(1)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Fouled out rate</span><span class="font-bold text-red-400">${((mc.foulTrouble?.t1FouledOutRate || 0) * 100).toFixed(1)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Avg sat poss</span><span class="font-bold">${mc.foulTrouble?.t1AvgSatPoss?.toFixed(1) || '0'}</span></div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName} — Foul Trouble</p>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">Trouble rate</span><span class="font-bold text-yellow-400">${((mc.foulTrouble?.t2FoulTroubleRate || 0) * 100).toFixed(1)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Fouled out rate</span><span class="font-bold text-red-400">${((mc.foulTrouble?.t2FouledOutRate || 0) * 100).toFixed(1)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Avg sat poss</span><span class="font-bold">${mc.foulTrouble?.t2AvgSatPoss?.toFixed(1) || '0'}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3PT Streaks (Plan 08) -->
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName} — 3PT Streaks</p>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">Hot poss/half</span><span class="font-bold text-green-400">${mc.streakStats?.t1AvgHotPoss?.toFixed(1) || '0'}</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Cold poss/half</span><span class="font-bold text-blue-400">${mc.streakStats?.t1AvgColdPoss?.toFixed(1) || '0'}</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Streakiness</span><span class="font-bold">${mc.streakStats?.t1Streakiness?.toFixed(2) || '1.00'}</span></div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName} — 3PT Streaks</p>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">Hot poss/half</span><span class="font-bold text-green-400">${mc.streakStats?.t2AvgHotPoss?.toFixed(1) || '0'}</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Cold poss/half</span><span class="font-bold text-blue-400">${mc.streakStats?.t2AvgColdPoss?.toFixed(1) || '0'}</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Streakiness</span><span class="font-bold">${mc.streakStats?.t2Streakiness?.toFixed(2) || '1.00'}</span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Referee Climate (Plan 09) -->
+                        <div class="grid grid-cols-3 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Ref Climate</p>
+                                <p class="text-lg font-bold ${(mc.refStats?.foulClimate || 1) > 1.1 ? 'text-red-400' : (mc.refStats?.foulClimate || 1) < 0.9 ? 'text-green-400' : ''}">${mc.refStats?.foulClimate?.toFixed(2) || '1.00'}</p>
+                                <p class="text-xs text-gray-500 mt-1">${(mc.refStats?.foulClimate || 1) > 1.1 ? 'Whistle-happy' : (mc.refStats?.foulClimate || 1) < 0.9 ? 'Let-them-play' : 'Average crew'}</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Fouls Drawn</p>
+                                <p class="text-lg font-bold">${mc.refStats?.t1AvgFoulsDrawn?.toFixed(1) || '?'} <span class="text-gray-500 text-sm">v</span> ${mc.refStats?.t2AvgFoulsDrawn?.toFixed(1) || '?'}</p>
+                                <p class="text-xs text-gray-500 mt-1">per half</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Early Bonus</p>
+                                <p class="text-lg font-bold">${((mc.refStats?.t1EarlyBonusRate || 0) * 100).toFixed(0)}% <span class="text-gray-500 text-sm">v</span> ${((mc.refStats?.t2EarlyBonusRate || 0) * 100).toFixed(0)}%</p>
+                                <p class="text-xs text-gray-500 mt-1">reach bonus early</p>
                             </div>
                         </div>
 
