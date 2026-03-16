@@ -1171,6 +1171,29 @@
         //   • Matchup-adjusted rates (off + def - avg)
         //   • Height → OR% bonus • Block matchup • Correlated game factor
         //   • Bench depth → volatility • Tempo tug-of-war • Coach/FT clutch
+        function asymmetricMatchup(offRate, defRate, avgRate, eliteThreshold = 3) {
+            const offDev = offRate - avgRate;
+            const defDev = defRate - avgRate;
+            let offWeight = 0.50, defWeight = 0.50;
+            const defExtremeness = Math.abs(defDev) / eliteThreshold;
+            if (defExtremeness > 1.0) {
+                const shift = Math.min(defExtremeness * 0.08, 0.22);
+                defWeight += shift; offWeight -= shift;
+            }
+            const offExtremeness = Math.abs(offDev) / eliteThreshold;
+            if (offExtremeness > 1.0) {
+                const shift = Math.min(offExtremeness * 0.06, 0.15);
+                offWeight += shift; defWeight -= shift;
+            }
+            const total = offWeight + defWeight;
+            offWeight /= total; defWeight /= total;
+            const matchupRate = avgRate + (offDev * offWeight) + (defDev * defWeight);
+            const sameDirection = (offDev > 0 && defDev > 0) || (offDev < 0 && defDev < 0);
+            const compoundBonus = sameDirection ? Math.min(Math.abs(offDev * defDev) * 0.015, 1.5) : 0;
+            const compoundSign = (offDev + defDev) > 0 ? 1 : -1;
+            return matchupRate + compoundBonus * compoundSign;
+        }
+
         // ═══════════════════════════════════════════════════════
         // MODEL 3: Possession-Level Monte Carlo Simulation (v2) — Web Worker
         // Computes matchup parameters on main thread, dispatches simulation to worker
@@ -1221,21 +1244,21 @@
             const t1_Stl = ms1 ? ((ms1.StlRate || 0) * 100 || AVG_STL) : AVG_STL;
             const t2_Stl = ms2 ? ((ms2.StlRate || 0) * 100 || AVG_STL) : AVG_STL;
 
-            // ── MATCHUP-ADJUSTED RATES ──
-            const m_t1_TO  = clamp(t1_TO + t2_DTO - AVG_TO, 8, 28);
-            const m_t2_TO  = clamp(t2_TO + t1_DTO - AVG_TO, 8, 28);
-            const m_t1_OR  = clamp(t1_OR + t2_DOR - AVG_OR, 15, 42);
-            const m_t2_OR  = clamp(t2_OR + t1_DOR - AVG_OR, 15, 42);
-            const m_t1_FTR = clamp(t1_FTR + t2_DFTR - AVG_FTR, 15, 50);
-            const m_t2_FTR = clamp(t2_FTR + t1_DFTR - AVG_FTR, 15, 50);
-            const t1_blkAdj = (t2_Blk - AVG_BLK) * 0.12;
-            const t2_blkAdj = (t1_Blk - AVG_BLK) * 0.12;
-            const m_t1_FG2 = clamp((t1_FG2 + t2_OppFG2) / 2 - t1_blkAdj, 30, 65);
-            const m_t2_FG2 = clamp((t2_FG2 + t1_OppFG2) / 2 - t2_blkAdj, 30, 65);
-            const m_t1_FG3 = clamp((t1_FG3 + t2_OppFG3) / 2, 22, 44);
-            const m_t2_FG3 = clamp((t2_FG3 + t1_OppFG3) / 2, 22, 44);
-            const m_t2StealRate = clamp((t2_Stl + AVG_STL) / 2, 5, 16);
-            const m_t1StealRate = clamp((t1_Stl + AVG_STL) / 2, 5, 16);
+            // ── MATCHUP-ADJUSTED RATES (Asymmetric Weighting) ──
+            const m_t1_TO  = clamp(asymmetricMatchup(t1_TO, t2_DTO, AVG_TO, 3.0), 8, 28);
+            const m_t2_TO  = clamp(asymmetricMatchup(t2_TO, t1_DTO, AVG_TO, 3.0), 8, 28);
+            const m_t1_OR  = clamp(asymmetricMatchup(t1_OR, t2_DOR, AVG_OR, 4.0), 15, 42);
+            const m_t2_OR  = clamp(asymmetricMatchup(t2_OR, t1_DOR, AVG_OR, 4.0), 15, 42);
+            const m_t1_FTR = clamp(asymmetricMatchup(t1_FTR, t2_DFTR, AVG_FTR, 4.0), 15, 50);
+            const m_t2_FTR = clamp(asymmetricMatchup(t2_FTR, t1_DFTR, AVG_FTR, 4.0), 15, 50);
+            const t1_blkAdj = (t2_Blk - AVG_BLK) * 0.18;
+            const t2_blkAdj = (t1_Blk - AVG_BLK) * 0.18;
+            const m_t1_FG2 = clamp(asymmetricMatchup(t1_FG2, t2_OppFG2, AVG_FG2, 3.0) - t1_blkAdj, 30, 65);
+            const m_t2_FG2 = clamp(asymmetricMatchup(t2_FG2, t1_OppFG2, AVG_FG2, 3.0) - t2_blkAdj, 30, 65);
+            const m_t1_FG3 = clamp(asymmetricMatchup(t1_FG3, t2_OppFG3, AVG_FG3, 2.5), 22, 44);
+            const m_t2_FG3 = clamp(asymmetricMatchup(t2_FG3, t1_OppFG3, AVG_FG3, 2.5), 22, 44);
+            const m_t2StealRate = clamp(asymmetricMatchup(AVG_STL, t2_Stl, AVG_STL, 2.0), 5, 16);
+            const m_t1StealRate = clamp(asymmetricMatchup(AVG_STL, t1_Stl, AVG_STL, 2.0), 5, 16);
 
             // ── HEIGHT → REBOUNDING EDGE ──
             const t1Hgt = ht1 ? (ht1.AvgHgt || 77.5) : 77.5;
@@ -1249,6 +1272,35 @@
             const t1Dev = Math.abs(t1Tempo - 67), t2Dev = Math.abs(t2Tempo - 67);
             const tempoWeight = (t1Dev + t2Dev > 0) ? t1Dev / (t1Dev + t2Dev) : 0.5;
             const gameTempoCtr = t1Tempo * tempoWeight + t2Tempo * (1 - tempoWeight);
+
+            // ── DEFENSIVE DISRUPTION PROFILES ──
+            function calcDefensiveProfile(dto, dor, doppFg2, doppFg3, stl, blk) {
+                const perimeterDisruption = clamp(
+                    clamp((AVG_FG3 - doppFg3) / 4, 0, 1) * 0.40 +
+                    clamp((stl - AVG_STL) / 3, 0, 1) * 0.35 +
+                    clamp((dto - AVG_TO) / 5, 0, 1) * 0.25,
+                    0, 1);
+                const interiorDisruption = clamp(
+                    clamp((AVG_FG2 - doppFg2) / 5, 0, 1) * 0.35 +
+                    clamp((blk - AVG_BLK) / 3, 0, 1) * 0.35 +
+                    clamp((AVG_OR - dor) / 6, 0, 1) * 0.30,
+                    0, 1);
+                return { perimeter: perimeterDisruption, interior: interiorDisruption, overall: (perimeterDisruption + interiorDisruption) / 2 };
+            }
+            const t1DefProfile = calcDefensiveProfile(t1_DTO, t1_DOR, t1_OppFG2, t1_OppFG3, t1_Stl, t1_Blk);
+            const t2DefProfile = calcDefensiveProfile(t2_DTO, t2_DOR, t2_OppFG2, t2_OppFG3, t2_Stl, t2_Blk);
+
+            // ── MATCHUP-SPECIFIC 3PT SUPPRESSION ──
+            const t1_3Heavy = (t1_3RateBase - AVG_3RATE) / AVG_3RATE;
+            const t2_3Heavy = (t2_3RateBase - AVG_3RATE) / AVG_3RATE;
+            const t1_perimMatchupPenalty = clamp(t1_3Heavy * t2DefProfile.perimeter * 3.0, 0, 2.5);
+            const t2_perimMatchupPenalty = clamp(t2_3Heavy * t1DefProfile.perimeter * 3.0, 0, 2.5);
+            const m_t1_FG3_final = clamp(m_t1_FG3 - t1_perimMatchupPenalty, 22, 44);
+            const m_t2_FG3_final = clamp(m_t2_FG3 - t2_perimMatchupPenalty, 22, 44);
+
+            // ── STYLE TENDENCY ──
+            const t1StyleBias = (t1_3RateBase - AVG_3RATE) * -0.04 + (t1_FTR - AVG_FTR) * 0.03;
+            const t2StyleBias = (t2_3RateBase - AVG_3RATE) * -0.04 + (t2_FTR - AVG_FTR) * 0.03;
 
             // ── BENCH DEPTH → volatility ──
             const t1Bench = ht1 ? (ht1.Bench || AVG_BENCH) : AVG_BENCH;
@@ -1280,12 +1332,15 @@
             // Pack all parameters for the worker
             const workerParams = {
                 numSims, hca1, hca2, gameTempoCtr,
-                m_t1_FG2, m_t2_FG2, m_t1_FG3, m_t2_FG3,
+                m_t1_FG2, m_t2_FG2, m_t1_FG3: m_t1_FG3_final, m_t2_FG3: m_t2_FG3_final,
                 m_t1_TO, m_t2_TO, m_t1_OR, m_t2_OR,
                 m_t1_FTR, m_t2_FTR, m_t1StealRate, m_t2StealRate,
                 t1_3Rate, t2_3Rate, t1_FTP, t2_FTP,
                 t1VolMod, t2VolMod, t1HgtORBonus,
                 t1Hgt, t2Hgt, t1HgtEff, t2HgtEff,
+                t1Bench, t2Bench,
+                t1StyleBias, t2StyleBias,
+                t1DefProfile, t2DefProfile,
                 coachEdge, ftClutchEdge, c1Exp, c2Exp,
                 totalAdj, kpT1ExpOE, kpT2ExpOE, t1Favored,
                 stars1: extra.stars1 || [], stars2: extra.stars2 || [],
@@ -1851,6 +1906,69 @@
                             </div>
                         </div>
 
+                        <!-- Defensive Disruption Profiles -->
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs text-gray-400 mb-1">${t1.TeamName} Defense</p>
+                                <div class="flex justify-center gap-3 text-xs">
+                                    <span class="text-blue-400">Perim: ${((mc.t1DefProfile?.perimeter || 0) * 100).toFixed(0)}%</span>
+                                    <span class="text-orange-400">Interior: ${((mc.t1DefProfile?.interior || 0) * 100).toFixed(0)}%</span>
+                                </div>
+                                <p class="text-xs mt-1 text-gray-500">Disruption rating</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs text-gray-400 mb-1">${t2.TeamName} Defense</p>
+                                <div class="flex justify-center gap-3 text-xs">
+                                    <span class="text-blue-400">Perim: ${((mc.t2DefProfile?.perimeter || 0) * 100).toFixed(0)}%</span>
+                                    <span class="text-orange-400">Interior: ${((mc.t2DefProfile?.interior || 0) * 100).toFixed(0)}%</span>
+                                </div>
+                                <p class="text-xs mt-1 text-gray-500">Disruption rating</p>
+                            </div>
+                        </div>
+
+                        <!-- Fatigue & Bench Depth -->
+                        <div class="grid grid-cols-3 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Fatigue Impact</p>
+                                <p class="text-lg font-bold">${(mc.t1AvgFatigue * 100)?.toFixed(1) || '0'}% <span class="text-gray-500 text-sm">v</span> ${(mc.t2AvgFatigue * 100)?.toFixed(1) || '0'}%</p>
+                                <p class="text-xs mt-1 text-gray-500">avg FG% reduction</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Star Rest</p>
+                                <p class="text-lg font-bold">${mc.t1AvgRestPoss?.toFixed(1) || '0'} <span class="text-gray-500 text-sm">v</span> ${mc.t2AvgRestPoss?.toFixed(1) || '0'}</p>
+                                <p class="text-xs mt-1 text-gray-500">rest poss/half</p>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3 text-center">
+                                <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Bench Depth</p>
+                                <p class="text-lg font-bold">${(ht1?.Bench || 30).toFixed(0)} <span class="text-gray-500 text-sm">v</span> ${(ht2?.Bench || 30).toFixed(0)}</p>
+                                <p class="text-xs mt-1 ${Math.abs((mc.t1AvgFatigue || 0) - (mc.t2AvgFatigue || 0)) > 0.005 ? ((mc.t1AvgFatigue || 0) < (mc.t2AvgFatigue || 0) ? 'text-green-400' : 'text-red-400') : 'text-gray-500'}">${Math.abs((mc.t1AvgFatigue || 0) - (mc.t2AvgFatigue || 0)) < 0.005 ? 'Even depth' : ((mc.t1AvgFatigue || 0) < (mc.t2AvgFatigue || 0) ? t1.TeamName : t2.TeamName) + ' fresher'}</p>
+                            </div>
+                        </div>
+
+                        <!-- Game Style Profile -->
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t1.TeamName} — Style Profile</p>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">Interior</span><span class="font-bold">${((mc.t1StyleDist?.interior || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Perimeter</span><span class="font-bold">${((mc.t1StyleDist?.perimeter || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Balanced</span><span class="font-bold">${((mc.t1StyleDist?.balanced || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between border-t border-gray-700 pt-1"><span class="text-gray-400">Disciplined</span><span class="font-bold text-green-400">${((mc.t1StyleDist?.disciplined || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Sloppy</span><span class="font-bold text-red-400">${((mc.t1StyleDist?.sloppy || 0) * 100).toFixed(0)}%</span></div>
+                                </div>
+                            </div>
+                            <div class="bg-gray-900/50 rounded-lg p-3">
+                                <p class="text-xs font-bold text-orange-400 mb-2">${t2.TeamName} — Style Profile</p>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between"><span class="text-gray-400">Interior</span><span class="font-bold">${((mc.t2StyleDist?.interior || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Perimeter</span><span class="font-bold">${((mc.t2StyleDist?.perimeter || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Balanced</span><span class="font-bold">${((mc.t2StyleDist?.balanced || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between border-t border-gray-700 pt-1"><span class="text-gray-400">Disciplined</span><span class="font-bold text-green-400">${((mc.t2StyleDist?.disciplined || 0) * 100).toFixed(0)}%</span></div>
+                                    <div class="flex justify-between"><span class="text-gray-400">Sloppy</span><span class="font-bold text-red-400">${((mc.t2StyleDist?.sloppy || 0) * 100).toFixed(0)}%</span></div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Close-Game Factors -->
                         <div class="bg-gray-900/50 rounded-lg p-3">
                             <p class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Close-Game Edge (within 6 pts)</p>
@@ -1880,14 +1998,34 @@
                         </div>
                         <div class="grid grid-cols-3 gap-3 text-center text-xs mt-3 pt-3 border-t border-gray-700">
                             <div><p class="text-lg font-bold ${mc.blowouts / mc.numSims > 0.25 ? 'text-orange-400' : 'text-gray-300'}">${((mc.blowouts / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Blowouts (15+)</p></div>
-                            <div><p class="text-lg font-bold ${mc.closeGames / mc.numSims > 0.35 ? 'text-yellow-400' : 'text-gray-300'}">${((mc.closeGames / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Close (≤5)</p></div>
+                            <div><p class="text-lg font-bold ${mc.closeGames / mc.numSims > 0.35 ? 'text-yellow-400' : 'text-gray-300'}">${((mc.closeGames / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Close (≤5, incl. OT)</p></div>
                             <div><p class="text-lg font-bold ${mc.upsets / mc.numSims > 0.35 ? 'text-red-400' : 'text-gray-300'}">${((mc.upsets / mc.numSims) * 100).toFixed(0)}%</p><p class="text-gray-500">Upsets</p></div>
+                        </div>
+                        <div class="mt-2">
+                            <p class="text-xs text-gray-500">
+                                <i class="fas fa-clock mr-1"></i>
+                                OT Rate: ${((mc.otStats?.otRate || 0) * 100).toFixed(1)}%
+                                ${mc.otStats?.gamesWithOT > 0 ?
+                                    `(${mc.otStats.gamesWithOT} games \u2022 avg ${mc.otStats.avgOTPeriods?.toFixed(1)} OT periods` +
+                                    (mc.otStats.doubleOTGames > 0 ? ` \u2022 ${mc.otStats.doubleOTGames} 2OT` : '') +
+                                    (mc.otStats.tripleOTGames > 0 ? ` \u2022 ${mc.otStats.tripleOTGames} 3OT+` : '') +
+                                    ')'
+                                    : ''}
+                            </p>
                         </div>
                         <div class="mt-3 text-center text-xs text-gray-500">
                             Avg margin: ${mc.margin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.margin).toFixed(1)} • Median: ${mc.medianMargin > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.medianMargin).toFixed(1)}
                         </div>
                         <div class="mt-1 text-center text-xs text-gray-600">
                             80% range: ${mc.p10 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p10).toFixed(0)} to ${mc.p90 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p90).toFixed(0)} • 50% range: ${mc.p25 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p25).toFixed(0)} to ${mc.p75 > 0 ? t1.TeamName : t2.TeamName} +${Math.abs(mc.p75).toFixed(0)}
+                        </div>
+                        <div class="mt-3 pt-3 border-t border-gray-700">
+                            <p class="text-xs text-gray-500">
+                                <i class="fas fa-clock mr-1"></i>Game Dynamics:
+                                Crunch-time poss: ${mc.avgCrunchPoss?.toFixed(1) || '0'} •
+                                Desperation poss: ${mc.avgDesperationPoss?.toFixed(1) || '0'} •
+                                Intentional fouls: ${mc.avgIntentionalFouls?.toFixed(1) || '0'}
+                            </p>
                         </div>
                         <div class="mt-2 text-center text-xs text-gray-600">
                             Weights: KenPom ${(wEff*100).toFixed(0)}% • SOS ${(wSim*100).toFixed(0)}% • ConRat ${(wCR*100).toFixed(0)}% • MC ${(wMC*100).toFixed(0)}%
