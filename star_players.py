@@ -99,6 +99,7 @@ STAR_PLAYERS = {
     "Dajuan Harris Jr.":    {"team": "Kansas", "position": "PG", "tier": "starter", "impact": 7, "note": "Kansas veteran point guard"},
     "Reed Sheppard":        {"team": "Houston", "position": "SG", "tier": "starter", "impact": 7, "note": "Transfer sharpshooter"},
     "Terrance Arceneaux":   {"team": "Houston", "position": "SF", "tier": "starter", "impact": 7, "note": "Houston wing depth"},
+    "Caleb Wilson":         {"team": "North Carolina", "position": "F", "tier": "key_star", "impact": 8, "note": "UNC's star forward, key contributor"},
     "Dawson Garcia":        {"team": "North Carolina", "position": "PF", "tier": "starter", "impact": 7, "note": "UNC's stretch big, veteran"},
     "Elliot Cadeau":        {"team": "North Carolina", "position": "PG", "tier": "starter", "impact": 7, "note": "UNC's young point guard"},
     "Jeremy Roach":         {"team": "Baylor", "position": "PG", "tier": "starter", "impact": 7, "note": "Experienced guard, transfer from Duke"},

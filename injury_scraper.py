@@ -18,6 +18,7 @@ import anthropic
 from star_players import get_star_player, get_team_stars, build_star_context
 from nba_players import filter_nba_players
 from roster_verifier import verify_roster
+from known_injuries import merge_known_injuries, merge_known_matchup_injuries
 
 load_dotenv()
 
@@ -134,11 +135,63 @@ class InjuryFetcher:
             print(f"[InjuryFetcher] Google News error for {team_name}: {e}")
             return []
 
+    def fetch_star_player_news(self, team_name: str, max_per_player: int = 3) -> List[Dict]:
+        """Fetch injury news for known star players on a team by searching their names directly."""
+        from star_players import get_team_stars
+        stars = get_team_stars(team_name)
+        if not stars:
+            return []
+        results = []
+        for s in stars:
+            player = s['player']
+            query = f'"{player}" injury OR out OR status OR knee OR ACL OR ankle 2026'
+            try:
+                resp = self.session.get(
+                    GOOGLE_NEWS_RSS + requests.utils.quote(query),
+                    timeout=10
+                )
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, 'xml')
+                items = soup.find_all('item')
+                cutoff = datetime.now() - timedelta(days=14)
+                count = 0
+                for item in items:
+                    if count >= max_per_player:
+                        break
+                    title = item.find('title').text if item.find('title') else ''
+                    pub_date = item.find('pubDate').text if item.find('pubDate') else ''
+                    source_tag = item.find('source')
+                    source = source_tag.text if source_tag else 'Google News'
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        article_date = parsedate_to_datetime(pub_date)
+                        if article_date.replace(tzinfo=None) < cutoff:
+                            continue
+                    except Exception:
+                        pass
+                    # Only include if it looks injury-related
+                    title_lower = title.lower()
+                    if any(kw in title_lower for kw in ['injur', 'out', 'torn', 'acl', 'knee', 'ankle', 'status', 'miss', 'sidelined', 'questionable', 'doubtful', 'surgery', 'update']):
+                        results.append({
+                            'headline': title,
+                            'description': '',
+                            'published': pub_date,
+                            'source': source
+                        })
+                        count += 1
+            except requests.RequestException as e:
+                print(f"[InjuryFetcher] Star search error for {player}: {e}")
+        if results:
+            print(f"[InjuryFetcher] Found {len(results)} star player injury articles for {team_name}")
+        return results
+
     def fetch_matchup_news(self, team1: str, team2: str) -> str:
         """Aggregate injury news for two teams into a text block for Claude."""
         espn_news = self.fetch_espn_news()
         t1_google = self.fetch_google_news(team1)
         t2_google = self.fetch_google_news(team2)
+        t1_stars = self.fetch_star_player_news(team1)
+        t2_stars = self.fetch_star_player_news(team2)
 
         lines = []
         lines.append(f"=== ESPN Recent Injury News ===")
@@ -151,8 +204,16 @@ class InjuryFetcher:
         for a in t1_google:
             lines.append(f"[{a['published'][:16]}] {a['headline']} ({a['source']})")
 
+        lines.append(f"\n=== {team1} Star Player Injury News ===")
+        for a in t1_stars:
+            lines.append(f"[{a['published'][:16]}] {a['headline']} ({a['source']})")
+
         lines.append(f"\n=== {team2} Injury News (Google) ===")
         for a in t2_google:
+            lines.append(f"[{a['published'][:16]}] {a['headline']} ({a['source']})")
+
+        lines.append(f"\n=== {team2} Star Player Injury News ===")
+        for a in t2_stars:
             lines.append(f"[{a['published'][:16]}] {a['headline']} ({a['source']})")
 
         text = '\n'.join(lines)
@@ -262,6 +323,7 @@ NEWS HEADLINES:
                 return cached
 
         google_articles = self.fetcher.fetch_google_news(team_name, max_results=15)
+        star_articles = self.fetcher.fetch_star_player_news(team_name)
         espn_articles = self.fetcher.fetch_espn_news(limit=50)
         # Filter ESPN for this team
         team_lower = team_name.lower()
@@ -269,7 +331,7 @@ NEWS HEADLINES:
                          if team_lower in a.get('headline', '').lower()
                          or team_lower in a.get('description', '').lower()]
 
-        all_articles = espn_filtered + google_articles
+        all_articles = espn_filtered + google_articles + star_articles
         if not all_articles:
             return {"injuries": [], "team": team_name, "source": "none", "fetched_at": datetime.now().isoformat()}
 
@@ -331,6 +393,9 @@ NEWS:
             print(f"[InjuryAnalyzer] Claude error for {team_name}: {e}")
             injuries = []
 
+        # Always merge known injuries as guaranteed fallback
+        injuries = merge_known_injuries(injuries, team_name)
+
         result = {
             "injuries": injuries,
             "team": team_name,
@@ -348,7 +413,7 @@ NEWS:
         if cached and 'team1_injuries' in cached:
             return cached
 
-        # Gather news for both teams
+        # Gather news for both teams (includes star player-specific searches)
         news_text = self.fetcher.fetch_matchup_news(team1, team2)
 
         # Build star player reference for both teams
@@ -402,6 +467,10 @@ NEWS ARTICLES:
 
         t1_injuries = [i for i in all_injuries if self._team_match(i.get('team', ''), team1)]
         t2_injuries = [i for i in all_injuries if self._team_match(i.get('team', ''), team2)]
+
+        # Always merge known injuries as guaranteed fallback
+        t1_injuries = merge_known_injuries(t1_injuries, team1)
+        t2_injuries = merge_known_injuries(t2_injuries, team2)
 
         t1_impact = self._compute_team_impact(t1_injuries)
         t2_impact = self._compute_team_impact(t2_injuries)
@@ -560,10 +629,34 @@ NEWS ARTICLES:
         t = target_name.lower().strip()
         if s == t:
             return True
+        # Check alias map first (handles UNC, Ole Miss, etc.)
+        TEAM_ALIASES = {
+            'unc': 'north carolina',
+            'uconn': 'connecticut',
+            'ole miss': 'mississippi',
+            'smu': 'southern methodist',
+            'lsu': 'louisiana state',
+            'vcu': 'virginia commonwealth',
+            'ucf': 'central florida',
+            'usc': 'southern california',
+            'pitt': 'pittsburgh',
+            'umass': 'massachusetts',
+            'uva': 'virginia',
+            'cal': 'california',
+            'nc state': 'north carolina state',
+            'osu': 'ohio state',
+            'msu': 'michigan state',
+            'byu': 'brigham young',
+            'tcu': 'texas christian',
+        }
+        s_alias = TEAM_ALIASES.get(s, s)
+        t_alias = TEAM_ALIASES.get(t, t)
+        if s_alias == t_alias:
+            return True
         # Normalize common variations
-        replacements = {'.': '', "'": '', 'uconn': 'connecticut'}
-        s_clean = s
-        t_clean = t
+        replacements = {'.': '', "'": ''}
+        s_clean = s_alias
+        t_clean = t_alias
         for old, new in replacements.items():
             s_clean = s_clean.replace(old, new)
             t_clean = t_clean.replace(old, new)
