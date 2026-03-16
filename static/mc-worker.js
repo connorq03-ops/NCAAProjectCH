@@ -73,7 +73,8 @@ function simHalf(cfg) {
     let starIsSitting = starFoulState ? starFoulState.isSitting : false;
     let starSatPoss = 0;
     let starFouledOut = false;
-    const baseStarFoulRate = 0.035 + (starFoulProneness || 0) * 0.02;
+    // Scale by sqrt(refClimate) — dampened to avoid compounding with Plan 09's defFoul scaling
+    const baseStarFoulRate = (0.035 + (starFoulProneness || 0) * 0.02) * Math.sqrt(refClimate);
 
     // ── Plan 08: Three-Point Streak Tracking ──
     const teamStreakiness = streakiness || 1.0;
@@ -127,6 +128,7 @@ function simHalf(cfg) {
                         mom = Math.min(mom + 0.3, 3);
                     }
                     possLeft--; possUsed++;
+                    streak3 = Math.round(streak3 * STREAK_DECAY);
                     continue;
                 }
             } else if (isCrunchTime && (-runningLead) >= 6) {
@@ -191,6 +193,11 @@ function simHalf(cfg) {
         const disrupt2Mod = isDisruptedPoss ? -(defP.interior * 4.0) : 0;
         const disruptStarMod = isDisruptedPoss ? (1 - defP.overall * 0.5) : 1.0;
 
+        // Plan 08: Elite perimeter defense cools hot streaks faster
+        if (streak3 > 0 && isDisruptedPoss && defP.perimeter > 0.4) {
+            streak3 = Math.max(0, streak3 - 1);
+        }
+
         const momFG = mom * 0.4;
 
         if (Math.random() * 100 < (toPct + gs_toPctAdj) * fatigueTOMod) {
@@ -201,6 +208,7 @@ function simHalf(cfg) {
                 if (r < 0.55) { transitionPts += 2; runningLead -= 2; }
                 else if (r < 0.70) { transitionPts += 3; runningLead -= 3; }
             }
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             continue;
         }
 
@@ -226,6 +234,7 @@ function simHalf(cfg) {
                 }
             }
             mom = bonusMade > 0 ? Math.min(mom + 0.5, 3) : Math.max(mom - 0.5, -2);
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             continue;
         }
 
@@ -239,6 +248,7 @@ function simHalf(cfg) {
                 if (Math.random() * 100 < ftPct) { points++; ftMade++; made++; runningLead += 1; }
             }
             mom = made > 0 ? Math.min(mom + 0.5, 3) : Math.max(mom - 0.5, -2);
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             continue;
         }
 
@@ -253,6 +263,7 @@ function simHalf(cfg) {
                     if (Math.random() * 100 < ftPct) { points++; ftMade++; made++; runningLead += 1; }
                 }
                 mom = made > 0 ? Math.min(mom + 0.3, 3) : Math.max(mom - 0.3, -2);
+                streak3 = Math.round(streak3 * STREAK_DECAY);
                 continue;
             }
         }
@@ -268,7 +279,8 @@ function simHalf(cfg) {
 
         const is3pt = Math.random() * 100 < clamp(rate3 + gs_3RateAdj + streakRateAdj, 15, 65);
         if (is3pt) {
-            if (Math.random() * 100 < (fg3 + sFG3 * disruptStarMod + momFG * 0.5 - gs_fgPenalty + disrupt3Mod + streakFGAdj) * fatigueFGMod) {
+            const effectiveFG3 = clamp(fg3 + sFG3 * disruptStarMod + momFG * 0.5 - gs_fgPenalty + disrupt3Mod + streakFGAdj, 15, 50);
+            if (Math.random() * 100 < effectiveFG3 * fatigueFGMod) {
                 points += 3; makes3++; runningLead += 3;
                 mom = Math.min(mom + 1.5, 3);
                 streak3 = streak3 > 0 ? streak3 + 1 : 1;
@@ -284,7 +296,8 @@ function simHalf(cfg) {
             }
         } else {
             streak3 = Math.round(streak3 * STREAK_DECAY);
-            if (Math.random() * 100 < (fg2 + sFG2 * disruptStarMod + momFG * 0.7 - gs_fgPenalty * 0.5 + disrupt2Mod) * fatigueFGMod) {
+            const effectiveFG2 = clamp(fg2 + sFG2 * disruptStarMod + momFG * 0.7 - gs_fgPenalty * 0.5 + disrupt2Mod, 25, 70);
+            if (Math.random() * 100 < effectiveFG2 * fatigueFGMod) {
                 points += 2; makes2++; runningLead += 2;
                 mom = Math.min(mom + 1, 3);
                 if (Math.random() < 0.06) {
@@ -317,26 +330,30 @@ function simHalf(cfg) {
 
 function simOvertime(fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
                      defStealRate, starUsage, starFG2, starFG3, momentum,
-                     otNumber) {
+                     otNumber, starFouledOut, foulClimate) {
     const OT_POSSESSIONS = 5;
     let points = 0, possUsed = 0;
     let makes2 = 0, makes3 = 0, tos = 0;
     let ftMade = 0, ftAtt = 0, orebs = 0;
     let mom = momentum * 0.5;
 
+    const refClimate = foulClimate || 1.0;
     const otFatiguePenalty = 0.04 + (otNumber - 1) * 0.025;
     const fatigueFGMod = 1 - otFatiguePenalty;
     const fatigueTOMod = 1 + otFatiguePenalty * 0.6;
     const otFTRBoost = 8;
-    const effectiveFTR = ftr + otFTRBoost;
+    const effectiveFTR = (ftr + otFTRBoost) * refClimate;
 
     let possLeft = OT_POSSESSIONS;
+    let streak3 = 0;
+    const STREAK_DECAY = 0.65;
 
     while (possLeft > 0) {
         possLeft--;
         possUsed++;
 
-        const isStar = Math.random() < starUsage;
+        const effectiveStarUsage = starFouledOut ? 0 : starUsage;
+        const isStar = Math.random() < effectiveStarUsage;
         const sFG2 = isStar ? starFG2 * fatigueFGMod : 0;
         const sFG3 = isStar ? starFG3 * fatigueFGMod : 0;
         const momFG = mom * 0.3;
@@ -344,6 +361,7 @@ function simOvertime(fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
         if (Math.random() * 100 < toPct * fatigueTOMod) {
             tos++;
             mom = Math.max(mom - 1, -2);
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             continue;
         }
 
@@ -356,19 +374,30 @@ function simOvertime(fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
                 if (Math.random() * 100 < clutchFTPct) { points++; ftMade++; made++; }
             }
             mom = made > 0 ? Math.min(mom + 0.5, 2) : Math.max(mom - 0.5, -2);
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             continue;
         }
 
-        const is3pt = Math.random() * 100 < rate3;
+        const streakFGAdj = streak3 > 0
+            ? Math.min(streak3 * 1.2, 5.0)
+            : Math.max(streak3 * 1.0, -5.0);
+        const streakRateAdj = streak3 > 0
+            ? Math.min(streak3 * 0.8, 4)
+            : Math.max(streak3 * 0.6, -3);
+
+        const is3pt = Math.random() * 100 < clamp(rate3 + streakRateAdj, 15, 65);
         if (is3pt) {
-            if (Math.random() * 100 < (fg3 + sFG3 + momFG * 0.5) * fatigueFGMod) {
+            if (Math.random() * 100 < (fg3 + sFG3 + momFG * 0.5 + streakFGAdj) * fatigueFGMod) {
                 points += 3; makes3++;
                 mom = Math.min(mom + 1.5, 2);
+                streak3 = streak3 > 0 ? streak3 + 1 : 1;
             } else {
                 mom = Math.max(mom - 0.5, -2);
+                streak3 = streak3 < 0 ? streak3 - 1 : -1;
                 if (Math.random() * 100 < orPct * 0.75) { possLeft++; orebs++; }
             }
         } else {
+            streak3 = Math.round(streak3 * STREAK_DECAY);
             if (Math.random() * 100 < (fg2 + sFG2 + momFG * 0.7) * fatigueFGMod) {
                 points += 2; makes2++;
                 mom = Math.min(mom + 1, 2);
@@ -663,12 +692,12 @@ self.onmessage = function(e) {
                 g_t1_FG2, g_t1_FG3, g_t1_TO, g_t1_OR,
                 g_t1_3Rate, g_t1_FTR, p.t1_FTP,
                 p.m_t2StealRate, t1Star.usage, t1Star.fg2Bonus, t1Star.fg3Bonus,
-                t1Mom, otPeriods);
+                t1Mom, otPeriods, gameT1FouledOut, refClimate);
             const ot2 = simOvertime(
                 g_t2_FG2, g_t2_FG3, g_t2_TO, g_t2_OR,
                 g_t2_3Rate, g_t2_FTR, p.t2_FTP,
                 p.m_t1StealRate, t2Star.usage, t2Star.fg2Bonus, t2Star.fg3Bonus,
-                t2Mom, otPeriods);
+                t2Mom, otPeriods, gameT2FouledOut, refClimate);
 
             s1 += ot1.points;
             s2 += ot2.points;
