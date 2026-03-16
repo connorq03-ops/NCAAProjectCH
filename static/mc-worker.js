@@ -64,6 +64,10 @@ function simHalf(cfg) {
     let desperationPoss = 0;
     let intentionalFoulPoss = 0;
 
+    // ── Plan 09: Referee Foul Climate ──
+    const refClimate = foulClimate || 1.0;
+    let bonusReachedPoss = -1;
+
     // ── Plan 06: Player Foul Trouble ──
     const MAX_FOULS = 5;
     const FOUL_SIT_THRESHOLD_H1 = 2;
@@ -87,10 +91,6 @@ function simHalf(cfg) {
     const STREAK_RATE_PENALTY = 0.6 * teamStreakiness;
     let maxHotStreak = 0, maxColdStreak = 0;
     let hotPossessions = 0, coldPossessions = 0;
-
-    // ── Plan 09: Referee Foul Climate ──
-    const refClimate = foulClimate || 1.0;
-    let bonusReachedPoss = -1;
 
     while (possLeft > 0 && possUsed < maxPoss) {
         possLeft--; possUsed++;
