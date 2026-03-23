@@ -364,7 +364,7 @@ class Backtester:
                 'predicted_spread': our_margin,
                 'kp_spread': kp_margin,
                 'actual_spread': actual_margin,
-                'spread_error': abs(actual_margin - our_margin),
+                'spread_error': abs(actual_margin - (-our_margin)),
                 'kp_spread_error': abs(actual_margin - kp_margin),
                 'vegas_spread': score.get('spread'),
                 'predicted_total': composite.get('t1_score', 0) + composite.get('t2_score', 0),
