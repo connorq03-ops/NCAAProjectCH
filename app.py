@@ -818,6 +818,21 @@ def backtest_predictions():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/backtest/self-test', methods=['GET'])
+def backtest_self_test():
+    """Run backtester self-test to validate model implementations."""
+    try:
+        from composite_model import self_test as model_self_test
+        model_results = model_self_test()
+        bt_results = backtester.run_self_test()
+        return jsonify({
+            'model_tests': model_results,
+            'backtester_tests': bt_results,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/game-prediction', methods=['POST'])
 def save_game_prediction():
     """Save a single game prediction. Body: {date, visitor, home, ourMargin, ourPredWinner, ourPredHome, t1Score, t2Score, t1WinProb}."""
