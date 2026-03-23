@@ -379,6 +379,7 @@ class Backtester:
                 'composite_weights': composite.get('weights', {}),
                 'model_agreement': composite.get('model_agreement', 0),
                 'confidence': composite.get('confidence', 'Unknown'),
+                'home_conf': dH_enriched.get('ConfShort', 'Unknown'),
                 'sub_model_margins': {
                     'efficiency': eff['margin'],
                     'similar': sim['margin'],
@@ -445,11 +446,7 @@ class Backtester:
         # -- By-conference breakdown (Step 3c) --
         conf_stats = {}
         for r in results:
-            # Use team2 (home) conference from enriched data or fallback
-            home_conf = r.get('composite_weights', {}).get('_home_conf', 'Unknown')
-            # Try to extract from sub_model data if not present
-            if home_conf == 'Unknown':
-                home_conf = 'Unknown'
+            home_conf = r.get('home_conf', 'Unknown')
             if home_conf not in conf_stats:
                 conf_stats[home_conf] = {'games': 0, 'correct': 0, 'errors': []}
             conf_stats[home_conf]['games'] += 1
