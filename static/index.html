@@ -330,6 +330,15 @@
                         <button onclick="setMatchupLocation('neutral')" id="loc-neutral" class="px-4 py-2 rounded-lg bg-orange-500 text-sm">Neutral</button>
                         <button onclick="setMatchupLocation('team2')" id="loc-team2" class="px-4 py-2 rounded-lg bg-gray-700 text-sm">@ Team 2</button>
                     </div>
+
+                    <!-- NCAA Tournament Toggle -->
+                    <div class="flex justify-center mb-6">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="ncaa-tournament-toggle" class="w-4 h-4 accent-orange-500">
+                            <span class="text-sm text-gray-300">NCAA Tournament Mode</span>
+                            <span class="text-xs text-gray-500">(applies 15% margin dampening)</span>
+                        </label>
+                    </div>
                     
                     <!-- Predict Button -->
                     <button onclick="predictMatchup()" id="predict-btn" class="w-full py-3 bg-gradient-to-r from-orange-500 to-red-500 rounded-lg font-bold text-lg disabled:opacity-50 disabled:cursor-not-allowed" disabled>
@@ -356,6 +365,22 @@
     <script>
         const API_BASE = 'http://localhost:5001/api';
         let currentTab = 'ratings';
+
+        // Dynamic model weights (Part A)
+        let DYNAMIC_WEIGHTS = null;
+        async function loadDynamicWeights() {
+            try {
+                const resp = await fetch(`${API_BASE}/model-weights`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.weights && data.source !== 'default') {
+                        DYNAMIC_WEIGHTS = data.weights;
+                        console.log('[weights] Loaded dynamic weights:', DYNAMIC_WEIGHTS);
+                    }
+                }
+            } catch (e) { /* use defaults */ }
+        }
+        loadDynamicWeights();
         let currentTeamId = null;
         let currentTeamName = null;
         let allTeamsCache = [];
@@ -1668,18 +1693,41 @@
             const hasRichData = !!(ff1 && ff2 && ms1 && ms2 && ht1 && ht2);
             const avgSOS = ((t1.SOS || 0) + (t2.SOS || 0)) / 2;
             const avgGames = ((t1.Wins||0) + (t1.Losses||0) + (t2.Wins||0) + (t2.Losses||0)) / 2;
-            // Base weights: KenPom 10%, Similar 10%, ConRat 20%, MC 60%
-            let wEff = 0.10, wSim = 0.10, wCR = 0.20, wMC = 0.60;
-            if (!hasRichData) { wMC -= 0.10; wEff += 0.05; wCR += 0.05; } // less MC data → rely on KenPom
-            if (avgGames < 15) { wMC -= 0.05; wCR += 0.05; } // early season → ConRat more stable
-            if (Math.abs(avgSOS) > 5) { wSim += 0.03; wMC -= 0.03; } // strong SOS signal → trust SOS model
+            // Use dynamic weights as base if available (Part A)
+            let wEff = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.efficiency : 0.10;
+            let wSim = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.similar : 0.10;
+            let wCR = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.conrat : 0.20;
+            let wMC = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.mc : 0.60;
+            // Data-quality adjustments still apply on top
+            if (!hasRichData) { wMC -= 0.10; wEff += 0.05; wCR += 0.05; }
+            if (avgGames < 15) { wMC -= 0.05; wCR += 0.05; }
+            if (Math.abs(avgSOS) > 5) { wSim += 0.03; wMC -= 0.03; }
             // Normalize to sum to 1
             const wTotal = wEff + wSim + wCR + wMC;
             wEff /= wTotal; wSim /= wTotal; wCR /= wTotal; wMC /= wTotal;
 
             const rawCompositeMargin = eff.margin * wEff + sim.margin * wSim + cr.margin * wCR + mc.margin * wMC;
             // Apply Vegas-style spread calibration (dampens extreme margins)
-            const compositeMargin = calibrateSpread(rawCompositeMargin);
+            let compositeMargin = calibrateSpread(rawCompositeMargin);
+
+            // Situational spot adjustments (Part C)
+            const ncaaToggle = document.getElementById('ncaa-tournament-toggle');
+            const gameContext = {
+                neutral_site: matchupLocation === 'neutral',
+                conf_tournament: matchupLocation === 'neutral' && t1.ConfShort === t2.ConfShort && new Date().getMonth() >= 2,
+                ncaa_tournament: ncaaToggle && ncaaToggle.checked,
+                early_season: new Date().getMonth() >= 10 || new Date().getMonth() === 0,
+            };
+            if (gameContext.ncaa_tournament) {
+                compositeMargin *= 0.85;
+            } else if (gameContext.conf_tournament) {
+                compositeMargin *= 0.88;
+            } else if (gameContext.neutral_site) {
+                compositeMargin *= 0.90;
+            }
+            if (gameContext.early_season) {
+                compositeMargin *= 0.95;
+            }
             const rawT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
             const rawT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
             const scoreMid = (rawT1Score + rawT2Score) / 2;
@@ -3512,7 +3560,12 @@
                     const sim = modelSimilarOpponents(dV, dH, 0, HCA, extra);
                     const cr = modelConRat(dV, dH, 0, HCA, extra);
                     const mc = await modelMonteCarlo(dV, dH, 0, HCA, 5000, extra);
-                    ourMargin = calibrateSpread(eff.margin * 0.10 + sim.margin * 0.10 + cr.margin * 0.20 + mc.margin * 0.60);
+                    // Use dynamic weights if available (Part A)
+                    const rwEff = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.efficiency : 0.10;
+                    const rwSim = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.similar : 0.10;
+                    const rwCR = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.conrat : 0.20;
+                    const rwMC = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.mc : 0.60;
+                    ourMargin = calibrateSpread(eff.margin * rwEff + sim.margin * rwSim + cr.margin * rwCR + mc.margin * rwMC);
                     ourPredWinner = ourMargin >= 0 ? visitor : home;
                 }
 

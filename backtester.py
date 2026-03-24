@@ -14,6 +14,7 @@ bias -- results will be slightly optimistic.
 
 import json
 import os
+from collections import defaultdict
 from datetime import datetime, timedelta
 import requests
 
@@ -24,6 +25,7 @@ from composite_model import (
 )
 from matchup_params import prefetch_all_team_data, build_matchup_params
 from mc_engine import simulate_game
+from model_weight_optimizer import compute_per_model_ats, compute_optimal_weights
 
 
 ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
@@ -215,6 +217,17 @@ class Backtester:
         metrics = self._compute_metrics(results,
                                          calibration_coeffs=calibration_coeffs,
                                          conf_overrides=conf_overrides)
+
+        # Dynamic weight optimization (Part A)
+        per_model_ats = compute_per_model_ats(results)
+        optimal_weights = compute_optimal_weights(per_model_ats)
+        base_weights = {'efficiency': 0.10, 'similar': 0.10, 'conrat': 0.20, 'mc': 0.60}
+        metrics['per_model_ats'] = per_model_ats
+        metrics['optimal_weights'] = optimal_weights
+        metrics['weight_change'] = {
+            name: round(optimal_weights[name] - base, 4)
+            for name, base in base_weights.items()
+        }
 
         # Validation step
         validation_issues = self._validate_backtest(metrics)
@@ -439,6 +452,34 @@ class Backtester:
                     'mc': mc['margin'],
                 },
                 'sub_model_signed_errors': sub_model_signed_errors,
+            }
+
+            # Situational context tagging
+            is_neutral = score.get('neutral_site', False)
+            vis_conf = dV_enriched.get('ConfShort', '')
+            home_conf_tag = dH_enriched.get('ConfShort', '')
+            month = int(date_str[5:7])
+            is_conf_tournament = is_neutral and vis_conf == home_conf_tag and month == 3
+            is_ncaa_tournament = is_neutral and vis_conf != home_conf_tag and month in (3, 4)
+            # Season phase: count days from Nov 1
+            year_for_season = int(date_str[:4]) if month >= 10 else int(date_str[:4]) - 1
+            try:
+                day_of_season = (datetime.strptime(date_str, '%Y-%m-%d') -
+                                 datetime(year_for_season, 11, 1)).days
+            except ValueError:
+                day_of_season = 90
+            is_early_season = day_of_season < 45  # Before mid-December
+            is_late_season = month >= 2  # February+
+
+            pred_result['context'] = {
+                'neutral_site': is_neutral,
+                'conf_tournament': is_conf_tournament,
+                'ncaa_tournament': is_ncaa_tournament,
+                'early_season': is_early_season,
+                'late_season': is_late_season,
+                'same_conference': vis_conf == home_conf_tag,
+                'cross_conference': vis_conf != home_conf_tag,
+                'month': month,
             }
 
             # Sanity-check this prediction
@@ -686,6 +727,33 @@ class Backtester:
                 'avg_error': round(sum(errs) / len(errs), 1) if errs else None,
             }
 
+        # By-context breakdown (Part C: Situational Spot Adjustments)
+        context_stats = defaultdict(lambda: {'games': 0, 'correct': 0, 'errors': [], 'signed_errors': []})
+        for r in results:
+            ctx = r.get('context', {})
+            for tag, active in ctx.items():
+                if active and isinstance(active, bool):
+                    context_stats[tag]['games'] += 1
+                    if r.get('pick_correct'):
+                        context_stats[tag]['correct'] += 1
+                    if r.get('spread_error') is not None:
+                        context_stats[tag]['errors'].append(r['spread_error'])
+                    se = r.get('signed_error')
+                    if se is not None:
+                        context_stats[tag]['signed_errors'].append(se)
+
+        by_context = {}
+        for tag, stats in context_stats.items():
+            if stats['games'] >= 5:
+                mse = sum(stats['signed_errors']) / len(stats['signed_errors']) if stats['signed_errors'] else 0
+                by_context[tag] = {
+                    'games': stats['games'],
+                    'pick_pct': round(stats['correct'] / stats['games'] * 100, 1),
+                    'avg_error': round(sum(stats['errors']) / len(stats['errors']), 1) if stats['errors'] else None,
+                    'mean_signed_error': round(mse, 2),
+                    'bias': 'overpredicts' if mse > 1.5 else 'underpredicts' if mse < -1.5 else 'neutral',
+                }
+
         return {
             'total_games': total,
             'our_pick_accuracy': round(picks_correct / total * 100, 1) if total else 0,
@@ -717,6 +785,7 @@ class Backtester:
             'signed_error_by_bucket': signed_bucket_stats,
             'calibration_recommendations': self._compute_calibration_recommendations(signed_bucket_stats, calibration_coeffs=calibration_coeffs),
             'by_date': daily,
+            'by_context': by_context,
             'results': results,
         }
 

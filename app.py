@@ -1175,6 +1175,80 @@ def get_bracket_team(team_name):
     })
 
 
+# ── Dynamic Model Weights (Part A) ──
+
+@app.route('/api/model-weights', methods=['GET'])
+def get_model_weights():
+    """Get current dynamic model weights."""
+    cached = api_cache.get('dynamic_model_weights', {}, ttl=86400*365)
+    return jsonify(cached or {
+        'weights': {'efficiency': 0.10, 'similar': 0.10, 'conrat': 0.20, 'mc': 0.60},
+        'source': 'default',
+        'last_updated': None,
+    })
+
+
+@app.route('/api/model-weights', methods=['POST'])
+def update_model_weights():
+    """Update dynamic model weights from optimizer output."""
+    body = request.get_json(force=True)
+    weights = body.get('weights', {})
+    # Validate: all 4 models present, sum to ~1.0, each >= 0.05
+    required = {'efficiency', 'similar', 'conrat', 'mc'}
+    if not required.issubset(weights.keys()):
+        return jsonify({'error': 'Missing model weights'}), 400
+    total = sum(weights.values())
+    if abs(total - 1.0) > 0.01:
+        return jsonify({'error': f'Weights sum to {total}, not 1.0'}), 400
+    if any(v < 0.05 for v in weights.values()):
+        return jsonify({'error': 'All weights must be >= 0.05'}), 400
+
+    data = {
+        'weights': weights,
+        'source': body.get('source', 'optimizer'),
+        'per_model_stats': body.get('per_model_stats', {}),
+        'last_updated': body.get('timestamp', datetime.now().isoformat()),
+    }
+    k = api_cache._key('dynamic_model_weights', {})
+    conn = sqlite3.connect(api_cache.db_path)
+    conn.execute(
+        'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+        (k, json.dumps(data, default=str), time.time(), 86400 * 365))
+    conn.commit()
+    conn.close()
+    return jsonify(data)
+
+
+# ── KenPom Blend Ratio (Part B) ──
+
+@app.route('/api/kp-blend-ratio', methods=['GET'])
+def get_kp_blend_ratio():
+    """Get current KenPom blend ratio."""
+    cached = api_cache.get('kp_blend_ratio', {}, ttl=86400*365)
+    return jsonify(cached or {'ratio': 0.18, 'source': 'default'})
+
+
+@app.route('/api/kp-blend-ratio', methods=['POST'])
+def update_kp_blend_ratio():
+    """Update KenPom blend ratio."""
+    body = request.get_json(force=True)
+    ratio = float(body.get('ratio', 0.18))
+    ratio = max(0.0, min(0.30, ratio))  # clamp to [0, 0.30]
+    data = {
+        'ratio': ratio,
+        'source': body.get('source', 'manual'),
+        'last_updated': datetime.now().isoformat(),
+    }
+    k = api_cache._key('kp_blend_ratio', {})
+    conn = sqlite3.connect(api_cache.db_path)
+    conn.execute(
+        'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+        (k, json.dumps(data), time.time(), 86400 * 365))
+    conn.commit()
+    conn.close()
+    return jsonify(data)
+
+
 @app.route('/')
 def index():
     """Serve the main HTML page."""

@@ -14,6 +14,11 @@ import os
 import json
 
 
+# ─── KenPom Calibration Blend ─────────────────────────────────────────────────
+
+KP_BLEND_RATIO = 0.18  # Default: 18% KenPom anchor. Configurable via API.
+
+
 # ─── League Averages (same as index.html) ────────────────────────────────────
 
 AVG_TO = 17.5
@@ -441,6 +446,7 @@ def build_matchup_params(team1_name, team2_name, team_data,
 
     # ── Build final params dict (snake_case for mc_engine) ──
     return {
+        "kp_blend_ratio": KP_BLEND_RATIO,
         "hca1": hca1,
         "hca2": hca2,
         "game_tempo_ctr": game_tempo_ctr,
