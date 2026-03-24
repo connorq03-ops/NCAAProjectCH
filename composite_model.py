@@ -41,16 +41,31 @@ def gaussian_cdf(x):
 # ─── 2. Spread Calibration ───────────────────────────────────────────────────
 # Port of calibrateSpread() — index.html line 706-724
 
-def calibrate_spread(raw_margin):
+def calibrate_spread(raw_margin, coeffs=None):
+    """Apply piecewise spread calibration.
+
+    Args:
+        raw_margin: Raw predicted margin.
+        coeffs: Optional dict with keys 'close', 'moderate', 'logMult'
+                to override the default 0.92 / 0.85 / 3.5 coefficients.
+    """
+    close_coeff = 0.92
+    moderate_coeff = 0.85
+    log_mult = 3.5
+    if coeffs:
+        close_coeff = coeffs.get('close', close_coeff)
+        moderate_coeff = coeffs.get('moderate', moderate_coeff)
+        log_mult = coeffs.get('logMult', log_mult)
+
     sign = 1 if raw_margin >= 0 else -1
     abs_val = abs(raw_margin)
     if abs_val <= 7:
-        calibrated = abs_val * 0.92
+        calibrated = abs_val * close_coeff
     elif abs_val <= 14:
-        calibrated = 7 * 0.92 + (abs_val - 7) * 0.85
+        calibrated = 7 * close_coeff + (abs_val - 7) * moderate_coeff
     else:
-        base = 7 * 0.92 + 7 * 0.85
-        calibrated = base + math.log(1 + (abs_val - 14) * 0.5) * 3.5
+        base = 7 * close_coeff + 7 * moderate_coeff
+        calibrated = base + math.log(1 + (abs_val - 14) * 0.5) * log_mult
     return sign * calibrated
 
 
@@ -300,7 +315,15 @@ def calc_momentum(arch1, arch2, t1, t2):
 # ─── 8. Conference Strength Adjustment ───────────────────────────────────────
 # Port of calcConfAdj() — index.html line 667-681
 
-def calc_conf_adj(t1, t2, conf_map):
+def calc_conf_adj(t1, t2, conf_map, conf_overrides=None):
+    """Conference strength adjustment.
+
+    Args:
+        t1, t2: Team dicts with ConfShort.
+        conf_map: {conf_short: rating} from KenPom conf ratings.
+        conf_overrides: Optional {conf_short: scale_factor} dict.
+                        Default per-conference scale is 0.06.
+    """
     if not conf_map:
         return {'adj': 0, 'r1': 0, 'r2': 0, 'conf1': '', 'conf2': ''}
 
@@ -309,10 +332,21 @@ def calc_conf_adj(t1, t2, conf_map):
     r1 = conf_map.get(conf1, 0) or 0
     r2 = conf_map.get(conf2, 0) or 0
 
-    raw = (r1 - r2) * 0.06
+    # Per-conference scaling (default 0.06)
+    if conf_overrides:
+        scale1 = conf_overrides.get(conf1, 0.06)
+        scale2 = conf_overrides.get(conf2, 0.06)
+        avg_scale = (scale1 + scale2) / 2
+    else:
+        avg_scale = 0.06
+        scale1 = 0.06
+        scale2 = 0.06
+
+    raw = (r1 - r2) * avg_scale
     adj = clamp(raw, -1.5, 1.5)
 
-    return {'adj': adj, 'r1': r1, 'r2': r2, 'conf1': conf1, 'conf2': conf2}
+    return {'adj': adj, 'r1': r1, 'r2': r2, 'conf1': conf1, 'conf2': conf2,
+            'scale1': scale1, 'scale2': scale2}
 
 
 # ─── 9. Model 1: KenPom Efficiency (additive) ───────────────────────────────
@@ -449,8 +483,13 @@ def model_con_rat(t1, t2, hca1, hca2, extra=None):
 # ─── 12. Composite Blending ─────────────────────────────────────────────────
 # Port of composite logic — index.html line 1582-1607
 
-def compute_composite(eff, sim, cr, mc, t1, t2):
-    """Blend 4 model outputs with dynamic weights, apply spread calibration."""
+def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None):
+    """Blend 4 model outputs with dynamic weights, apply spread calibration.
+
+    Args:
+        calibration_coeffs: Optional dict with keys 'close', 'moderate', 'logMult'
+                            passed through to calibrate_spread().
+    """
 
     # Dynamic weights based on data quality
     has_rich_data = bool(t1.get('_ff') and t2.get('_ff')
@@ -486,7 +525,7 @@ def compute_composite(eff, sim, cr, mc, t1, t2):
 
     raw_composite_margin = (eff['margin'] * w_eff + sim['margin'] * w_sim
                             + cr['margin'] * w_cr + mc['margin'] * w_mc)
-    composite_margin = calibrate_spread(raw_composite_margin)
+    composite_margin = calibrate_spread(raw_composite_margin, coeffs=calibration_coeffs)
 
     raw_t1_score = (eff['t1_score'] * w_eff + sim['t1_score'] * w_sim
                     + cr['t1_score'] * w_cr + mc['t1_score'] * w_mc)

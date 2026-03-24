@@ -794,6 +794,80 @@ def delete_prediction(pred_id):
 backtester = Backtester(predictions_file=PREDICTIONS_FILE)
 
 
+# ── Calibration Persistence Endpoints ──
+
+@app.route('/api/calibration', methods=['GET'])
+def get_calibration():
+    """Get current spread calibration coefficients."""
+    cached = api_cache.get('spread_calibration', {}, ttl=86400 * 365)
+    if cached:
+        return jsonify(cached)
+    # Default coefficients
+    return jsonify({
+        'close_coeff': 0.92,
+        'moderate_coeff': 0.85,
+        'log_multiplier': 3.5,
+        'last_updated': None,
+        'sample_size': 0,
+    })
+
+
+@app.route('/api/calibration', methods=['POST'])
+def update_calibration():
+    """Update spread calibration coefficients from backtest results."""
+    body = request.get_json(force=True)
+    # Validate ranges
+    close = max(0.80, min(1.0, body.get('close_coeff', 0.92)))
+    moderate = max(0.70, min(0.95, body.get('moderate_coeff', 0.85)))
+    log_mult = max(2.0, min(5.0, body.get('log_multiplier', 3.5)))
+
+    data = {
+        'close_coeff': round(close, 3),
+        'moderate_coeff': round(moderate, 3),
+        'log_multiplier': round(log_mult, 2),
+        'last_updated': datetime.now().isoformat(),
+        'sample_size': body.get('sample_size', 0),
+        'source_backtest': body.get('source_backtest', ''),
+    }
+    # Store with very long TTL (1 year)
+    k = api_cache._key('spread_calibration', {})
+    conn = sqlite3.connect(api_cache.db_path)
+    conn.execute(
+        'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+        (k, json.dumps(data), time.time(), 86400 * 365))
+    conn.commit()
+    conn.close()
+    return jsonify(data)
+
+
+@app.route('/api/conf-adjustments', methods=['GET'])
+def get_conf_adjustments():
+    """Get per-conference scaling overrides for calcConfAdj()."""
+    cached = api_cache.get('conf_adjustments', {}, ttl=86400 * 365)
+    return jsonify(cached or {})
+
+
+@app.route('/api/conf-adjustments', methods=['POST'])
+def update_conf_adjustments():
+    """Update per-conference scaling overrides."""
+    body = request.get_json(force=True)
+    # body format: {"SEC": 0.04, "WCC": 0.08, ...}
+    # Each value is the per-conference scaling factor (default 0.06)
+    # Clamp each to [0.01, 0.12]
+    adjustments = {}
+    for conf, factor in body.items():
+        adjustments[conf] = round(max(0.01, min(0.12, float(factor))), 3)
+
+    k = api_cache._key('conf_adjustments', {})
+    conn = sqlite3.connect(api_cache.db_path)
+    conn.execute(
+        'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+        (k, json.dumps(adjustments), time.time(), 86400 * 365))
+    conn.commit()
+    conn.close()
+    return jsonify(adjustments)
+
+
 @app.route('/api/backtest', methods=['GET'])
 def run_backtest():
     """Run backtest over a date range. Params: start, end (YYYY-MM-DD)."""

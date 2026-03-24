@@ -155,6 +155,19 @@ class Backtester:
         This is the full automated pipeline that doesn't require pre-saved predictions.
         Uses the full 4-model composite pipeline.
         """
+        # -- Load stored calibration overrides --
+        stored_cal = cache.get('spread_calibration', {}, ttl=86400 * 365) or {}
+        calibration_coeffs = None
+        if stored_cal.get('close_coeff') is not None:
+            calibration_coeffs = {
+                'close': stored_cal['close_coeff'],
+                'moderate': stored_cal.get('moderate_coeff', 0.85),
+                'logMult': stored_cal.get('log_multiplier', 3.5),
+            }
+        conf_overrides = cache.get('conf_adjustments', {}, ttl=86400 * 365) or {}
+        if not conf_overrides:
+            conf_overrides = None
+
         # -- One-time bulk data prefetch --
         year = _kenpom_season_year(start_date)
         try:
@@ -188,6 +201,8 @@ class Backtester:
                 day_results = self._backtest_single_day(
                     date_str, kenpom_client, cache,
                     team_data=team_data, conf_map=conf_map,
+                    calibration_coeffs=calibration_coeffs,
+                    conf_overrides=conf_overrides,
                 )
                 results.extend(day_results)
             except Exception as e:
@@ -197,7 +212,9 @@ class Backtester:
         if not results:
             return {'error': 'No games found in date range', 'results': []}
 
-        metrics = self._compute_metrics(results)
+        metrics = self._compute_metrics(results,
+                                         calibration_coeffs=calibration_coeffs,
+                                         conf_overrides=conf_overrides)
 
         # Validation step
         validation_issues = self._validate_backtest(metrics)
@@ -225,7 +242,8 @@ class Backtester:
         return None
 
     def _backtest_single_day(self, date_str, kenpom_client, cache,
-                             team_data=None, conf_map=None):
+                             team_data=None, conf_map=None,
+                             calibration_coeffs=None, conf_overrides=None):
         """Backtest a single day: fetch fanmatch + scores, compare predictions."""
         if team_data is None:
             team_data = {}
@@ -324,7 +342,8 @@ class Backtester:
             # Enrichment factors
             style_clash = calc_style_clash(ff1_data, ff2_data)
             experience = calc_experience_adj(ht1_data, ht2_data)
-            conf_strength = calc_conf_adj(dV_enriched, dH_enriched, conf_map)
+            conf_strength = calc_conf_adj(dV_enriched, dH_enriched, conf_map,
+                                          conf_overrides=conf_overrides)
             # Momentum: skip for now (requires archive fetch per date, expensive)
             momentum = {'adj': 0}
             extra = {
@@ -359,13 +378,26 @@ class Backtester:
                 mc = dict(eff)
 
             # Composite
-            composite = compute_composite(eff, sim, cr, mc, dV_enriched, dH_enriched)
+            composite = compute_composite(eff, sim, cr, mc, dV_enriched, dH_enriched,
+                                          calibration_coeffs=calibration_coeffs)
             our_margin = composite['margin']  # visitor-relative (positive = visitor favored)
             our_winner = visitor if our_margin >= 0 else home
 
             # Actual result
             actual_margin = score['home_score'] - score['away_score']
             actual_winner = home if actual_margin >= 0 else visitor
+
+            # Signed error for calibration: positive = overpredicts magnitude, negative = underpredicts
+            # Use direction-independent metric so home-favored and away-favored don't cancel
+            # when bucketed by absolute spread
+            home_pred_margin = -our_margin
+            signed_error = round(abs(home_pred_margin) - abs(actual_margin), 1)
+
+            # Sub-model signed errors (direction-independent: abs(pred) - abs(actual))
+            sub_model_signed_errors = {}
+            for name, margin in {'efficiency': eff['margin'], 'similar': sim['margin'],
+                                  'conrat': cr['margin'], 'mc': mc['margin']}.items():
+                sub_model_signed_errors[name] = round(abs(margin) - abs(actual_margin), 1)
 
             # Build result dict
             pred_result = {
@@ -396,12 +428,17 @@ class Backtester:
                 'model_agreement': composite.get('model_agreement', 0),
                 'confidence': composite.get('confidence', 'Unknown'),
                 'home_conf': dH_enriched.get('ConfShort', 'Unknown'),
+                'away_conf': dV_enriched.get('ConfShort', 'Unknown'),
+                'cross_conf': dH_enriched.get('ConfShort', '') != dV_enriched.get('ConfShort', ''),
+                'signed_error': signed_error,
+                'predicted_abs_spread': round(abs(our_margin), 1),
                 'sub_model_margins': {
                     'efficiency': eff['margin'],
                     'similar': sim['margin'],
                     'conrat': cr['margin'],
                     'mc': mc['margin'],
                 },
+                'sub_model_signed_errors': sub_model_signed_errors,
             }
 
             # Sanity-check this prediction
@@ -428,7 +465,7 @@ class Backtester:
         return None
 
 
-    def _compute_metrics(self, results):
+    def _compute_metrics(self, results, calibration_coeffs=None, conf_overrides=None):
         """Compute accuracy metrics from backtest results, including composite vs simple comparison."""
         if not results:
             return {'total_games': 0, 'results': []}
@@ -506,6 +543,119 @@ class Backtester:
                     'avg_error': round(sum(be) / len(be), 1) if be else None,
                 }
 
+        # Signed error by spread bucket (aligned with calibrateSpread breakpoints)
+        signed_buckets = {'0-3': [], '3-7': [], '7-14': [], '14-20': [], '20+': []}
+        for r in results:
+            margin = abs(r.get('predicted_spread', 0))
+            se = r.get('signed_error')
+            if se is None:
+                continue
+            if margin <= 3:
+                signed_buckets['0-3'].append(se)
+            elif margin <= 7:
+                signed_buckets['3-7'].append(se)
+            elif margin <= 14:
+                signed_buckets['7-14'].append(se)
+            elif margin <= 20:
+                signed_buckets['14-20'].append(se)
+            else:
+                signed_buckets['20+'].append(se)
+
+        signed_bucket_stats = {}
+        for bname, errors in signed_buckets.items():
+            if errors:
+                mean_se = sum(errors) / len(errors)
+                signed_bucket_stats[bname] = {
+                    'games': len(errors),
+                    'mean_signed_error': round(mean_se, 2),
+                    'direction': 'overpredicts' if mean_se > 0.5 else 'underpredicts' if mean_se < -0.5 else 'accurate',
+                    'std_dev': round((sum((e - mean_se)**2 for e in errors) / len(errors))**0.5, 2),
+                }
+
+        # Conference-level analysis (both home and away conferences tracked)
+        conf_stats_full = {}
+        for r in results:
+            home_conf = r.get('home_conf', 'Unknown')
+            away_conf = r.get('away_conf', 'Unknown')
+
+            for conf, role in [(home_conf, 'home'), (away_conf, 'away')]:
+                if not conf:
+                    continue
+                if conf not in conf_stats_full:
+                    conf_stats_full[conf] = {
+                        'games': 0, 'correct': 0,
+                        'errors': [], 'signed_errors': [],
+                        'ats_hits': 0, 'ats_misses': 0,
+                        'as_home': 0, 'as_away': 0,
+                    }
+                conf_stats_full[conf]['games'] += 1
+                conf_stats_full[conf][f'as_{role}'] += 1
+                if r.get('pick_correct'):
+                    conf_stats_full[conf]['correct'] += 1
+                if r.get('spread_error') is not None:
+                    conf_stats_full[conf]['errors'].append(r['spread_error'])
+                if r.get('signed_error') is not None:
+                    conf_stats_full[conf]['signed_errors'].append(r['signed_error'])
+                # ATS tracking (only if vegas_spread available)
+                if r.get('vegas_spread') is not None and r.get('signed_error') is not None:
+                    vegas = r['vegas_spread']
+                    our_margin_val = -r.get('predicted_spread', 0)  # convert visitor-relative to home-relative
+                    actual = r.get('actual_spread', 0)
+                    if abs(our_margin_val - vegas) > 0.5:
+                        our_side_covered = (our_margin_val > vegas and actual > vegas) or \
+                                           (our_margin_val < vegas and actual < vegas)
+                        if our_side_covered:
+                            conf_stats_full[conf]['ats_hits'] += 1
+                        else:
+                            conf_stats_full[conf]['ats_misses'] += 1
+
+        by_conference_full = {}
+        for conf, stats in sorted(conf_stats_full.items(), key=lambda x: -x[1]['games']):
+            if stats['games'] < 5:
+                continue
+            ats_total = stats['ats_hits'] + stats['ats_misses']
+            mse = (sum(stats['signed_errors']) / len(stats['signed_errors'])) if stats['signed_errors'] else None
+            by_conference_full[conf] = {
+                'games': stats['games'],
+                'pick_pct': round(stats['correct'] / stats['games'] * 100, 1),
+                'avg_error': round(sum(stats['errors']) / len(stats['errors']), 1) if stats['errors'] else None,
+                'mean_signed_error': round(mse, 2) if mse is not None else None,
+                'bias_direction': 'overpredicts' if mse is not None and mse > 1.0 else
+                                  'underpredicts' if mse is not None and mse < -1.0 else 'neutral',
+                'ats_pct': round(stats['ats_hits'] / ats_total * 100, 1) if ats_total > 0 else None,
+                'ats_record': f"{stats['ats_hits']}-{stats['ats_misses']}" if ats_total > 0 else None,
+                'as_home': stats['as_home'],
+                'as_away': stats['as_away'],
+            }
+
+        # Cross-conference vs intra-conference analysis
+        cross_conf_games = [r for r in results if r.get('cross_conf')]
+        intra_conf_games = [r for r in results if not r.get('cross_conf')]
+
+        cross_conf_stats = {}
+        if cross_conf_games:
+            cc_correct = sum(1 for r in cross_conf_games if r.get('pick_correct'))
+            cc_errors = [r['spread_error'] for r in cross_conf_games if r.get('spread_error') is not None]
+            cc_signed = [r['signed_error'] for r in cross_conf_games if r.get('signed_error') is not None]
+            cross_conf_stats = {
+                'games': len(cross_conf_games),
+                'pick_pct': round(cc_correct / len(cross_conf_games) * 100, 1),
+                'avg_error': round(sum(cc_errors) / len(cc_errors), 1) if cc_errors else None,
+                'mean_signed_error': round(sum(cc_signed) / len(cc_signed), 2) if cc_signed else None,
+            }
+
+        intra_conf_stats = {}
+        if intra_conf_games:
+            ic_correct = sum(1 for r in intra_conf_games if r.get('pick_correct'))
+            ic_errors = [r['spread_error'] for r in intra_conf_games if r.get('spread_error') is not None]
+            ic_signed = [r['signed_error'] for r in intra_conf_games if r.get('signed_error') is not None]
+            intra_conf_stats = {
+                'games': len(intra_conf_games),
+                'pick_pct': round(ic_correct / len(intra_conf_games) * 100, 1),
+                'avg_error': round(sum(ic_errors) / len(ic_errors), 1) if ic_errors else None,
+                'mean_signed_error': round(sum(ic_signed) / len(ic_signed), 2) if ic_signed else None,
+            }
+
         # By date
         date_stats = {}
         for r in results:
@@ -554,12 +704,127 @@ class Backtester:
             ) if spread_errors and simple_errors else None,
             # Sub-model accuracy
             'sub_model_accuracy': sub_model_accuracy,
-            # By-conference breakdown
+            # By-conference breakdown (legacy simple version)
             'by_conference': conf_breakdown,
+            # Enhanced conference breakdown with signed errors and ATS
+            'by_conference_full': by_conference_full,
+            'conference_adjustment_recommendations': self._compute_conf_recommendations(by_conference_full, conf_overrides=conf_overrides),
+            # Cross-conf vs intra-conf comparison
+            'cross_conf_stats': cross_conf_stats,
+            'intra_conf_stats': intra_conf_stats,
             'by_spread_bucket': bucket_stats,
+            # Signed error by bucket (for calibration feedback loop)
+            'signed_error_by_bucket': signed_bucket_stats,
+            'calibration_recommendations': self._compute_calibration_recommendations(signed_bucket_stats, calibration_coeffs=calibration_coeffs),
             'by_date': daily,
             'results': results,
         }
+
+    # -- Calibration Recommendation Methods --
+
+    def _compute_calibration_recommendations(self, signed_bucket_stats, calibration_coeffs=None):
+        """Compute recommended calibrateSpread() coefficient adjustments.
+
+        Uses the actual coefficients that were applied during the backtest run
+        (from calibration_coeffs) rather than hardcoded defaults, so that
+        iterative apply-then-rerun converges instead of oscillating.
+        """
+        cc = calibration_coeffs or {}
+        recommendations = {}
+
+        # Bucket 0-7
+        close_errors = []
+        for bname in ['0-3', '3-7']:
+            if bname in signed_bucket_stats:
+                s = signed_bucket_stats[bname]
+                close_errors.extend([s['mean_signed_error']] * s['games'])
+        if close_errors:
+            avg_close = sum(close_errors) / len(close_errors)
+            # Each 1pt of mean signed error -> adjust coefficient by ~0.02
+            current = cc.get('close', 0.92)
+            adjustment = -avg_close * 0.02  # negative error -> increase coeff
+            new_coeff = max(0.80, min(1.0, current + adjustment))
+            sample = sum(signed_bucket_stats.get(b, {}).get('games', 0) for b in ['0-3', '3-7'])
+            recommendations['close_games_0_7'] = {
+                'current': current,
+                'recommended': round(new_coeff, 3),
+                'mean_signed_error': round(avg_close, 2),
+                'sample_size': sample,
+                'confidence': 'high' if sample >= 50 else 'low',
+            }
+
+        # Bucket 7-14
+        if '7-14' in signed_bucket_stats:
+            s = signed_bucket_stats['7-14']
+            current = cc.get('moderate', 0.85)
+            adjustment = -s['mean_signed_error'] * 0.02
+            new_coeff = max(0.70, min(0.95, current + adjustment))
+            recommendations['moderate_spreads_7_14'] = {
+                'current': current,
+                'recommended': round(new_coeff, 3),
+                'mean_signed_error': s['mean_signed_error'],
+                'sample_size': s['games'],
+                'confidence': 'high' if s['games'] >= 30 else 'low',
+            }
+
+        # Bucket 14+: log compression
+        blowout_errors = []
+        for bname in ['14-20', '20+']:
+            if bname in signed_bucket_stats:
+                s = signed_bucket_stats[bname]
+                blowout_errors.extend([s['mean_signed_error']] * s['games'])
+        if blowout_errors:
+            avg_blowout = sum(blowout_errors) / len(blowout_errors)
+            current_mult = cc.get('logMult', 3.5)
+            # Each 1pt of mean signed error -> adjust log multiplier by ~0.15
+            adjustment = -avg_blowout * 0.15
+            new_mult = max(2.0, min(5.0, current_mult + adjustment))
+            sample = sum(signed_bucket_stats.get(b, {}).get('games', 0) for b in ['14-20', '20+'])
+            recommendations['blowouts_14_plus'] = {
+                'current_log_mult': current_mult,
+                'recommended_log_mult': round(new_mult, 2),
+                'mean_signed_error': round(avg_blowout, 2),
+                'sample_size': sample,
+                'confidence': 'high' if sample >= 20 else 'low',
+            }
+
+        return recommendations
+
+    def _compute_conf_recommendations(self, by_conference, conf_overrides=None):
+        """Identify conferences where the model is systematically biased.
+
+        If we consistently overpredict SEC games (mean signed error > +2),
+        it means SEC teams underperform our model's expectations.
+        This could mean:
+        - calcConfAdj() overvalues SEC conference strength
+        - KenPom's SOS adjustment already captures this, and our conf adj double-counts
+        - That conference's physical style causes more variance
+        """
+        recommendations = []
+        for conf, stats in by_conference.items():
+            mse = stats.get('mean_signed_error')
+            if mse is None or stats['games'] < 10:
+                continue
+            if abs(mse) > 1.5:  # significant bias
+                # Current calcConfAdj uses flat 0.06 scaling
+                # If we overpredict by 2 pts, reduce that conference's effective rating
+                recommendations.append({
+                    'conference': conf,
+                    'games': stats['games'],
+                    'mean_signed_error': mse,
+                    'direction': stats['bias_direction'],
+                    'pick_pct': stats['pick_pct'],
+                    'ats_pct': stats.get('ats_pct'),
+                    'suggested_action': f"Reduce {conf} conf adj by {abs(mse) * 0.03:.2f}" if mse > 0
+                                        else f"Increase {conf} conf adj by {abs(mse) * 0.03:.2f}",
+                    'current_scale': (conf_overrides or {}).get(conf, 0.06),
+                    'suggested_scale': round(max(0.01, min(0.12, (conf_overrides or {}).get(conf, 0.06) - mse * 0.03)), 3),
+                    'confidence': 'high' if stats['games'] >= 30 else 'medium' if stats['games'] >= 15 else 'low',
+                })
+
+        # Sort by absolute bias magnitude
+        recommendations.sort(key=lambda x: abs(x['mean_signed_error']), reverse=True)
+        return recommendations
 
     # -- Validation Methods --
 
