@@ -212,7 +212,9 @@ class Backtester:
         if not results:
             return {'error': 'No games found in date range', 'results': []}
 
-        metrics = self._compute_metrics(results)
+        metrics = self._compute_metrics(results,
+                                         calibration_coeffs=calibration_coeffs,
+                                         conf_overrides=conf_overrides)
 
         # Validation step
         validation_issues = self._validate_backtest(metrics)
@@ -463,7 +465,7 @@ class Backtester:
         return None
 
 
-    def _compute_metrics(self, results):
+    def _compute_metrics(self, results, calibration_coeffs=None, conf_overrides=None):
         """Compute accuracy metrics from backtest results, including composite vs simple comparison."""
         if not results:
             return {'total_games': 0, 'results': []}
@@ -706,30 +708,31 @@ class Backtester:
             'by_conference': conf_breakdown,
             # Enhanced conference breakdown with signed errors and ATS
             'by_conference_full': by_conference_full,
-            'conference_adjustment_recommendations': self._compute_conf_recommendations(by_conference_full),
+            'conference_adjustment_recommendations': self._compute_conf_recommendations(by_conference_full, conf_overrides=conf_overrides),
             # Cross-conf vs intra-conf comparison
             'cross_conf_stats': cross_conf_stats,
             'intra_conf_stats': intra_conf_stats,
             'by_spread_bucket': bucket_stats,
             # Signed error by bucket (for calibration feedback loop)
             'signed_error_by_bucket': signed_bucket_stats,
-            'calibration_recommendations': self._compute_calibration_recommendations(signed_bucket_stats),
+            'calibration_recommendations': self._compute_calibration_recommendations(signed_bucket_stats, calibration_coeffs=calibration_coeffs),
             'by_date': daily,
             'results': results,
         }
 
     # -- Calibration Recommendation Methods --
 
-    def _compute_calibration_recommendations(self, signed_bucket_stats):
+    def _compute_calibration_recommendations(self, signed_bucket_stats, calibration_coeffs=None):
         """Compute recommended calibrateSpread() coefficient adjustments.
 
-        Current coefficients: 0.92 (0-7 pts), 0.85 (7-14 pts), log(14+) with 3.5 multiplier.
-        If mean signed error is positive (overpredicting), reduce the coefficient.
-        If negative (underpredicting), increase it.
+        Uses the actual coefficients that were applied during the backtest run
+        (from calibration_coeffs) rather than hardcoded defaults, so that
+        iterative apply-then-rerun converges instead of oscillating.
         """
+        cc = calibration_coeffs or {}
         recommendations = {}
 
-        # Bucket 0-7: currently 0.92x
+        # Bucket 0-7
         close_errors = []
         for bname in ['0-3', '3-7']:
             if bname in signed_bucket_stats:
@@ -738,7 +741,7 @@ class Backtester:
         if close_errors:
             avg_close = sum(close_errors) / len(close_errors)
             # Each 1pt of mean signed error -> adjust coefficient by ~0.02
-            current = 0.92
+            current = cc.get('close', 0.92)
             adjustment = -avg_close * 0.02  # negative error -> increase coeff
             new_coeff = max(0.80, min(1.0, current + adjustment))
             sample = sum(signed_bucket_stats.get(b, {}).get('games', 0) for b in ['0-3', '3-7'])
@@ -750,10 +753,10 @@ class Backtester:
                 'confidence': 'high' if sample >= 50 else 'low',
             }
 
-        # Bucket 7-14: currently 0.85x
+        # Bucket 7-14
         if '7-14' in signed_bucket_stats:
             s = signed_bucket_stats['7-14']
-            current = 0.85
+            current = cc.get('moderate', 0.85)
             adjustment = -s['mean_signed_error'] * 0.02
             new_coeff = max(0.70, min(0.95, current + adjustment))
             recommendations['moderate_spreads_7_14'] = {
@@ -764,7 +767,7 @@ class Backtester:
                 'confidence': 'high' if s['games'] >= 30 else 'low',
             }
 
-        # Bucket 14+: currently log compression with 3.5 multiplier
+        # Bucket 14+: log compression
         blowout_errors = []
         for bname in ['14-20', '20+']:
             if bname in signed_bucket_stats:
@@ -772,7 +775,7 @@ class Backtester:
                 blowout_errors.extend([s['mean_signed_error']] * s['games'])
         if blowout_errors:
             avg_blowout = sum(blowout_errors) / len(blowout_errors)
-            current_mult = 3.5
+            current_mult = cc.get('logMult', 3.5)
             # Each 1pt of mean signed error -> adjust log multiplier by ~0.15
             adjustment = -avg_blowout * 0.15
             new_mult = max(2.0, min(5.0, current_mult + adjustment))
@@ -787,7 +790,7 @@ class Backtester:
 
         return recommendations
 
-    def _compute_conf_recommendations(self, by_conference):
+    def _compute_conf_recommendations(self, by_conference, conf_overrides=None):
         """Identify conferences where the model is systematically biased.
 
         If we consistently overpredict SEC games (mean signed error > +2),
@@ -814,7 +817,8 @@ class Backtester:
                     'ats_pct': stats.get('ats_pct'),
                     'suggested_action': f"Reduce {conf} conf adj by {abs(mse) * 0.03:.2f}" if mse > 0
                                         else f"Increase {conf} conf adj by {abs(mse) * 0.03:.2f}",
-                    'suggested_scale': round(max(0.01, min(0.12, 0.06 - mse * 0.03)), 3),
+                    'current_scale': (conf_overrides or {}).get(conf, 0.06),
+                    'suggested_scale': round(max(0.01, min(0.12, (conf_overrides or {}).get(conf, 0.06) - mse * 0.03)), 3),
                     'confidence': 'high' if stats['games'] >= 30 else 'medium' if stats['games'] >= 15 else 'low',
                 })
 
