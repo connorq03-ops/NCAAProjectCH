@@ -155,6 +155,19 @@ class Backtester:
         This is the full automated pipeline that doesn't require pre-saved predictions.
         Uses the full 4-model composite pipeline.
         """
+        # -- Load stored calibration overrides --
+        stored_cal = cache.get('spread_calibration', {}, ttl=86400 * 365) or {}
+        calibration_coeffs = None
+        if stored_cal.get('close_coeff') is not None:
+            calibration_coeffs = {
+                'close': stored_cal['close_coeff'],
+                'moderate': stored_cal.get('moderate_coeff', 0.85),
+                'logMult': stored_cal.get('log_multiplier', 3.5),
+            }
+        conf_overrides = cache.get('conf_adjustments', {}, ttl=86400 * 365) or {}
+        if not conf_overrides:
+            conf_overrides = None
+
         # -- One-time bulk data prefetch --
         year = _kenpom_season_year(start_date)
         try:
@@ -188,6 +201,8 @@ class Backtester:
                 day_results = self._backtest_single_day(
                     date_str, kenpom_client, cache,
                     team_data=team_data, conf_map=conf_map,
+                    calibration_coeffs=calibration_coeffs,
+                    conf_overrides=conf_overrides,
                 )
                 results.extend(day_results)
             except Exception as e:
@@ -225,7 +240,8 @@ class Backtester:
         return None
 
     def _backtest_single_day(self, date_str, kenpom_client, cache,
-                             team_data=None, conf_map=None):
+                             team_data=None, conf_map=None,
+                             calibration_coeffs=None, conf_overrides=None):
         """Backtest a single day: fetch fanmatch + scores, compare predictions."""
         if team_data is None:
             team_data = {}
@@ -324,7 +340,8 @@ class Backtester:
             # Enrichment factors
             style_clash = calc_style_clash(ff1_data, ff2_data)
             experience = calc_experience_adj(ht1_data, ht2_data)
-            conf_strength = calc_conf_adj(dV_enriched, dH_enriched, conf_map)
+            conf_strength = calc_conf_adj(dV_enriched, dH_enriched, conf_map,
+                                          conf_overrides=conf_overrides)
             # Momentum: skip for now (requires archive fetch per date, expensive)
             momentum = {'adj': 0}
             extra = {
@@ -359,7 +376,8 @@ class Backtester:
                 mc = dict(eff)
 
             # Composite
-            composite = compute_composite(eff, sim, cr, mc, dV_enriched, dH_enriched)
+            composite = compute_composite(eff, sim, cr, mc, dV_enriched, dH_enriched,
+                                          calibration_coeffs=calibration_coeffs)
             our_margin = composite['margin']  # visitor-relative (positive = visitor favored)
             our_winner = visitor if our_margin >= 0 else home
 

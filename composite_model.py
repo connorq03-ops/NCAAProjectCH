@@ -483,8 +483,13 @@ def model_con_rat(t1, t2, hca1, hca2, extra=None):
 # ─── 12. Composite Blending ─────────────────────────────────────────────────
 # Port of composite logic — index.html line 1582-1607
 
-def compute_composite(eff, sim, cr, mc, t1, t2):
-    """Blend 4 model outputs with dynamic weights, apply spread calibration."""
+def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None):
+    """Blend 4 model outputs with dynamic weights, apply spread calibration.
+
+    Args:
+        calibration_coeffs: Optional dict with keys 'close', 'moderate', 'logMult'
+                            passed through to calibrate_spread().
+    """
 
     # Dynamic weights based on data quality
     has_rich_data = bool(t1.get('_ff') and t2.get('_ff')
@@ -520,7 +525,7 @@ def compute_composite(eff, sim, cr, mc, t1, t2):
 
     raw_composite_margin = (eff['margin'] * w_eff + sim['margin'] * w_sim
                             + cr['margin'] * w_cr + mc['margin'] * w_mc)
-    composite_margin = calibrate_spread(raw_composite_margin)
+    composite_margin = calibrate_spread(raw_composite_margin, coeffs=calibration_coeffs)
 
     raw_t1_score = (eff['t1_score'] * w_eff + sim['t1_score'] * w_sim
                     + cr['t1_score'] * w_cr + mc['t1_score'] * w_mc)
