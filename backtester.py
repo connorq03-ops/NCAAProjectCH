@@ -367,16 +367,17 @@ class Backtester:
             actual_margin = score['home_score'] - score['away_score']
             actual_winner = home if actual_margin >= 0 else visitor
 
-            # Signed error: predicted margin (home-relative) - actual margin
-            # our_margin is visitor-relative, so home-relative predicted = -our_margin
+            # Signed error for calibration: positive = overpredicts magnitude, negative = underpredicts
+            # Use direction-independent metric so home-favored and away-favored don't cancel
+            # when bucketed by absolute spread
             home_pred_margin = -our_margin
-            signed_error = round(home_pred_margin - actual_margin, 1)
+            signed_error = round(abs(home_pred_margin) - abs(actual_margin), 1)
 
-            # Sub-model signed errors (each margin is visitor-relative)
+            # Sub-model signed errors (direction-independent: abs(pred) - abs(actual))
             sub_model_signed_errors = {}
             for name, margin in {'efficiency': eff['margin'], 'similar': sim['margin'],
                                   'conrat': cr['margin'], 'mc': mc['margin']}.items():
-                sub_model_signed_errors[name] = round((-margin) - actual_margin, 1)
+                sub_model_signed_errors[name] = round(abs(margin) - abs(actual_margin), 1)
 
             # Build result dict
             pred_result = {
