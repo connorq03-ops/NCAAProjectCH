@@ -551,6 +551,7 @@ def flip_matchup_params(params):
         "t2_star_foul_proneness": params["t1_star_foul_proneness"],
         "t1_streakiness": params["t2_streakiness"],
         "t2_streakiness": params["t1_streakiness"],
+        "kp_blend_ratio": params.get("kp_blend_ratio", KP_BLEND_RATIO),
         "ref_foul_climate": params["ref_foul_climate"],
         "_team1": params["_team2"],
         "_team2": params["_team1"],
