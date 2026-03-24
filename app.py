@@ -1084,7 +1084,10 @@ def start_bracket_simulation():
     num_sims_per_game = min(body.get('num_sims_per_game', 500), 2000)
     num_workers = body.get('num_workers', None)  # None = auto-detect
     if num_workers is not None:
-        num_workers = min(max(int(num_workers), 1), os.cpu_count() or 1)
+        try:
+            num_workers = min(max(int(num_workers), 1), os.cpu_count() or 1)
+        except (ValueError, TypeError):
+            num_workers = None  # fall back to auto-detect
 
     with _bracket_sim_lock:
         _bracket_sim_state['status'] = 'running'

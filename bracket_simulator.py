@@ -472,8 +472,13 @@ class BracketSimulator:
 
         elapsed = time.time() - start_time
 
+        if completed == 0:
+            raise RuntimeError(
+                f"All {len(worker_args)} parallel workers failed. "
+                f"Check logs for details.")
+
         return self._aggregate_results(
-            round_counts, champion_counts, completed or num_tournaments, elapsed,
+            round_counts, champion_counts, completed, elapsed,
             num_sims_per_game)
 
     def _run_sequential(self, num_tournaments, num_sims_per_game,
