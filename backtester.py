@@ -29,6 +29,21 @@ from mc_engine import simulate_game
 ESPN_SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard"
 
 
+def _kenpom_season_year(date_str):
+    """Convert a YYYY-MM-DD date to the KenPom season-ending year.
+
+    KenPom indexes the 2024-25 season as year=2025. The season starts in
+    November, so any date in Nov-Dec belongs to the *next* calendar year's
+    season (e.g. 2024-11-15 → 2025).  Jan-Apr dates already have the
+    correct calendar year (e.g. 2025-03-01 → 2025).
+    """
+    year = int(date_str[:4])
+    month = int(date_str[5:7])
+    if month >= 10:          # Oct-Dec → next year's season
+        return year + 1
+    return year
+
+
 def _fetch_espn_scores(date_str):
     """Fetch final scores from ESPN for a YYYY-MM-DD date."""
     espn_date = date_str.replace('-', '')
@@ -141,7 +156,7 @@ class Backtester:
         Uses the full 4-model composite pipeline.
         """
         # -- One-time bulk data prefetch --
-        year = int(start_date[:4])
+        year = _kenpom_season_year(start_date)
         try:
             team_data = prefetch_all_team_data(kenpom_client, cache, year=year)
         except Exception as e:
@@ -235,10 +250,11 @@ class Backtester:
 
         # Get ratings for predictions
         try:
-            ratings = cache.get('ratings_backtest', {'year': date_str[:4]})
+            ratings_year = _kenpom_season_year(date_str)
+            ratings = cache.get('ratings_backtest', {'year': ratings_year})
             if ratings is None:
-                ratings = kenpom_client.get_ratings(year=int(date_str[:4]))
-                cache.set('ratings_backtest', {'year': date_str[:4]}, ratings)
+                ratings = kenpom_client.get_ratings(year=ratings_year)
+                cache.set('ratings_backtest', {'year': ratings_year}, ratings)
         except Exception:
             return []
 
