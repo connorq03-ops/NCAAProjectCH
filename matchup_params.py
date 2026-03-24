@@ -120,6 +120,22 @@ def _load_coach_data():
     return _coach_data
 
 
+# ─── Referee Data ─────────────────────────────────────────────────────────────
+
+_referee_data = None
+
+def _load_referee_data():
+    global _referee_data
+    if _referee_data is None:
+        ref_path = os.path.join(os.path.dirname(__file__), "static", "referee_data.json")
+        try:
+            with open(ref_path, "r") as f:
+                _referee_data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            _referee_data = {"referees": {}, "defaults": {"foulClimate": 1.0}}
+    return _referee_data
+
+
 def get_coach_info(team_name):
     """Look up coach data by team name, with dot-normalized fallback."""
     data = _load_coach_data()
@@ -209,7 +225,7 @@ def prefetch_all_team_data(client, cache, year=2026):
 # ─── Main Parameter Builder ──────────────────────────────────────────────────
 
 def build_matchup_params(team1_name, team2_name, team_data,
-                         hca1=0, hca2=0, injury_adj=0):
+                         hca1=0, hca2=0, injury_adj=0, officials=None):
     """Build the full parameter dict for mc_engine.simulate_game().
 
     Faithfully mirrors modelMonteCarlo() in index.html.
@@ -368,7 +384,29 @@ def build_matchup_params(team1_name, team2_name, team_data,
     t2_streakiness = calc_3pt_streakiness(t2_3rate_base, t2_fg3, t2_tempo)
 
     # ── Plan 09: Referee Foul Climate ──
-    ref_foul_climate = 1.0  # Default; future: integrate actual referee data
+    ref_data = _load_referee_data()
+    ref_foul_climate = 1.0
+    if officials:
+        total_climate = 0
+        total_weight = 0
+        matched = 0
+        defaults = ref_data.get("defaults", {})
+        for official in officials:
+            name = official.get("name", "") if isinstance(official, dict) else str(official)
+            info = ref_data.get("referees", {}).get(name)
+            if info:
+                weight = min(info.get("totalGames", 50) / 100, 1.5)
+                total_climate += info["foulClimate"] * weight
+                total_weight += weight
+                matched += 1
+            else:
+                total_climate += defaults.get("foulClimate", 1.0) * 0.5
+                total_weight += 0.5
+        if total_weight > 0:
+            raw_climate = total_climate / total_weight
+            confidence = matched / max(len(officials), 1)
+            ref_foul_climate = 1.0 + (raw_climate - 1.0) * confidence
+        ref_foul_climate = clamp(ref_foul_climate, 0.80, 1.25)
 
     # ── Enrichment Adjustments ──
     total_adj = injury_adj * (game_tempo_ctr / 100)

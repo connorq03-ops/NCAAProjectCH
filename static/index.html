@@ -366,6 +366,7 @@
         let compareTeams = [];
         const POWER_CONFS = ['SEC', 'B10', 'B12', 'ACC', 'BE'];
         let coachData = {};
+        let REFEREE_DATA = null;
         
         async function loadCoachData() {
             try {
@@ -373,6 +374,14 @@
                 coachData = await response.json();
             } catch (e) { console.log('Coach data not loaded'); }
         }
+
+        async function loadRefereeData() {
+            try {
+                const resp = await fetch('/static/referee_data.json');
+                if (resp.ok) REFEREE_DATA = await resp.json();
+            } catch (e) { console.warn('[refs] Could not load referee data:', e); }
+        }
+        loadRefereeData();
         
         function getCoachInfo(teamName) {
             if (coachData[teamName]) return coachData[teamName];
@@ -1366,13 +1375,54 @@
 
             // ── Plan 09: Referee Foul Climate ──
             let refFoulClimate = 1.0;
-            // Future: integrate actual referee data from game-intel endpoint
-            // For now, default to 1.0 (average) — the worker handles this gracefully
+            let refFitEdge = 0;
+            let refMatchInfo = { matched: [], unknown: [] };
+            if (REFEREE_DATA && window._matchupIntel && window._matchupIntel.officials) {
+                const officials = window._matchupIntel.officials;
+                const refs = REFEREE_DATA.referees || {};
+                const defaults = REFEREE_DATA.defaults || { foulClimate: 1.0 };
+                let totalClimate = 0, totalWeight = 0, matched = 0;
+                for (const off of officials) {
+                    const name = off.name || '';
+                    const info = refs[name];
+                    if (info) {
+                        const w = Math.min((info.totalGames || 50) / 100, 1.5);
+                        totalClimate += info.foulClimate * w;
+                        totalWeight += w;
+                        matched++;
+                        refMatchInfo.matched.push({ name, climate: info.foulClimate, games: info.totalGames });
+                    } else {
+                        totalClimate += (defaults.foulClimate || 1.0) * 0.5;
+                        totalWeight += 0.5;
+                        refMatchInfo.unknown.push(name);
+                    }
+                }
+                if (totalWeight > 0) {
+                    const rawClimate = totalClimate / totalWeight;
+                    const confidence = matched / Math.max(officials.length, 1);
+                    refFoulClimate = 1.0 + (rawClimate - 1.0) * confidence;
+                }
+                refFoulClimate = clamp(refFoulClimate, 0.80, 1.25);
+
+                // Physicality index: teams that draw fouls, block, steal benefit differently
+                const AVG_FTR_P = 30, AVG_BLK = 4.0, AVG_STL_P = 9.0, AVG_3Rate = 35;
+                const t1Physicality = ((t1_FTR - AVG_FTR_P) / 10) * 0.4
+                    + ((t1_Blk - AVG_BLK) / 3) * 0.3
+                    + ((t1_Stl - AVG_STL_P) / 3) * 0.15
+                    - ((t1_3RateBase - AVG_3Rate) / 10) * 0.15;
+                const t2Physicality = ((t2_FTR - AVG_FTR_P) / 10) * 0.4
+                    + ((t2_Blk - AVG_BLK) / 3) * 0.3
+                    + ((t2_Stl - AVG_STL_P) / 3) * 0.15
+                    - ((t2_3RateBase - AVG_3Rate) / 10) * 0.15;
+                // Physical teams benefit from loose calls (low climate); finesse from tight
+                refFitEdge = (t1Physicality - t2Physicality) * (1.0 - refFoulClimate) * 2;
+                refFitEdge = clamp(refFitEdge, -1.5, 1.5);
+            }
 
             // ── ENRICHMENT ADJUSTMENTS ──
             const momAdj = extra.momentum ? extra.momentum.adj : 0;
             const injAdj = extra.injuryAdj || 0;
-            const totalAdj = (momAdj + injAdj) * (gameTempoCtr / 100);
+            const totalAdj = (momAdj + injAdj + refFitEdge) * (gameTempoCtr / 100);
 
             // ── CALIBRATION ──
             const AVG_EFF = 100.0;
@@ -1688,7 +1738,13 @@
                                 parts.push('<span class=\"text-[10px] ' + mvColor + '\">Line: ' + (intel.open_spread !== null ? intel.open_spread + ' → ' : '') + intel.current_spread + (Math.abs(mv) >= 2 ? ' ⚡' : '') + '</span>');
                             }
                             if (intel.officials && intel.officials.length > 0) {
-                                parts.push('<span class=\"text-[10px] text-gray-500\"><i class=\"fas fa-gavel mr-1\"></i>' + intel.officials.map(o => o.name).join(', ') + '</span>');
+                                const refNames = intel.officials.map(o => {
+                                    const info = REFEREE_DATA && REFEREE_DATA.referees ? REFEREE_DATA.referees[o.name] : null;
+                                    if (info) return '<span title=\"Foul Climate: ' + info.foulClimate.toFixed(2) + 'x (' + info.totalGames + ' games)\" style=\"border-bottom:1px dotted #666\">' + o.name + '</span>';
+                                    return o.name;
+                                }).join(', ');
+                                const climateLabel = refFoulClimate !== 1.0 ? ' <span class=\"' + (refFoulClimate > 1.05 ? 'text-red-400' : refFoulClimate < 0.95 ? 'text-blue-400' : 'text-gray-400') + ' font-bold\">' + refFoulClimate.toFixed(2) + 'x</span>' : '';
+                                parts.push('<span class=\"text-[10px] text-gray-500\"><i class=\"fas fa-gavel mr-1\"></i>' + refNames + climateLabel + '</span>');
                             }
                             if (parts.length === 0) return '';
                             return '<div class=\"mt-1.5 flex flex-wrap items-center justify-center gap-3\">' + parts.join('') + '</div>';
