@@ -1287,10 +1287,10 @@ self.onmessage = function(e) {
         },
         refStats: {
             foulClimate: refClimate,
-            t1AvgFoulsDrawn: totalT1DefFouls / (numSims * 2),
-            t2AvgFoulsDrawn: totalT2DefFouls / (numSims * 2),
-            t1EarlyBonusRate: t1EarlyBonusGames / (numSims * 2),
-            t2EarlyBonusRate: t2EarlyBonusGames / (numSims * 2),
+            t1AvgFoulsDrawn: totalT1DefFouls / numSims,
+            t2AvgFoulsDrawn: totalT2DefFouls / numSims,
+            t1EarlyBonusRate: t1EarlyBonusGames / numSims,
+            t2EarlyBonusRate: t2EarlyBonusGames / numSims,
         },
         label: 'Monte Carlo',
         desc: `${numSims.toLocaleString()} two-half sims (contested-tempo, foul-trouble, 3PT-streaks, ref-climate, defense-profiled, style-correlated, game-state, fatigue, transition, stars, momentum)`
