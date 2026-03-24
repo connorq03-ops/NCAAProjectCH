@@ -469,7 +469,7 @@ class Backtester:
             except ValueError:
                 day_of_season = 90
             is_early_season = day_of_season < 45  # Before mid-December
-            is_late_season = month >= 2  # February+
+            is_late_season = 2 <= month <= 4  # February through April
 
             pred_result['context'] = {
                 'neutral_site': is_neutral,
