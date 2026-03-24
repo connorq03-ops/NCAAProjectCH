@@ -849,8 +849,8 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
             "t2_avg_fouls_drawn": total_t2_def_fouls / (num_sims * 2),
             "t1_avg_ft_att": total_t1_ft_att / (num_sims * 2),
             "t2_avg_ft_att": total_t2_ft_att / (num_sims * 2),
-            "t1_early_bonus_rate": t1_early_bonus_games / (num_sims * 2),
-            "t2_early_bonus_rate": t2_early_bonus_games / (num_sims * 2),
+            "t1_early_bonus_rate": t1_early_bonus_games / num_sims,
+            "t2_early_bonus_rate": t2_early_bonus_games / num_sims,
         },
     }
 
