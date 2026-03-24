@@ -1105,10 +1105,11 @@ self.onmessage = function(e) {
         if (gameT1SatPoss >= 3) t1StarFoulTroubleGames++;
         if (gameT2SatPoss >= 3) t2StarFoulTroubleGames++;
 
+        const kpBlend = p.kpBlendRatio !== undefined ? p.kpBlendRatio : 0.18;
         const kpS1 = p.kpT1ExpOE * (gamePoss / 100);
         const kpS2 = p.kpT2ExpOE * (gamePoss / 100);
-        s1 = s1 * 0.82 + kpS1 * 0.18;
-        s2 = s2 * 0.82 + kpS2 * 0.18;
+        s1 = s1 * (1 - kpBlend) + kpS1 * kpBlend;
+        s2 = s2 * (1 - kpBlend) + kpS2 * kpBlend;
 
         s1 += p.totalAdj / 2 + p.hca1;
         s2 += -p.totalAdj / 2 + p.hca2;

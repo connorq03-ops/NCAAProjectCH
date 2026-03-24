@@ -1133,11 +1133,12 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
             t1_mom = r1["momentum"] * (0.3 if half == 0 else 1)
             t2_mom = r2["momentum"] * (0.3 if half == 0 else 1)
 
-        # KenPom Anchor Blend (82% sim / 18% KenPom)
+        # KenPom Anchor Blend (configurable, default 82% sim / 18% KenPom)
+        kp_blend = p.get("kp_blend_ratio", 0.18)  # 0.0 = pure sim, 0.18 = default
         kp_s1 = p.get("kp_t1_exp_oe", 100) * (game_poss / 100)
         kp_s2 = p.get("kp_t2_exp_oe", 100) * (game_poss / 100)
-        s1 = s1 * 0.82 + kp_s1 * 0.18
-        s2 = s2 * 0.82 + kp_s2 * 0.18
+        s1 = s1 * (1 - kp_blend) + kp_s1 * kp_blend
+        s2 = s2 * (1 - kp_blend) + kp_s2 * kp_blend
 
         # Adjustments (injury edge, HCA)
         s1 += p.get("total_adj", 0) / 2 + p.get("hca1", 0)

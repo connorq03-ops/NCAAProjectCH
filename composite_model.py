@@ -483,12 +483,18 @@ def model_con_rat(t1, t2, hca1, hca2, extra=None):
 # ─── 12. Composite Blending ─────────────────────────────────────────────────
 # Port of composite logic — index.html line 1582-1607
 
-def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None):
+def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
+                      weight_overrides=None, context=None):
     """Blend 4 model outputs with dynamic weights, apply spread calibration.
 
     Args:
         calibration_coeffs: Optional dict with keys 'close', 'moderate', 'logMult'
                             passed through to calibrate_spread().
+        weight_overrides: Optional dict {'efficiency': float, 'similar': float,
+                          'conrat': float, 'mc': float} to override base weights.
+                          Data-quality adjustments are still applied on top.
+        context: Optional dict with boolean flags for situational adjustments
+                 (neutral_site, conf_tournament, ncaa_tournament, early_season).
     """
 
     # Dynamic weights based on data quality
@@ -499,11 +505,17 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None):
     avg_games = ((t1.get('Wins', 0) or 0) + (t1.get('Losses', 0) or 0)
                  + (t2.get('Wins', 0) or 0) + (t2.get('Losses', 0) or 0)) / 2
 
-    # Base weights: KenPom 10%, Similar 10%, ConRat 20%, MC 60%
-    w_eff = 0.10
-    w_sim = 0.10
-    w_cr = 0.20
-    w_mc = 0.60
+    # Start from overrides or base weights
+    if weight_overrides:
+        w_eff = weight_overrides.get('efficiency', 0.10)
+        w_sim = weight_overrides.get('similar', 0.10)
+        w_cr = weight_overrides.get('conrat', 0.20)
+        w_mc = weight_overrides.get('mc', 0.60)
+    else:
+        w_eff = 0.10
+        w_sim = 0.10
+        w_cr = 0.20
+        w_mc = 0.60
 
     if not has_rich_data:
         w_mc -= 0.10
@@ -526,6 +538,10 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None):
     raw_composite_margin = (eff['margin'] * w_eff + sim['margin'] * w_sim
                             + cr['margin'] * w_cr + mc['margin'] * w_mc)
     composite_margin = calibrate_spread(raw_composite_margin, coeffs=calibration_coeffs)
+
+    # Apply situational adjustment if context is provided
+    if context:
+        composite_margin = apply_situational_adjustment(composite_margin, context)
 
     raw_t1_score = (eff['t1_score'] * w_eff + sim['t1_score'] * w_sim
                     + cr['t1_score'] * w_cr + mc['t1_score'] * w_mc)
@@ -566,6 +582,48 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None):
             'mc': round(w_mc, 4),
         },
     }
+
+
+# ─── Situational Spot Adjustments ─────────────────────────────────────────
+
+SITUATIONAL_DEFAULTS = {
+    'neutral_site_dampening': 0.90,      # Reduce margin by 10% for neutral site
+    'conf_tournament_dampening': 0.88,    # Reduce margin by 12% for conf tournament
+    'ncaa_tournament_dampening': 0.85,    # Reduce margin by 15% for NCAA tournament
+    'early_season_dampening': 0.95,       # Reduce margin by 5% for early season
+}
+
+
+def apply_situational_adjustment(margin, context, overrides=None):
+    """Apply situational dampening to a predicted margin.
+
+    Args:
+        margin: Raw composite margin
+        context: dict with boolean flags (neutral_site, conf_tournament, etc.)
+        overrides: Optional dict of custom dampening factors
+
+    Returns:
+        Adjusted margin
+    """
+    factors = dict(SITUATIONAL_DEFAULTS)
+    if overrides:
+        factors.update(overrides)
+
+    adjusted = margin
+
+    # Apply dampening factors (multiplicative, not additive)
+    # Most specific context wins (NCAA > conf tournament > neutral)
+    if context.get('ncaa_tournament'):
+        adjusted *= factors['ncaa_tournament_dampening']
+    elif context.get('conf_tournament'):
+        adjusted *= factors['conf_tournament_dampening']
+    elif context.get('neutral_site'):
+        adjusted *= factors['neutral_site_dampening']
+
+    if context.get('early_season'):
+        adjusted *= factors['early_season_dampening']
+
+    return adjusted
 
 
 # ─── Self-test ───────────────────────────────────────────────────────────────
