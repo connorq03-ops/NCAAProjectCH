@@ -725,13 +725,15 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
             s2 += r2["points"] + r1["transition_pts"]
 
             # Plan 09: Accumulate foul stats
-            total_t1_def_fouls += r2.get("def_fouls", 0)  # fouls drawn by T1 = T2's def fouls
-            total_t2_def_fouls += r1.get("def_fouls", 0)  # fouls drawn by T2 = T1's def fouls
+            # r1 simulates T1's offense (T2 defends) → r1.def_fouls = fouls drawn BY T1
+            # r2 simulates T2's offense (T1 defends) → r2.def_fouls = fouls drawn BY T2
+            total_t1_def_fouls += r1.get("def_fouls", 0)
+            total_t2_def_fouls += r2.get("def_fouls", 0)
             total_t1_ft_att += r1.get("ft_att", 0)
             total_t2_ft_att += r2.get("ft_att", 0)
-            if r2.get("bonus_reached_at_poss", -1) >= 0 and r2["bonus_reached_at_poss"] < round(game_poss / 2 * 0.55):
-                t1_early_bonus_games += 0.5  # per-half, so 0.5 per half occurrence
             if r1.get("bonus_reached_at_poss", -1) >= 0 and r1["bonus_reached_at_poss"] < round(game_poss / 2 * 0.55):
+                t1_early_bonus_games += 0.5  # per-half, so 0.5 per half occurrence
+            if r2.get("bonus_reached_at_poss", -1) >= 0 and r2["bonus_reached_at_poss"] < round(game_poss / 2 * 0.55):
                 t2_early_bonus_games += 0.5
 
             t1_mom = r1["momentum"] * (0.3 if half == 0 else 1)
