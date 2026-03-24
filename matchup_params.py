@@ -408,8 +408,26 @@ def build_matchup_params(team1_name, team2_name, team_data,
             ref_foul_climate = 1.0 + (raw_climate - 1.0) * confidence
         ref_foul_climate = clamp(ref_foul_climate, 0.80, 1.25)
 
+    # ── Plan 09: Physicality-Based Ref Fit Edge ──
+    # Mirrors index.html:1407-1419 — physical teams benefit from loose calls
+    ref_fit_edge = 0
+    if officials and ref_foul_climate != 1.0:
+        AVG_FTR_P = 30
+        AVG_BLK_P = 4.0    # JS uses 4.0 (shadows outer 9.5; cancels in diff)
+        AVG_STL_P = 9.0     # JS uses 9.0
+        AVG_3RATE_P = 35     # JS uses 35
+        t1_phys = (((t1_ftr - AVG_FTR_P) / 10) * 0.4
+                   + ((t1_blk - AVG_BLK_P) / 3) * 0.3
+                   + ((t1_stl - AVG_STL_P) / 3) * 0.15
+                   - ((t1_3rate_base - AVG_3RATE_P) / 10) * 0.15)
+        t2_phys = (((t2_ftr - AVG_FTR_P) / 10) * 0.4
+                   + ((t2_blk - AVG_BLK_P) / 3) * 0.3
+                   + ((t2_stl - AVG_STL_P) / 3) * 0.15
+                   - ((t2_3rate_base - AVG_3RATE_P) / 10) * 0.15)
+        ref_fit_edge = clamp((t1_phys - t2_phys) * (1.0 - ref_foul_climate) * 2, -1.5, 1.5)
+
     # ── Enrichment Adjustments ──
-    total_adj = injury_adj * (game_tempo_ctr / 100)
+    total_adj = (injury_adj + ref_fit_edge) * (game_tempo_ctr / 100)
 
     # ── KenPom Calibration ──
     kp_t1_exp_oe = (r1.get("AdjOE") or AVG_EFF) + (r2.get("AdjDE") or AVG_EFF) - AVG_EFF
