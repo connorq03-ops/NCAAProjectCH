@@ -436,6 +436,403 @@ def sim_half(cfg: dict) -> dict:
     }
 
 
+# ─── Interleaved Half Simulation ────────────────────────────────────────────
+
+def sim_half_interleaved(cfg: dict) -> dict:
+    """Simulate one half with alternating possessions so lead is always exact.
+
+    Args:
+        cfg: Config dict with shared keys (half_poss, is_second_half, incoming_lead,
+             foul_climate) and per-team keys prefixed with t1_ / t2_.
+    Returns:
+        Dict with 't1', 't2' sub-dicts (same shape as sim_half return) and 'final_lead'.
+    """
+    half_poss = cfg["half_poss"]
+    is_second_half = cfg["is_second_half"]
+    foul_climate = cfg.get("foul_climate", 1.0)
+
+    # ── Shared state ──
+    lead = cfg.get("incoming_lead") or 0  # positive = T1 leads
+
+    # ── Referee Foul Climate ──
+    ref_climate = foul_climate or 1.0
+
+    # ── Game Clock Phases ──
+    total_half_poss = round(half_poss)
+    PHASE_LATE_START = 0.75
+    PHASE_CRUNCH_START = 0.90
+
+    # ── Plan 06: Star Foul Trouble constants ──
+    MAX_FOULS = 5
+    FOUL_SIT_THRESHOLD_H1 = 2
+    FOUL_SIT_THRESHOLD_H2 = 4
+    FOUL_RETURN_PCT = 0.80
+    STREAK_DECAY = 0.65
+
+    # ── Build per-team state dicts ──
+    def _build_team_state(prefix):
+        star_foul_state = cfg.get(f"{prefix}_star_foul_state")
+        star_foul_proneness = cfg.get(f"{prefix}_star_foul_proneness", 0)
+        streakiness = cfg.get(f"{prefix}_streakiness", 1.0) or 1.0
+        return {
+            "fg2": cfg[f"{prefix}_fg2"], "fg3": cfg[f"{prefix}_fg3"],
+            "to_pct": cfg[f"{prefix}_to_pct"], "or_pct": cfg[f"{prefix}_or_pct"],
+            "rate3": cfg[f"{prefix}_rate3"], "ftr": cfg[f"{prefix}_ftr"],
+            "ft_pct": cfg[f"{prefix}_ft_pct"],
+            "def_steal_rate": cfg[f"{prefix}_def_steal_rate"],
+            "star_usage": cfg[f"{prefix}_star_usage"],
+            "star_fg2": cfg[f"{prefix}_star_fg2"], "star_fg3": cfg[f"{prefix}_star_fg3"],
+            "bench_depth": cfg[f"{prefix}_bench_depth"],
+            "def_profile": cfg.get(f"{prefix}_def_profile") or {"perimeter": 0, "interior": 0, "overall": 0},
+            # Mutable game state
+            "mom": cfg[f"{prefix}_init_mom"],
+            "def_fouls": 0,
+            "poss_used": 0,
+            "poss_left": round(half_poss),
+            "max_poss": round(half_poss) + 10,
+            "points": 0, "makes2": 0, "makes3": 0, "tos": 0,
+            "ft_made": 0, "ft_att": 0, "orebs": 0, "attempts": 0,
+            "total_fatigue_penalty": 0.0, "rest_poss_count": 0,
+            "crunch_time_poss": 0, "desperation_poss": 0,
+            "intentional_foul_poss": 0, "bonus_reached_poss": -1,
+            "star_fouls": star_foul_state["fouls"] if star_foul_state else 0,
+            "star_is_sitting": star_foul_state["is_sitting"] if star_foul_state else False,
+            "star_sat_poss": 0, "star_fouled_out": False,
+            "base_star_foul_rate": (0.035 + (star_foul_proneness or 0) * 0.02) * math.sqrt(ref_climate),
+            "streak3": 0,
+            "max_hot_streak": 0, "max_cold_streak": 0,
+            "hot_possessions": 0, "cold_possessions": 0,
+            "HOT_BONUS_PER": 1.2 * streakiness,
+            "COLD_PENALTY_PER": 1.0 * streakiness,
+            "MAX_STREAK_EFFECT": 5.0 * streakiness,
+            "STREAK_RATE_BONUS": 0.8 * streakiness,
+            "STREAK_RATE_PENALTY": 0.6 * streakiness,
+        }
+
+    t1 = _build_team_state("t1")
+    t2 = _build_team_state("t2")
+
+    # References to the opponent's points for transition scoring
+    # We'll track them via a mutable list so the inner function can update them
+    # t1_opp_pts[0] will accumulate transition pts scored against t1 (credited to t2)
+    # and vice versa
+
+    def _sim_one_possession(st, team_sign):
+        """Simulate one possession. team_sign: +1 for T1, -1 for T2."""
+        nonlocal lead
+
+        if st["poss_left"] <= 0 or st["poss_used"] >= st["max_poss"]:
+            return False
+        st["poss_left"] -= 1
+        st["poss_used"] += 1
+
+        # ── Game State Awareness ──
+        total_poss_used = t1["poss_used"] + t2["poss_used"]
+        progress_pct = total_poss_used / (total_half_poss * 2) if total_half_poss > 0 else 0
+        is_late_half = is_second_half and progress_pct >= PHASE_LATE_START
+        is_crunch_time = is_second_half and progress_pct >= PHASE_CRUNCH_START
+        if is_crunch_time:
+            st["crunch_time_poss"] += 1
+
+        team_lead = lead * team_sign  # positive = this team leads
+
+        gs_3rate_adj = 0
+        gs_to_adj = 0
+        gs_ftr_adj = 0
+        gs_fg_penalty = 0
+
+        if is_second_half:
+            deficit = -team_lead
+            if is_crunch_time and deficit >= 6:
+                desperation_scale = clamp((deficit - 5) / 15, 0, 1)
+                gs_3rate_adj = 8 + desperation_scale * 12
+                gs_to_adj = 1.5 + desperation_scale * 2
+                gs_fg_penalty = 2 + desperation_scale * 3
+                st["desperation_poss"] += 1
+            elif is_crunch_time and deficit >= 3:
+                gs_3rate_adj = 5
+                gs_to_adj = 0.8
+                gs_fg_penalty = 1
+            elif is_late_half and deficit >= 8:
+                gs_3rate_adj = 4
+                gs_to_adj = 0.5
+            elif is_crunch_time and team_lead >= 6:
+                gs_3rate_adj = -6
+                gs_to_adj = -1
+                gs_ftr_adj = 4
+                if team_lead >= 8 and random.random() < 0.15:
+                    if random.random() * 100 < st["fg2"] * 0.60:
+                        st["points"] += 2
+                        st["makes2"] += 1
+                        lead += 2 * team_sign
+                        st["mom"] = min(st["mom"] + 0.3, 3)
+                    st["poss_left"] -= 1
+                    st["poss_used"] += 1
+                    st["streak3"] = round(st["streak3"] * STREAK_DECAY)
+                    return True
+            elif is_crunch_time and deficit >= 6:
+                if random.random() < 0.10:
+                    st["poss_left"] += 1
+            elif is_late_half and team_lead >= 10:
+                gs_3rate_adj = -3
+                gs_to_adj = -0.5
+
+        # ── Fatigue Curve ──
+        fatigue_onset_pct = 0.55 + (st["bench_depth"] / 100) * 0.15
+        fatigue_progress = max(0, (st["poss_used"] / half_poss) - fatigue_onset_pct) / (1 - fatigue_onset_pct) if fatigue_onset_pct < 1 else 0
+        half_multiplier = 1.4 if is_second_half else 1.0
+        fatigue_penalty = fatigue_progress * half_multiplier * 0.06
+        fatigue_fg_mod = 1 - fatigue_penalty
+        fatigue_to_mod = 1 + fatigue_penalty * 0.5
+        st["total_fatigue_penalty"] += fatigue_penalty
+
+        # ── Plan 06: Star Foul Trouble Check ──
+        if not st["star_is_sitting"] and not st["star_fouled_out"] and random.random() < st["base_star_foul_rate"]:
+            st["star_fouls"] += 1
+            if st["star_fouls"] >= MAX_FOULS:
+                st["star_fouled_out"] = True
+                st["star_is_sitting"] = True
+            elif not is_second_half and st["star_fouls"] >= FOUL_SIT_THRESHOLD_H1:
+                st["star_is_sitting"] = True
+            elif is_second_half and st["star_fouls"] >= FOUL_SIT_THRESHOLD_H2:
+                st["star_is_sitting"] = True
+
+        if st["star_is_sitting"] and not st["star_fouled_out"]:
+            return_threshold = PHASE_CRUNCH_START - 0.05 if is_second_half else FOUL_RETURN_PCT
+            if progress_pct >= return_threshold:
+                st["star_is_sitting"] = False
+        if st["star_is_sitting"]:
+            st["star_sat_poss"] += 1
+
+        # ── Bench Rotation: Star Rest ──
+        rest_window_start = int(half_poss * 0.28)
+        rest_window_end = int(half_poss * 0.52)
+        in_rest_window = rest_window_start <= st["poss_used"] <= rest_window_end
+        rest_prob = clamp(0.15 + (st["bench_depth"] / 100) * 0.65, 0.15, 0.75) if in_rest_window else 0
+        is_rest_poss = random.random() < rest_prob
+        if is_rest_poss:
+            st["rest_poss_count"] += 1
+        effective_star_usage = st["star_usage"] * 0.15 if is_rest_poss else st["star_usage"]
+
+        foul_trouble_star_usage = st["star_usage"] * 0.10 if st["star_is_sitting"] else effective_star_usage
+
+        is_star = random.random() < foul_trouble_star_usage
+        s_fg2 = st["star_fg2"] if is_star else 0
+        s_fg3 = st["star_fg3"] if is_star else 0
+
+        # ── Defensive Disruption ──
+        def_p = st["def_profile"]
+        is_disrupted_poss = random.random() < def_p["overall"] * 0.6
+        disrupt3_mod = -(def_p["perimeter"] * 5.0) if is_disrupted_poss else 0
+        disrupt2_mod = -(def_p["interior"] * 4.0) if is_disrupted_poss else 0
+        disrupt_star_mod = (1 - def_p["overall"] * 0.5) if is_disrupted_poss else 1.0
+
+        if st["streak3"] > 0 and is_disrupted_poss and def_p["perimeter"] > 0.4:
+            st["streak3"] = max(0, st["streak3"] - 1)
+
+        mom_fg = st["mom"] * 0.4
+
+        # ── Turnover check ──
+        if random.random() * 100 < (st["to_pct"] + gs_to_adj) * fatigue_to_mod:
+            st["tos"] += 1
+            st["mom"] = max(st["mom"] - 1, -2)
+            if random.random() < (st["def_steal_rate"] / max(st["to_pct"], 8)) * 0.65:
+                r = random.random()
+                if r < 0.55:
+                    lead -= 2 * team_sign
+                    if team_sign == 1:
+                        t2["points"] += 2
+                    else:
+                        t1["points"] += 2
+                elif r < 0.70:
+                    lead -= 3 * team_sign
+                    if team_sign == 1:
+                        t2["points"] += 3
+                    else:
+                        t1["points"] += 3
+            st["streak3"] = round(st["streak3"] * STREAK_DECAY)
+            return True
+
+        # ── Foul probability ──
+        base_foul_prob = 0.20 * ref_climate
+        drew_foul = random.random() < base_foul_prob
+        if drew_foul:
+            st["def_fouls"] += 1
+
+        if drew_foul and st["def_fouls"] >= 7 and st["bonus_reached_poss"] == -1:
+            st["bonus_reached_poss"] = st["poss_used"]
+
+        if drew_foul and st["def_fouls"] >= 7 and random.random() < 0.45:
+            bonus_made = 0
+            if st["def_fouls"] >= 10:
+                for _ in range(2):
+                    st["ft_att"] += 1
+                    if random.random() * 100 < st["ft_pct"]:
+                        st["points"] += 1
+                        st["ft_made"] += 1
+                        bonus_made += 1
+                        lead += 1 * team_sign
+            else:
+                st["ft_att"] += 1
+                if random.random() * 100 < st["ft_pct"]:
+                    st["points"] += 1
+                    st["ft_made"] += 1
+                    bonus_made += 1
+                    lead += 1 * team_sign
+                    st["ft_att"] += 1
+                    if random.random() * 100 < st["ft_pct"]:
+                        st["points"] += 1
+                        st["ft_made"] += 1
+                        bonus_made += 1
+                        lead += 1 * team_sign
+            st["mom"] = min(st["mom"] + 0.5, 3) if bonus_made > 0 else max(st["mom"] - 0.5, -2)
+            st["streak3"] = round(st["streak3"] * STREAK_DECAY)
+            return True
+
+        # FTR-based shooting foul
+        if not drew_foul and random.random() < (st["ftr"] * ref_climate) / 100 * 0.38:
+            st["def_fouls"] += 1
+            num_fts = 3 if random.random() < 0.25 else 2
+            made = 0
+            for _ in range(num_fts):
+                st["ft_att"] += 1
+                if random.random() * 100 < st["ft_pct"]:
+                    st["points"] += 1
+                    st["ft_made"] += 1
+                    made += 1
+                    lead += 1 * team_sign
+            st["mom"] = min(st["mom"] + 0.5, 3) if made > 0 else max(st["mom"] - 0.5, -2)
+            st["streak3"] = round(st["streak3"] * STREAK_DECAY)
+            return True
+
+        # ── Intentional Fouling ──
+        if is_crunch_time and is_second_half and team_lead >= 6 and gs_ftr_adj > 0 and st["intentional_foul_poss"] < 6:
+            if random.random() * 100 < gs_ftr_adj * 6:
+                st["intentional_foul_poss"] += 1
+                st["def_fouls"] += 1
+                made = 0
+                for _ in range(2):
+                    st["ft_att"] += 1
+                    if random.random() * 100 < st["ft_pct"]:
+                        st["points"] += 1
+                        st["ft_made"] += 1
+                        made += 1
+                        lead += 1 * team_sign
+                st["mom"] = min(st["mom"] + 0.3, 3) if made > 0 else max(st["mom"] - 0.3, -2)
+                st["streak3"] = round(st["streak3"] * STREAK_DECAY)
+                return True
+
+        # ── Shot selection ──
+        st["attempts"] += 1
+        streak_rate_adj = min(st["streak3"] * st["STREAK_RATE_BONUS"], 4) if st["streak3"] > 0 else max(st["streak3"] * st["STREAK_RATE_PENALTY"], -3)
+        streak_fg_adj = min(st["streak3"] * st["HOT_BONUS_PER"], st["MAX_STREAK_EFFECT"]) if st["streak3"] > 0 else max(st["streak3"] * st["COLD_PENALTY_PER"], -st["MAX_STREAK_EFFECT"])
+
+        is_3pt = random.random() * 100 < clamp(st["rate3"] + gs_3rate_adj + streak_rate_adj, 15, 65)
+        if is_3pt:
+            effective_fg3 = clamp(st["fg3"] + s_fg3 * disrupt_star_mod + mom_fg * 0.5 - gs_fg_penalty + disrupt3_mod + streak_fg_adj, 15, 50)
+            if random.random() * 100 < effective_fg3 * fatigue_fg_mod:
+                st["points"] += 3
+                st["makes3"] += 1
+                lead += 3 * team_sign
+                st["mom"] = min(st["mom"] + 1.5, 3)
+                st["streak3"] = st["streak3"] + 1 if st["streak3"] > 0 else 1
+                if random.random() < 0.02:
+                    st["def_fouls"] += 1
+                    st["ft_att"] += 1
+                    if random.random() * 100 < st["ft_pct"]:
+                        st["points"] += 1
+                        st["ft_made"] += 1
+                        lead += 1 * team_sign
+            else:
+                st["mom"] = max(st["mom"] - 0.5, -2)
+                st["streak3"] = st["streak3"] - 1 if st["streak3"] < 0 else -1
+                if random.random() * 100 < st["or_pct"] * 0.80:
+                    st["poss_left"] += 1
+                    st["orebs"] += 1
+        else:
+            st["streak3"] = round(st["streak3"] * STREAK_DECAY)
+            effective_fg2 = clamp(st["fg2"] + s_fg2 * disrupt_star_mod + mom_fg * 0.7 - gs_fg_penalty * 0.5 + disrupt2_mod, 25, 70)
+            if random.random() * 100 < effective_fg2 * fatigue_fg_mod:
+                st["points"] += 2
+                st["makes2"] += 1
+                lead += 2 * team_sign
+                st["mom"] = min(st["mom"] + 1, 3)
+                if random.random() < 0.06:
+                    st["def_fouls"] += 1
+                    st["ft_att"] += 1
+                    if random.random() * 100 < st["ft_pct"]:
+                        st["points"] += 1
+                        st["ft_made"] += 1
+                        lead += 1 * team_sign
+            else:
+                st["mom"] = max(st["mom"] - 0.5, -2)
+                if random.random() * 100 < st["or_pct"]:
+                    st["poss_left"] += 1
+                    st["orebs"] += 1
+
+        # Track streak extremes
+        if st["streak3"] > st["max_hot_streak"]:
+            st["max_hot_streak"] = st["streak3"]
+        if st["streak3"] < -st["max_cold_streak"]:
+            st["max_cold_streak"] = -st["streak3"]
+        if st["streak3"] >= 2:
+            st["hot_possessions"] += 1
+        if st["streak3"] <= -2:
+            st["cold_possessions"] += 1
+
+        return True
+
+    # ── Main alternating loop ──
+    while t1["poss_left"] > 0 or t2["poss_left"] > 0:
+        t1_ran = False
+        t2_ran = False
+        if t1["poss_left"] > 0 and t1["poss_used"] < t1["max_poss"]:
+            _sim_one_possession(t1, +1)
+            t1_ran = True
+        if t2["poss_left"] > 0 and t2["poss_used"] < t2["max_poss"]:
+            _sim_one_possession(t2, -1)
+            t2_ran = True
+        if not t1_ran and not t2_ran:
+            break  # safety: avoid infinite loop if both hit max_poss
+
+    # ── Build return dicts matching sim_half() shape ──
+    def _build_result(st, final_lead_val):
+        return {
+            "points": st["points"],
+            "poss_used": st["poss_used"],
+            "makes2": st["makes2"],
+            "makes3": st["makes3"],
+            "tos": st["tos"],
+            "ft_made": st["ft_made"],
+            "ft_att": st["ft_att"],
+            "orebs": st["orebs"],
+            "attempts": st["attempts"],
+            "transition_pts": 0,  # folded into opponent's points
+            "momentum": st["mom"],
+            "def_fouls": st["def_fouls"],
+            "avg_fatigue_penalty": st["total_fatigue_penalty"] / st["poss_used"] if st["poss_used"] > 0 else 0,
+            "rest_possessions": st["rest_poss_count"],
+            "crunch_time_poss": st["crunch_time_poss"],
+            "desperation_poss": st["desperation_poss"],
+            "intentional_foul_poss": st["intentional_foul_poss"],
+            "final_lead": final_lead_val,
+            "star_foul_state": {"fouls": st["star_fouls"], "is_sitting": st["star_is_sitting"], "fouled_out": st["star_fouled_out"]},
+            "star_sat_poss": st["star_sat_poss"],
+            "star_fouled_out": st["star_fouled_out"],
+            "bonus_reached_at_poss": st["bonus_reached_poss"],
+            "max_hot_streak": st["max_hot_streak"],
+            "max_cold_streak": st["max_cold_streak"],
+            "hot_possessions": st["hot_possessions"],
+            "cold_possessions": st["cold_possessions"],
+        }
+
+    return {
+        "t1": _build_result(t1, lead),
+        "t2": _build_result(t2, -lead),
+        "final_lead": lead,
+    }
+
+
 # ─── Overtime Simulation ────────────────────────────────────────────────────
 
 def sim_overtime(fg2: float, fg3: float, to_pct: float, or_pct: float,
@@ -661,44 +1058,43 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
                     half_tempo_adj -= 0.8
 
             half_poss = round((game_poss + half_tempo_adj) / 2)
-            t1_incoming_lead = 0 if half == 0 else (s1 - s2)
-            t2_incoming_lead = 0 if half == 0 else (s2 - s1)
+            interleaved_incoming_lead = 0 if half == 0 else (s1 - s2)
 
-            r1 = sim_half({
-                "half_poss": half_poss,
-                "fg2": g_t1_fg2, "fg3": g_t1_fg3,
-                "to_pct": g_t1_to, "or_pct": g_t1_or,
-                "rate3": clamp(g_t1_3rate, 20, 55), "ftr": g_t1_ftr, "ft_pct": p.get("t1_ftp", 72),
-                "def_steal_rate": p.get("m_t2_steal_rate", 9),
-                "star_usage": t1_star["usage"],
-                "star_fg2": t1_star["fg2_bonus"], "star_fg3": t1_star["fg3_bonus"],
-                "init_mom": t1_mom,
-                "bench_depth": p.get("t1_bench", 30), "is_second_half": half == 1,
-                "incoming_lead": t1_incoming_lead,
-                "def_profile": p.get("t2_def_profile", {"perimeter": 0, "interior": 0, "overall": 0}),
-                "star_foul_state": t1_star_foul_state,
-                "star_foul_proneness": p.get("t1_star_foul_proneness", 0),
+            half_result = sim_half_interleaved({
+                "half_poss": half_poss, "is_second_half": half == 1,
+                "incoming_lead": interleaved_incoming_lead,
                 "foul_climate": ref_climate,
-                "streakiness": p.get("t1_streakiness", 1.0),
+                # T1 params
+                "t1_fg2": g_t1_fg2, "t1_fg3": g_t1_fg3,
+                "t1_to_pct": g_t1_to, "t1_or_pct": g_t1_or,
+                "t1_rate3": clamp(g_t1_3rate, 20, 55), "t1_ftr": g_t1_ftr,
+                "t1_ft_pct": p.get("t1_ftp", 72),
+                "t1_def_steal_rate": p.get("m_t2_steal_rate", 9),
+                "t1_star_usage": t1_star["usage"],
+                "t1_star_fg2": t1_star["fg2_bonus"], "t1_star_fg3": t1_star["fg3_bonus"],
+                "t1_init_mom": t1_mom,
+                "t1_bench_depth": p.get("t1_bench", 30),
+                "t1_def_profile": p.get("t2_def_profile", {"perimeter": 0, "interior": 0, "overall": 0}),
+                "t1_star_foul_state": t1_star_foul_state,
+                "t1_star_foul_proneness": p.get("t1_star_foul_proneness", 0),
+                "t1_streakiness": p.get("t1_streakiness", 1.0),
+                # T2 params
+                "t2_fg2": g_t2_fg2, "t2_fg3": g_t2_fg3,
+                "t2_to_pct": g_t2_to, "t2_or_pct": g_t2_or,
+                "t2_rate3": clamp(g_t2_3rate, 20, 55), "t2_ftr": g_t2_ftr,
+                "t2_ft_pct": p.get("t2_ftp", 72),
+                "t2_def_steal_rate": p.get("m_t1_steal_rate", 9),
+                "t2_star_usage": t2_star["usage"],
+                "t2_star_fg2": t2_star["fg2_bonus"], "t2_star_fg3": t2_star["fg3_bonus"],
+                "t2_init_mom": t2_mom,
+                "t2_bench_depth": p.get("t2_bench", 30),
+                "t2_def_profile": p.get("t1_def_profile", {"perimeter": 0, "interior": 0, "overall": 0}),
+                "t2_star_foul_state": t2_star_foul_state,
+                "t2_star_foul_proneness": p.get("t2_star_foul_proneness", 0),
+                "t2_streakiness": p.get("t2_streakiness", 1.0),
             })
-
-            r2 = sim_half({
-                "half_poss": half_poss,
-                "fg2": g_t2_fg2, "fg3": g_t2_fg3,
-                "to_pct": g_t2_to, "or_pct": g_t2_or,
-                "rate3": clamp(g_t2_3rate, 20, 55), "ftr": g_t2_ftr, "ft_pct": p.get("t2_ftp", 72),
-                "def_steal_rate": p.get("m_t1_steal_rate", 9),
-                "star_usage": t2_star["usage"],
-                "star_fg2": t2_star["fg2_bonus"], "star_fg3": t2_star["fg3_bonus"],
-                "init_mom": t2_mom,
-                "bench_depth": p.get("t2_bench", 30), "is_second_half": half == 1,
-                "incoming_lead": t2_incoming_lead,
-                "def_profile": p.get("t1_def_profile", {"perimeter": 0, "interior": 0, "overall": 0}),
-                "star_foul_state": t2_star_foul_state,
-                "star_foul_proneness": p.get("t2_star_foul_proneness", 0),
-                "foul_climate": ref_climate,
-                "streakiness": p.get("t2_streakiness", 1.0),
-            })
+            r1 = half_result["t1"]
+            r2 = half_result["t2"]
 
             # Plan 06: Carry foul state to next half
             t1_star_foul_state = r1.get("star_foul_state", {"fouls": 0, "is_sitting": False})
@@ -713,8 +1109,9 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
             if r2.get("star_fouled_out"):
                 game_t2_fouled_out = True
 
-            s1 += r1["points"] + r2["transition_pts"]
-            s2 += r2["points"] + r1["transition_pts"]
+            # Transition pts already folded into each team's points in interleaved sim
+            s1 += r1["points"]
+            s2 += r2["points"]
 
             t1_mom = r1["momentum"] * (0.3 if half == 0 else 1)
             t2_mom = r2["momentum"] * (0.3 if half == 0 else 1)

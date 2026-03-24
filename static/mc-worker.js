@@ -328,6 +328,447 @@ function simHalf(cfg) {
              maxHotStreak, maxColdStreak, hotPossessions, coldPossessions };
 }
 
+// ── Interleaved Half Simulation ──
+// Alternates possessions between T1 and T2 so that `lead` is always exact.
+function simHalfInterleaved(cfg) {
+    const { halfPoss, isSecondHalf, incomingLead, foulClimate,
+            t1_fg2, t1_fg3, t1_toPct, t1_orPct, t1_rate3, t1_ftr, t1_ftPct,
+            t1_defStealRate, t1_starUsage, t1_starFG2, t1_starFG3, t1_initMom,
+            t1_benchDepth, t1_defProfile, t1_starFoulState, t1_starFoulProneness, t1_streakiness,
+            t2_fg2, t2_fg3, t2_toPct, t2_orPct, t2_rate3, t2_ftr, t2_ftPct,
+            t2_defStealRate, t2_starUsage, t2_starFG2, t2_starFG3, t2_initMom,
+            t2_benchDepth, t2_defProfile, t2_starFoulState, t2_starFoulProneness, t2_streakiness,
+    } = cfg;
+
+    // ── Shared state ──
+    let lead = incomingLead || 0; // positive = T1 leads
+
+    // ── Per-team scoring / stat accumulators ──
+    let t1_points = 0, t2_points = 0;
+    let t1_possUsed = 0, t2_possUsed = 0;
+    let t1_makes2 = 0, t2_makes2 = 0;
+    let t1_makes3 = 0, t2_makes3 = 0;
+    let t1_tos = 0, t2_tos = 0;
+    let t1_ftMade = 0, t2_ftMade = 0;
+    let t1_ftAtt = 0, t2_ftAtt = 0;
+    let t1_orebs = 0, t2_orebs = 0;
+    let t1_attempts = 0, t2_attempts = 0;
+    let t1_totalFatiguePenalty = 0, t2_totalFatiguePenalty = 0;
+    let t1_restPossCount = 0, t2_restPossCount = 0;
+
+    // Possession counters
+    let t1PossLeft = Math.round(halfPoss);
+    let t2PossLeft = Math.round(halfPoss);
+    const t1MaxPoss = t1PossLeft + 10;
+    const t2MaxPoss = t2PossLeft + 10;
+
+    // ── Game Clock Phases ──
+    const totalHalfPoss = Math.round(halfPoss);
+    const PHASE_LATE_START = 0.75;
+    const PHASE_CRUNCH_START = 0.90;
+    let t1_crunchTimePoss = 0, t2_crunchTimePoss = 0;
+    let t1_desperationPoss = 0, t2_desperationPoss = 0;
+    let t1_intentionalFoulPoss = 0, t2_intentionalFoulPoss = 0;
+
+    // ── Referee Foul Climate ──
+    const refClimate = foulClimate || 1.0;
+    let t1_defFouls = 0, t2_defFouls = 0;
+    let t1_bonusReachedPoss = -1, t2_bonusReachedPoss = -1;
+
+    // ── Momentum ──
+    let t1_mom = t1_initMom;
+    let t2_mom = t2_initMom;
+
+    // ── Plan 06: Star Foul Trouble (per team) ──
+    const MAX_FOULS = 5;
+    const FOUL_SIT_THRESHOLD_H1 = 2;
+    const FOUL_SIT_THRESHOLD_H2 = 4;
+    const FOUL_RETURN_PCT = 0.80;
+
+    let t1_starFouls = t1_starFoulState ? t1_starFoulState.fouls : 0;
+    let t1_starIsSitting = t1_starFoulState ? t1_starFoulState.isSitting : false;
+    let t1_starSatPoss = 0;
+    let t1_starFouledOut = false;
+    const t1_baseStarFoulRate = (0.035 + (t1_starFoulProneness || 0) * 0.02) * Math.sqrt(refClimate);
+
+    let t2_starFouls = t2_starFoulState ? t2_starFoulState.fouls : 0;
+    let t2_starIsSitting = t2_starFoulState ? t2_starFoulState.isSitting : false;
+    let t2_starSatPoss = 0;
+    let t2_starFouledOut = false;
+    const t2_baseStarFoulRate = (0.035 + (t2_starFoulProneness || 0) * 0.02) * Math.sqrt(refClimate);
+
+    // ── Plan 08: Three-Point Streak Tracking (per team) ──
+    const t1_teamStreakiness = t1_streakiness || 1.0;
+    let t1_streak3 = 0;
+    const t1_HOT_BONUS_PER = 1.2 * t1_teamStreakiness;
+    const t1_COLD_PENALTY_PER = 1.0 * t1_teamStreakiness;
+    const t1_MAX_STREAK_EFFECT = 5.0 * t1_teamStreakiness;
+    const t1_STREAK_RATE_BONUS = 0.8 * t1_teamStreakiness;
+    const t1_STREAK_RATE_PENALTY = 0.6 * t1_teamStreakiness;
+    let t1_maxHotStreak = 0, t1_maxColdStreak = 0;
+    let t1_hotPossessions = 0, t1_coldPossessions = 0;
+
+    const t2_teamStreakiness = t2_streakiness || 1.0;
+    let t2_streak3 = 0;
+    const t2_HOT_BONUS_PER = 1.2 * t2_teamStreakiness;
+    const t2_COLD_PENALTY_PER = 1.0 * t2_teamStreakiness;
+    const t2_MAX_STREAK_EFFECT = 5.0 * t2_teamStreakiness;
+    const t2_STREAK_RATE_BONUS = 0.8 * t2_teamStreakiness;
+    const t2_STREAK_RATE_PENALTY = 0.6 * t2_teamStreakiness;
+    let t2_maxHotStreak = 0, t2_maxColdStreak = 0;
+    let t2_hotPossessions = 0, t2_coldPossessions = 0;
+
+    const STREAK_DECAY = 0.65;
+
+    // ── Helper: simulate one possession for a given team ──
+    // `teamSign` is +1 for T1, -1 for T2 (used to update `lead`)
+    // All the team-specific variables are passed/returned via closure.
+    function simOnePossession(
+        fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
+        defStealRate, starUsage, starFG2, starFG3,
+        benchDepth, defProfile,
+        // mutable state refs (objects so we can mutate)
+        st // { mom, defFouls, possUsed, possLeft, maxPoss, points, makes2, makes3, tos, ftMade, ftAtt, orebs, attempts, totalFatiguePenalty, restPossCount, crunchTimePoss, desperationPoss, intentionalFoulPoss, bonusReachedPoss, starFouls, starIsSitting, starSatPoss, starFouledOut, baseStarFoulRate, streak3, maxHotStreak, maxColdStreak, hotPossessions, coldPossessions, HOT_BONUS_PER, COLD_PENALTY_PER, MAX_STREAK_EFFECT, STREAK_RATE_BONUS, STREAK_RATE_PENALTY }
+    , teamSign) {
+        if (st.possLeft <= 0 || st.possUsed >= st.maxPoss) return false;
+        st.possLeft--; st.possUsed++;
+
+        // ── Game State Awareness ──
+        // Use average of both teams' possUsed for game clock progress
+        const totalPossUsed = t1_possUsed + t2_possUsed;
+        const progressPct = totalPossUsed / (totalHalfPoss * 2);
+        const isLateHalf = isSecondHalf && progressPct >= PHASE_LATE_START;
+        const isCrunchTime = isSecondHalf && progressPct >= PHASE_CRUNCH_START;
+        if (isCrunchTime) st.crunchTimePoss++;
+
+        // `teamLead` is from this team's perspective: positive = this team leads
+        const teamLead = lead * teamSign;
+
+        let gs_3RateAdj = 0, gs_toPctAdj = 0, gs_ftrAdj = 0, gs_fgPenalty = 0;
+        if (isSecondHalf) {
+            const deficit = -teamLead; // positive when trailing
+            if (isCrunchTime && deficit >= 6) {
+                const desperationScale = clamp((deficit - 5) / 15, 0, 1);
+                gs_3RateAdj = 8 + desperationScale * 12;
+                gs_toPctAdj = 1.5 + desperationScale * 2;
+                gs_fgPenalty = 2 + desperationScale * 3;
+                st.desperationPoss++;
+            } else if (isCrunchTime && deficit >= 3) {
+                gs_3RateAdj = 5;
+                gs_toPctAdj = 0.8;
+                gs_fgPenalty = 1;
+            } else if (isLateHalf && deficit >= 8) {
+                gs_3RateAdj = 4;
+                gs_toPctAdj = 0.5;
+            } else if (isCrunchTime && teamLead >= 6) {
+                gs_3RateAdj = -6;
+                gs_toPctAdj = -1;
+                gs_ftrAdj = 4;
+                // Plan 07: Leading by 8+ in crunch → burn clock aggressively
+                if (teamLead >= 8 && Math.random() < 0.15) {
+                    if (Math.random() * 100 < fg2 * 0.60) {
+                        st.points += 2; st.makes2++; lead += 2 * teamSign;
+                        st.mom = Math.min(st.mom + 0.3, 3);
+                    }
+                    st.possLeft--; st.possUsed++;
+                    st.streak3 = Math.round(st.streak3 * STREAK_DECAY);
+                    return true;
+                }
+            } else if (isCrunchTime && deficit >= 6) {
+                // Trailing by 6+ in crunch → quick shots, push pace
+                if (Math.random() < 0.10) { st.possLeft++; }
+            } else if (isLateHalf && teamLead >= 10) {
+                gs_3RateAdj = -3;
+                gs_toPctAdj = -0.5;
+            }
+        }
+
+        // ── Fatigue Curve ──
+        const fatigueOnsetPct = 0.55 + (benchDepth / 100) * 0.15;
+        const fatigueProgress = Math.max(0, (st.possUsed / halfPoss) - fatigueOnsetPct) / (1 - fatigueOnsetPct);
+        const halfMultiplier = isSecondHalf ? 1.4 : 1.0;
+        const fatiguePenalty = fatigueProgress * halfMultiplier * 0.06;
+        const fatigueFGMod = 1 - fatiguePenalty;
+        const fatigueTOMod = 1 + fatiguePenalty * 0.5;
+        st.totalFatiguePenalty += fatiguePenalty;
+
+        // ── Plan 06: Star Foul Trouble Check ──
+        if (!st.starIsSitting && !st.starFouledOut && Math.random() < st.baseStarFoulRate) {
+            st.starFouls++;
+            if (st.starFouls >= MAX_FOULS) {
+                st.starFouledOut = true;
+                st.starIsSitting = true;
+            } else if (!isSecondHalf && st.starFouls >= FOUL_SIT_THRESHOLD_H1) {
+                st.starIsSitting = true;
+            } else if (isSecondHalf && st.starFouls >= FOUL_SIT_THRESHOLD_H2) {
+                st.starIsSitting = true;
+            }
+        }
+        // Star Return from Foul Trouble
+        if (st.starIsSitting && !st.starFouledOut) {
+            const returnThreshold = isSecondHalf ? PHASE_CRUNCH_START - 0.05 : FOUL_RETURN_PCT;
+            if (progressPct >= returnThreshold) {
+                st.starIsSitting = false;
+            }
+        }
+        if (st.starIsSitting) st.starSatPoss++;
+
+        // ── Bench Rotation: Star Rest ──
+        const restWindowStart = Math.floor(halfPoss * 0.28);
+        const restWindowEnd = Math.floor(halfPoss * 0.52);
+        const inRestWindow = st.possUsed >= restWindowStart && st.possUsed <= restWindowEnd;
+        const restProb = inRestWindow ? clamp(0.15 + (benchDepth / 100) * 0.65, 0.15, 0.75) : 0;
+        const isRestPoss = Math.random() < restProb;
+        if (isRestPoss) st.restPossCount++;
+        const effectiveStarUsage = isRestPoss ? starUsage * 0.15 : starUsage;
+
+        // Plan 06: Override star usage when sitting due to foul trouble
+        const foulTroubleStarUsage = st.starIsSitting ? starUsage * 0.10 : effectiveStarUsage;
+
+        const isStar = Math.random() < foulTroubleStarUsage;
+        const sFG2 = isStar ? starFG2 : 0;
+        const sFG3 = isStar ? starFG3 : 0;
+
+        // ── Defensive Disruption: Shot Quality ──
+        const defP = defProfile || { perimeter: 0, interior: 0, overall: 0 };
+        const isDisruptedPoss = Math.random() < defP.overall * 0.6;
+        const disrupt3Mod = isDisruptedPoss ? -(defP.perimeter * 5.0) : 0;
+        const disrupt2Mod = isDisruptedPoss ? -(defP.interior * 4.0) : 0;
+        const disruptStarMod = isDisruptedPoss ? (1 - defP.overall * 0.5) : 1.0;
+
+        // Plan 08: Elite perimeter defense cools hot streaks faster
+        if (st.streak3 > 0 && isDisruptedPoss && defP.perimeter > 0.4) {
+            st.streak3 = Math.max(0, st.streak3 - 1);
+        }
+
+        const momFG = st.mom * 0.4;
+
+        // ── Turnover check ──
+        if (Math.random() * 100 < (toPct + gs_toPctAdj) * fatigueTOMod) {
+            st.tos++;
+            st.mom = Math.max(st.mom - 1, -2);
+            if (Math.random() < (defStealRate / Math.max(toPct, 8)) * 0.65) {
+                const r = Math.random();
+                // Transition scoring goes to the OTHER team
+                if (r < 0.55) { lead -= 2 * teamSign; }
+                else if (r < 0.70) { lead -= 3 * teamSign; }
+                // Credit the other team's points directly
+                if (teamSign === 1) {
+                    if (r < 0.55) t2_points += 2;
+                    else if (r < 0.70) t2_points += 3;
+                } else {
+                    if (r < 0.55) t1_points += 2;
+                    else if (r < 0.70) t1_points += 3;
+                }
+            }
+            st.streak3 = Math.round(st.streak3 * STREAK_DECAY);
+            return true;
+        }
+
+        // ── Plan 09: Foul probability scaled by referee climate ──
+        const baseFoulProb = 0.20 * refClimate;
+        const drewFoul = Math.random() < baseFoulProb;
+        if (drewFoul) st.defFouls++;
+
+        if (drewFoul && st.defFouls >= 7 && st.bonusReachedPoss === -1) st.bonusReachedPoss = st.possUsed;
+        if (drewFoul && st.defFouls >= 7 && Math.random() < 0.45) {
+            let bonusMade = 0;
+            if (st.defFouls >= 10) {
+                for (let f = 0; f < 2; f++) {
+                    st.ftAtt++;
+                    if (Math.random() * 100 < ftPct) { st.points++; st.ftMade++; bonusMade++; lead += 1 * teamSign; }
+                }
+            } else {
+                st.ftAtt++;
+                if (Math.random() * 100 < ftPct) {
+                    st.points++; st.ftMade++; bonusMade++; lead += 1 * teamSign;
+                    st.ftAtt++;
+                    if (Math.random() * 100 < ftPct) { st.points++; st.ftMade++; bonusMade++; lead += 1 * teamSign; }
+                }
+            }
+            st.mom = bonusMade > 0 ? Math.min(st.mom + 0.5, 3) : Math.max(st.mom - 0.5, -2);
+            st.streak3 = Math.round(st.streak3 * STREAK_DECAY);
+            return true;
+        }
+
+        // Plan 09: FTR-based shooting foul, scaled by referee foul climate
+        if (!drewFoul && Math.random() < (ftr * refClimate) / 100 * 0.38) {
+            st.defFouls++;
+            const numFTs = Math.random() < 0.25 ? 3 : 2;
+            let made = 0;
+            for (let f = 0; f < numFTs; f++) {
+                st.ftAtt++;
+                if (Math.random() * 100 < ftPct) { st.points++; st.ftMade++; made++; lead += 1 * teamSign; }
+            }
+            st.mom = made > 0 ? Math.min(st.mom + 0.5, 3) : Math.max(st.mom - 0.5, -2);
+            st.streak3 = Math.round(st.streak3 * STREAK_DECAY);
+            return true;
+        }
+
+        // ── Intentional Fouling (opponent fouls this team when this team leads in crunch) ──
+        if (isCrunchTime && isSecondHalf && teamLead >= 6 && gs_ftrAdj > 0 && st.intentionalFoulPoss < 6) {
+            if (Math.random() * 100 < gs_ftrAdj * 6) {
+                st.intentionalFoulPoss++;
+                st.defFouls++;
+                let made = 0;
+                for (let f = 0; f < 2; f++) {
+                    st.ftAtt++;
+                    if (Math.random() * 100 < ftPct) { st.points++; st.ftMade++; made++; lead += 1 * teamSign; }
+                }
+                st.mom = made > 0 ? Math.min(st.mom + 0.3, 3) : Math.max(st.mom - 0.3, -2);
+                st.streak3 = Math.round(st.streak3 * STREAK_DECAY);
+                return true;
+            }
+        }
+
+        // ── Shot selection ──
+        st.attempts++;
+        // Plan 08: Streak-modified 3PT rate and accuracy
+        const streakRateAdj = st.streak3 > 0
+            ? Math.min(st.streak3 * st.STREAK_RATE_BONUS, 4)
+            : Math.max(st.streak3 * st.STREAK_RATE_PENALTY, -3);
+        const streakFGAdj = st.streak3 > 0
+            ? Math.min(st.streak3 * st.HOT_BONUS_PER, st.MAX_STREAK_EFFECT)
+            : Math.max(st.streak3 * st.COLD_PENALTY_PER, -st.MAX_STREAK_EFFECT);
+
+        const is3pt = Math.random() * 100 < clamp(rate3 + gs_3RateAdj + streakRateAdj, 15, 65);
+        if (is3pt) {
+            const effectiveFG3 = clamp(fg3 + sFG3 * disruptStarMod + momFG * 0.5 - gs_fgPenalty + disrupt3Mod + streakFGAdj, 15, 50);
+            if (Math.random() * 100 < effectiveFG3 * fatigueFGMod) {
+                st.points += 3; st.makes3++; lead += 3 * teamSign;
+                st.mom = Math.min(st.mom + 1.5, 3);
+                st.streak3 = st.streak3 > 0 ? st.streak3 + 1 : 1;
+                if (Math.random() < 0.02) {
+                    st.defFouls++;
+                    st.ftAtt++;
+                    if (Math.random() * 100 < ftPct) { st.points++; st.ftMade++; lead += 1 * teamSign; }
+                }
+            } else {
+                st.mom = Math.max(st.mom - 0.5, -2);
+                st.streak3 = st.streak3 < 0 ? st.streak3 - 1 : -1;
+                if (Math.random() * 100 < orPct * 0.80) { st.possLeft++; st.orebs++; }
+            }
+        } else {
+            st.streak3 = Math.round(st.streak3 * STREAK_DECAY);
+            const effectiveFG2 = clamp(fg2 + sFG2 * disruptStarMod + momFG * 0.7 - gs_fgPenalty * 0.5 + disrupt2Mod, 25, 70);
+            if (Math.random() * 100 < effectiveFG2 * fatigueFGMod) {
+                st.points += 2; st.makes2++; lead += 2 * teamSign;
+                st.mom = Math.min(st.mom + 1, 3);
+                if (Math.random() < 0.06) {
+                    st.defFouls++;
+                    st.ftAtt++;
+                    if (Math.random() * 100 < ftPct) { st.points++; st.ftMade++; lead += 1 * teamSign; }
+                }
+            } else {
+                st.mom = Math.max(st.mom - 0.5, -2);
+                if (Math.random() * 100 < orPct) { st.possLeft++; st.orebs++; }
+            }
+        }
+        // Plan 08: Track streak extremes
+        if (st.streak3 > st.maxHotStreak) st.maxHotStreak = st.streak3;
+        if (st.streak3 < -st.maxColdStreak) st.maxColdStreak = -st.streak3;
+        if (st.streak3 >= 2) st.hotPossessions++;
+        if (st.streak3 <= -2) st.coldPossessions++;
+
+        return true;
+    }
+
+    // ── Build mutable state objects for each team ──
+    const t1St = {
+        mom: t1_mom, defFouls: t1_defFouls, possUsed: t1_possUsed, possLeft: t1PossLeft, maxPoss: t1MaxPoss,
+        points: t1_points, makes2: t1_makes2, makes3: t1_makes3, tos: t1_tos,
+        ftMade: t1_ftMade, ftAtt: t1_ftAtt, orebs: t1_orebs, attempts: t1_attempts,
+        totalFatiguePenalty: t1_totalFatiguePenalty, restPossCount: t1_restPossCount,
+        crunchTimePoss: t1_crunchTimePoss, desperationPoss: t1_desperationPoss,
+        intentionalFoulPoss: t1_intentionalFoulPoss, bonusReachedPoss: t1_bonusReachedPoss,
+        starFouls: t1_starFouls, starIsSitting: t1_starIsSitting, starSatPoss: t1_starSatPoss,
+        starFouledOut: t1_starFouledOut, baseStarFoulRate: t1_baseStarFoulRate,
+        streak3: t1_streak3, maxHotStreak: t1_maxHotStreak, maxColdStreak: t1_maxColdStreak,
+        hotPossessions: t1_hotPossessions, coldPossessions: t1_coldPossessions,
+        HOT_BONUS_PER: t1_HOT_BONUS_PER, COLD_PENALTY_PER: t1_COLD_PENALTY_PER,
+        MAX_STREAK_EFFECT: t1_MAX_STREAK_EFFECT, STREAK_RATE_BONUS: t1_STREAK_RATE_BONUS,
+        STREAK_RATE_PENALTY: t1_STREAK_RATE_PENALTY,
+    };
+    const t2St = {
+        mom: t2_mom, defFouls: t2_defFouls, possUsed: t2_possUsed, possLeft: t2PossLeft, maxPoss: t2MaxPoss,
+        points: t2_points, makes2: t2_makes2, makes3: t2_makes3, tos: t2_tos,
+        ftMade: t2_ftMade, ftAtt: t2_ftAtt, orebs: t2_orebs, attempts: t2_attempts,
+        totalFatiguePenalty: t2_totalFatiguePenalty, restPossCount: t2_restPossCount,
+        crunchTimePoss: t2_crunchTimePoss, desperationPoss: t2_desperationPoss,
+        intentionalFoulPoss: t2_intentionalFoulPoss, bonusReachedPoss: t2_bonusReachedPoss,
+        starFouls: t2_starFouls, starIsSitting: t2_starIsSitting, starSatPoss: t2_starSatPoss,
+        starFouledOut: t2_starFouledOut, baseStarFoulRate: t2_baseStarFoulRate,
+        streak3: t2_streak3, maxHotStreak: t2_maxHotStreak, maxColdStreak: t2_maxColdStreak,
+        hotPossessions: t2_hotPossessions, coldPossessions: t2_coldPossessions,
+        HOT_BONUS_PER: t2_HOT_BONUS_PER, COLD_PENALTY_PER: t2_COLD_PENALTY_PER,
+        MAX_STREAK_EFFECT: t2_MAX_STREAK_EFFECT, STREAK_RATE_BONUS: t2_STREAK_RATE_BONUS,
+        STREAK_RATE_PENALTY: t2_STREAK_RATE_PENALTY,
+    };
+
+    // ── Main alternating loop ──
+    while (t1St.possLeft > 0 || t2St.possLeft > 0) {
+        let t1Ran = false, t2Ran = false;
+        // T1 possession
+        if (t1St.possLeft > 0 && t1St.possUsed < t1St.maxPoss) {
+            simOnePossession(
+                t1_fg2, t1_fg3, t1_toPct, t1_orPct, t1_rate3, t1_ftr, t1_ftPct,
+                t1_defStealRate, t1_starUsage, t1_starFG2, t1_starFG3,
+                t1_benchDepth, t1_defProfile,
+                t1St, +1
+            );
+            t1Ran = true;
+        }
+        // T2 possession
+        if (t2St.possLeft > 0 && t2St.possUsed < t2St.maxPoss) {
+            simOnePossession(
+                t2_fg2, t2_fg3, t2_toPct, t2_orPct, t2_rate3, t2_ftr, t2_ftPct,
+                t2_defStealRate, t2_starUsage, t2_starFG2, t2_starFG3,
+                t2_benchDepth, t2_defProfile,
+                t2St, -1
+            );
+            t2Ran = true;
+        }
+        if (!t1Ran && !t2Ran) break; // safety: avoid infinite loop if both hit maxPoss
+    }
+
+    // ── Build return value matching simHalf() shape per team ──
+    return {
+        t1: {
+            points: t1St.points, possUsed: t1St.possUsed, makes2: t1St.makes2, makes3: t1St.makes3,
+            tos: t1St.tos, ftMade: t1St.ftMade, ftAtt: t1St.ftAtt, orebs: t1St.orebs, attempts: t1St.attempts,
+            transitionPts: 0, // transition pts already folded into opponent's points
+            momentum: t1St.mom, defFouls: t1St.defFouls,
+            avgFatiguePenalty: t1St.possUsed > 0 ? t1St.totalFatiguePenalty / t1St.possUsed : 0,
+            restPossessions: t1St.restPossCount,
+            crunchTimePoss: t1St.crunchTimePoss, desperationPoss: t1St.desperationPoss,
+            intentionalFoulPoss: t1St.intentionalFoulPoss,
+            finalLead: lead,
+            starFoulState: { fouls: t1St.starFouls, isSitting: t1St.starIsSitting, fouledOut: t1St.starFouledOut },
+            starSatPoss: t1St.starSatPoss, starFouledOut: t1St.starFouledOut,
+            bonusReachedAtPoss: t1St.bonusReachedPoss,
+            maxHotStreak: t1St.maxHotStreak, maxColdStreak: t1St.maxColdStreak,
+            hotPossessions: t1St.hotPossessions, coldPossessions: t1St.coldPossessions,
+        },
+        t2: {
+            points: t2St.points, possUsed: t2St.possUsed, makes2: t2St.makes2, makes3: t2St.makes3,
+            tos: t2St.tos, ftMade: t2St.ftMade, ftAtt: t2St.ftAtt, orebs: t2St.orebs, attempts: t2St.attempts,
+            transitionPts: 0,
+            momentum: t2St.mom, defFouls: t2St.defFouls,
+            avgFatiguePenalty: t2St.possUsed > 0 ? t2St.totalFatiguePenalty / t2St.possUsed : 0,
+            restPossessions: t2St.restPossCount,
+            crunchTimePoss: t2St.crunchTimePoss, desperationPoss: t2St.desperationPoss,
+            intentionalFoulPoss: t2St.intentionalFoulPoss,
+            finalLead: -lead,
+            starFoulState: { fouls: t2St.starFouls, isSitting: t2St.starIsSitting, fouledOut: t2St.starFouledOut },
+            starSatPoss: t2St.starSatPoss, starFouledOut: t2St.starFouledOut,
+            bonusReachedAtPoss: t2St.bonusReachedPoss,
+            maxHotStreak: t2St.maxHotStreak, maxColdStreak: t2St.maxColdStreak,
+            hotPossessions: t2St.hotPossessions, coldPossessions: t2St.coldPossessions,
+        },
+        finalLead: lead,
+    };
+}
+
 function simOvertime(fg2, fg3, toPct, orPct, rate3, ftr, ftPct,
                      defStealRate, starUsage, starFG2, starFG3, momentum,
                      otNumber, starFouledOut, foulClimate) {
@@ -570,43 +1011,42 @@ self.onmessage = function(e) {
             if (half === 0) h1TempoTotal += halfPoss * 2;
             else h2TempoTotal += halfPoss * 2;
 
-            // Game-state adjustments now handled per-possession inside simHalf()
-            const t1IncomingLead = half === 0 ? 0 : (s1 - s2);
-            const t2IncomingLead = half === 0 ? 0 : (s2 - s1);
+            // Game-state adjustments now handled per-possession inside simHalfInterleaved()
+            const interleavedIncomingLead = half === 0 ? 0 : (s1 - s2);
 
-            const r1 = simHalf({
-                halfPoss,
-                fg2: g_t1_FG2, fg3: g_t1_FG3,
-                toPct: g_t1_TO, orPct: g_t1_OR,
-                rate3: clamp(g_t1_3Rate, 20, 55), ftr: g_t1_FTR, ftPct: p.t1_FTP,
-                defStealRate: p.m_t2StealRate,
-                starUsage: t1Star.usage,
-                starFG2: t1Star.fg2Bonus, starFG3: t1Star.fg3Bonus,
-                initMom: t1Mom,
-                benchDepth: p.t1Bench || 30, isSecondHalf: half === 1, incomingLead: t1IncomingLead,
-                defProfile: p.t2DefProfile || { perimeter: 0, interior: 0, overall: 0 },
-                starFoulState: t1StarFoulState,
-                starFoulProneness: p.t1StarFoulProneness || 0,
+            const halfResult = simHalfInterleaved({
+                halfPoss, isSecondHalf: half === 1,
+                incomingLead: interleavedIncomingLead,
                 foulClimate: refClimate,
-                streakiness: p.t1Streakiness || 1.0,
+                // T1 params
+                t1_fg2: g_t1_FG2, t1_fg3: g_t1_FG3,
+                t1_toPct: g_t1_TO, t1_orPct: g_t1_OR,
+                t1_rate3: clamp(g_t1_3Rate, 20, 55), t1_ftr: g_t1_FTR, t1_ftPct: p.t1_FTP,
+                t1_defStealRate: p.m_t2StealRate,
+                t1_starUsage: t1Star.usage,
+                t1_starFG2: t1Star.fg2Bonus, t1_starFG3: t1Star.fg3Bonus,
+                t1_initMom: t1Mom,
+                t1_benchDepth: p.t1Bench || 30,
+                t1_defProfile: p.t2DefProfile || { perimeter: 0, interior: 0, overall: 0 },
+                t1_starFoulState: t1StarFoulState,
+                t1_starFoulProneness: p.t1StarFoulProneness || 0,
+                t1_streakiness: p.t1Streakiness || 1.0,
+                // T2 params
+                t2_fg2: g_t2_FG2, t2_fg3: g_t2_FG3,
+                t2_toPct: g_t2_TO, t2_orPct: g_t2_OR,
+                t2_rate3: clamp(g_t2_3Rate, 20, 55), t2_ftr: g_t2_FTR, t2_ftPct: p.t2_FTP,
+                t2_defStealRate: p.m_t1StealRate,
+                t2_starUsage: t2Star.usage,
+                t2_starFG2: t2Star.fg2Bonus, t2_starFG3: t2Star.fg3Bonus,
+                t2_initMom: t2Mom,
+                t2_benchDepth: p.t2Bench || 30,
+                t2_defProfile: p.t1DefProfile || { perimeter: 0, interior: 0, overall: 0 },
+                t2_starFoulState: t2StarFoulState,
+                t2_starFoulProneness: p.t2StarFoulProneness || 0,
+                t2_streakiness: p.t2Streakiness || 1.0,
             });
-
-            const r2 = simHalf({
-                halfPoss,
-                fg2: g_t2_FG2, fg3: g_t2_FG3,
-                toPct: g_t2_TO, orPct: g_t2_OR,
-                rate3: clamp(g_t2_3Rate, 20, 55), ftr: g_t2_FTR, ftPct: p.t2_FTP,
-                defStealRate: p.m_t1StealRate,
-                starUsage: t2Star.usage,
-                starFG2: t2Star.fg2Bonus, starFG3: t2Star.fg3Bonus,
-                initMom: t2Mom,
-                benchDepth: p.t2Bench || 30, isSecondHalf: half === 1, incomingLead: t2IncomingLead,
-                defProfile: p.t1DefProfile || { perimeter: 0, interior: 0, overall: 0 },
-                starFoulState: t2StarFoulState,
-                starFoulProneness: p.t2StarFoulProneness || 0,
-                foulClimate: refClimate,
-                streakiness: p.t2Streakiness || 1.0,
-            });
+            const r1 = halfResult.t1;
+            const r2 = halfResult.t2;
 
             // Plan 06: Carry foul state to next half
             t1StarFoulState = r1.starFoulState || { fouls: 0, isSitting: false };
@@ -620,8 +1060,9 @@ self.onmessage = function(e) {
             if (r1.starFouledOut) gameT1FouledOut = true;
             if (r2.starFouledOut) gameT2FouledOut = true;
 
-            s1 += r1.points + r2.transitionPts;
-            s2 += r2.points + r1.transitionPts;
+            // Transition pts already folded into each team's points in interleaved sim
+            s1 += r1.points;
+            s2 += r2.points;
 
             t1Mom = r1.momentum * (half === 0 ? 0.3 : 1);
             t2Mom = r2.momentum * (half === 0 ? 0.3 : 1);
@@ -632,7 +1073,7 @@ self.onmessage = function(e) {
             gTO1 += r1.tos; gTO2 += r2.tos;
             gOR1 += r1.orebs; gOR2 += r2.orebs;
             gFT1 += r1.ftMade; gFT2 += r2.ftMade;
-            totalTransition += r1.transitionPts + r2.transitionPts;
+            totalTransition += 0; // transition pts folded into team points in interleaved sim
             totalT1Fatigue += r1.avgFatiguePenalty;
             totalT2Fatigue += r2.avgFatiguePenalty;
             totalT1RestPoss += r1.restPossessions;
