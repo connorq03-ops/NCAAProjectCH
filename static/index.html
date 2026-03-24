@@ -368,6 +368,7 @@
 
         // Dynamic model weights (Part A)
         let DYNAMIC_WEIGHTS = null;
+        let KP_BLEND_RATIO = null;
         async function loadDynamicWeights() {
             try {
                 const resp = await fetch(`${API_BASE}/model-weights`);
@@ -380,7 +381,20 @@
                 }
             } catch (e) { /* use defaults */ }
         }
+        async function loadKpBlendRatio() {
+            try {
+                const resp = await fetch(`${API_BASE}/kp-blend-ratio`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.ratio !== undefined && data.source !== 'default') {
+                        KP_BLEND_RATIO = data.ratio;
+                        console.log('[kp-blend] Loaded KP blend ratio:', KP_BLEND_RATIO);
+                    }
+                }
+            } catch (e) { /* use default */ }
+        }
         loadDynamicWeights();
+        loadKpBlendRatio();
         let currentTeamId = null;
         let currentTeamName = null;
         let allTeamsCache = [];
@@ -1511,6 +1525,7 @@
                 t1StarFoulProneness, t2StarFoulProneness,
                 t1Streakiness, t2Streakiness,
                 refFoulClimate,
+                kpBlendRatio: KP_BLEND_RATIO !== null ? KP_BLEND_RATIO : 0.18,
             };
 
             // Dispatch to Web Worker (non-blocking)
@@ -1714,7 +1729,7 @@
             const ncaaToggle = document.getElementById('ncaa-tournament-toggle');
             const gameContext = {
                 neutral_site: matchupLocation === 'neutral',
-                conf_tournament: matchupLocation === 'neutral' && t1.ConfShort === t2.ConfShort && new Date().getMonth() >= 2,
+                conf_tournament: matchupLocation === 'neutral' && t1.ConfShort === t2.ConfShort && new Date().getMonth() === 2,
                 ncaa_tournament: ncaaToggle && ncaaToggle.checked,
                 early_season: new Date().getMonth() >= 10 || new Date().getMonth() === 0,
             };
