@@ -578,7 +578,7 @@ class Backtester:
                 # ATS tracking (only if vegas_spread available)
                 if r.get('vegas_spread') is not None and r.get('signed_error') is not None:
                     vegas = r['vegas_spread']
-                    our_margin_val = r.get('predicted_spread', 0)
+                    our_margin_val = -r.get('predicted_spread', 0)  # convert visitor-relative to home-relative
                     actual = r.get('actual_spread', 0)
                     if abs(our_margin_val - vegas) > 0.5:
                         our_side_covered = (our_margin_val > vegas and actual > vegas) or \
