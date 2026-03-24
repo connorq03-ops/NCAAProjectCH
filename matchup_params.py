@@ -408,8 +408,29 @@ def build_matchup_params(team1_name, team2_name, team_data,
             ref_foul_climate = 1.0 + (raw_climate - 1.0) * confidence
         ref_foul_climate = clamp(ref_foul_climate, 0.80, 1.25)
 
+    # ── Plan 09: Referee Fit Edge (physicality-based directional edge) ──
+    ref_fit_edge = 0
+    if ref_foul_climate != 1.0:
+        AVG_FTR_P, AVG_BLK_P, AVG_STL_P, AVG_3RATE_P = 30, 4.0, 9.0, 35
+        t1_physicality = (
+            ((t1_ftr - AVG_FTR_P) / 10) * 0.4
+            + ((t1_blk - AVG_BLK_P) / 3) * 0.3
+            + ((t1_stl - AVG_STL_P) / 3) * 0.15
+            - ((t1_3rate_base - AVG_3RATE_P) / 10) * 0.15
+        )
+        t2_physicality = (
+            ((t2_ftr - AVG_FTR_P) / 10) * 0.4
+            + ((t2_blk - AVG_BLK_P) / 3) * 0.3
+            + ((t2_stl - AVG_STL_P) / 3) * 0.15
+            - ((t2_3rate_base - AVG_3RATE_P) / 10) * 0.15
+        )
+        ref_fit_edge = clamp(
+            (t1_physicality - t2_physicality) * (1.0 - ref_foul_climate) * 2,
+            -1.5, 1.5
+        )
+
     # ── Enrichment Adjustments ──
-    total_adj = injury_adj * (game_tempo_ctr / 100)
+    total_adj = (injury_adj + ref_fit_edge) * (game_tempo_ctr / 100)
 
     # ── KenPom Calibration ──
     kp_t1_exp_oe = (r1.get("AdjOE") or AVG_EFF) + (r2.get("AdjDE") or AVG_EFF) - AVG_EFF

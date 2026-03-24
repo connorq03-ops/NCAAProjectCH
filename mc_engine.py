@@ -565,6 +565,14 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
     close_games = 0
     upsets = 0
 
+    # Plan 09: Foul stats accumulators for ref_stats
+    total_t1_def_fouls = 0
+    total_t2_def_fouls = 0
+    total_t1_ft_att = 0
+    total_t2_ft_att = 0
+    t1_early_bonus_games = 0
+    t2_early_bonus_games = 0
+
     # Plan 07: Tempo
     t1_pull = p.get("t1_preferred_tempo") or p.get("game_tempo_ctr", 67.5)
     t2_pull = p.get("t2_preferred_tempo") or p.get("game_tempo_ctr", 67.5)
@@ -713,6 +721,16 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
             if r2.get("star_fouled_out"):
                 game_t2_fouled_out = True
 
+            # Plan 09: Accumulate foul stats (r1 = T1 offense, r2 = T2 offense)
+            total_t1_def_fouls += r1.get("def_fouls", 0)  # fouls drawn by T1
+            total_t2_def_fouls += r2.get("def_fouls", 0)  # fouls drawn by T2
+            total_t1_ft_att += r1.get("ft_att", 0)
+            total_t2_ft_att += r2.get("ft_att", 0)
+            if r1.get("bonus_reached_at_poss", -1) >= 0 and r1["bonus_reached_at_poss"] < round(game_poss / 2 * 0.55):
+                t1_early_bonus_games += 0.5  # per-half, so 0.5 per half occurrence
+            if r2.get("bonus_reached_at_poss", -1) >= 0 and r2["bonus_reached_at_poss"] < round(game_poss / 2 * 0.55):
+                t2_early_bonus_games += 0.5
+
             s1 += r1["points"] + r2["transition_pts"]
             s2 += r2["points"] + r1["transition_pts"]
 
@@ -826,6 +844,15 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
         "close_games": close_games,
         "upsets": upsets,
         "num_sims": num_sims,
+        "ref_stats": {
+            "foul_climate": ref_climate,
+            "t1_avg_fouls_drawn": total_t1_def_fouls / (num_sims * 2),
+            "t2_avg_fouls_drawn": total_t2_def_fouls / (num_sims * 2),
+            "t1_avg_ft_att": total_t1_ft_att / (num_sims * 2),
+            "t2_avg_ft_att": total_t2_ft_att / (num_sims * 2),
+            "t1_early_bonus_rate": t1_early_bonus_games / (num_sims * 2),
+            "t2_early_bonus_rate": t2_early_bonus_games / (num_sims * 2),
+        },
     }
 
 
