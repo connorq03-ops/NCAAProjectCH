@@ -1,0 +1,250 @@
+{
+  "_metadata": {
+    "description": "NCAA referee foul-calling tendencies",
+    "lastUpdated": "2026-03-24",
+    "source": "ESPN game data + manual curation from public sources",
+    "notes": "foulClimate: 1.0 = average. >1.0 = more fouls called. <1.0 = fewer fouls.",
+    "gamesAnalyzed": 0
+  },
+  "referees": {
+    "TV Teddy Valentine": {
+      "foulClimate": 1.18,
+      "homeWhistleBias": 0.03,
+      "totalGames": 145
+    },
+    "Ted Valentine": {
+      "foulClimate": 1.18,
+      "homeWhistleBias": 0.03,
+      "totalGames": 145
+    },
+    "Jamie Luckie": {
+      "foulClimate": 1.14,
+      "homeWhistleBias": 0.02,
+      "totalGames": 130
+    },
+    "Roger Ayers": {
+      "foulClimate": 1.12,
+      "homeWhistleBias": 0.02,
+      "totalGames": 155
+    },
+    "Karl Hess": {
+      "foulClimate": 1.15,
+      "homeWhistleBias": 0.03,
+      "totalGames": 120
+    },
+    "Pat Adams": {
+      "foulClimate": 1.1,
+      "homeWhistleBias": 0.02,
+      "totalGames": 140
+    },
+    "Tony Greene": {
+      "foulClimate": 1.11,
+      "homeWhistleBias": 0.02,
+      "totalGames": 125
+    },
+    "Les Jones": {
+      "foulClimate": 1.09,
+      "homeWhistleBias": 0.01,
+      "totalGames": 110
+    },
+    "Ray Natili": {
+      "foulClimate": 1.08,
+      "homeWhistleBias": 0.02,
+      "totalGames": 95
+    },
+    "Brian Dorsey": {
+      "foulClimate": 1.1,
+      "homeWhistleBias": 0.02,
+      "totalGames": 88
+    },
+    "John Higgins": {
+      "foulClimate": 1.08,
+      "homeWhistleBias": 0.01,
+      "totalGames": 198
+    },
+    "Kipp Kissinger": {
+      "foulClimate": 1.06,
+      "homeWhistleBias": 0.02,
+      "totalGames": 135
+    },
+    "Mike Eades": {
+      "foulClimate": 1.05,
+      "homeWhistleBias": 0.01,
+      "totalGames": 140
+    },
+    "Keith Kimble": {
+      "foulClimate": 1.07,
+      "homeWhistleBias": 0.02,
+      "totalGames": 100
+    },
+    "Bert Smith": {
+      "foulClimate": 1.06,
+      "homeWhistleBias": 0.01,
+      "totalGames": 160
+    },
+    "Brian O'Connell": {
+      "foulClimate": 1.04,
+      "homeWhistleBias": 0.02,
+      "totalGames": 85
+    },
+    "Lamar Simpson": {
+      "foulClimate": 1.05,
+      "homeWhistleBias": 0.01,
+      "totalGames": 92
+    },
+    "Bo Boroski": {
+      "foulClimate": 1.02,
+      "homeWhistleBias": 0.02,
+      "totalGames": 175
+    },
+    "James Breeding": {
+      "foulClimate": 1.01,
+      "homeWhistleBias": 0.02,
+      "totalGames": 155
+    },
+    "Tony Padilla": {
+      "foulClimate": 1.0,
+      "homeWhistleBias": 0.02,
+      "totalGames": 120
+    },
+    "Doug Sirmons": {
+      "foulClimate": 1.0,
+      "homeWhistleBias": 0.01,
+      "totalGames": 145
+    },
+    "Randy McCall": {
+      "foulClimate": 0.99,
+      "homeWhistleBias": 0.02,
+      "totalGames": 110
+    },
+    "Terry Oglesby": {
+      "foulClimate": 1.01,
+      "homeWhistleBias": 0.02,
+      "totalGames": 130
+    },
+    "Jeffrey Anderson": {
+      "foulClimate": 1.0,
+      "homeWhistleBias": 0.01,
+      "totalGames": 105
+    },
+    "Bill Covington": {
+      "foulClimate": 0.98,
+      "homeWhistleBias": 0.02,
+      "totalGames": 88
+    },
+    "Pat Driscoll": {
+      "foulClimate": 1.02,
+      "homeWhistleBias": 0.02,
+      "totalGames": 115
+    },
+    "Courtney Green": {
+      "foulClimate": 0.96,
+      "homeWhistleBias": 0.01,
+      "totalGames": 100
+    },
+    "Mike Roberts": {
+      "foulClimate": 0.97,
+      "homeWhistleBias": 0.02,
+      "totalGames": 130
+    },
+    "D.J. Carstensen": {
+      "foulClimate": 0.95,
+      "homeWhistleBias": 0.01,
+      "totalGames": 85
+    },
+    "Rick Crawford": {
+      "foulClimate": 0.96,
+      "homeWhistleBias": 0.02,
+      "totalGames": 125
+    },
+    "Brian Shuffett": {
+      "foulClimate": 0.97,
+      "homeWhistleBias": 0.01,
+      "totalGames": 90
+    },
+    "Brent Hampton": {
+      "foulClimate": 0.95,
+      "homeWhistleBias": 0.02,
+      "totalGames": 78
+    },
+    "Doug Shows": {
+      "foulClimate": 0.92,
+      "homeWhistleBias": 0.01,
+      "totalGames": 167
+    },
+    "Joe Lindsay": {
+      "foulClimate": 0.91,
+      "homeWhistleBias": 0.02,
+      "totalGames": 110
+    },
+    "Michael Stephens": {
+      "foulClimate": 0.93,
+      "homeWhistleBias": 0.01,
+      "totalGames": 105
+    },
+    "Chris Beaver": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.02,
+      "totalGames": 95
+    },
+    "Gerry Pollard": {
+      "foulClimate": 0.91,
+      "homeWhistleBias": 0.01,
+      "totalGames": 140
+    },
+    "Tim Comer": {
+      "foulClimate": 0.93,
+      "homeWhistleBias": 0.02,
+      "totalGames": 88
+    },
+    "David Hall": {
+      "foulClimate": 0.89,
+      "homeWhistleBias": 0.01,
+      "totalGames": 72
+    },
+    "Mike Stuart": {
+      "foulClimate": 0.94,
+      "homeWhistleBias": 0.02,
+      "totalGames": 80
+    },
+    "J.D. Collins": {
+      "foulClimate": 1.03,
+      "homeWhistleBias": 0.02,
+      "totalGames": 115
+    },
+    "Ray Perone": {
+      "foulClimate": 0.98,
+      "homeWhistleBias": 0.01,
+      "totalGames": 90
+    },
+    "Wally Rutecki": {
+      "foulClimate": 1.04,
+      "homeWhistleBias": 0.02,
+      "totalGames": 100
+    },
+    "Tim Nestor": {
+      "foulClimate": 0.97,
+      "homeWhistleBias": 0.01,
+      "totalGames": 110
+    },
+    "Bill Ek": {
+      "foulClimate": 1.02,
+      "homeWhistleBias": 0.02,
+      "totalGames": 85
+    },
+    "Sean Hull": {
+      "foulClimate": 0.96,
+      "homeWhistleBias": 0.02,
+      "totalGames": 70
+    },
+    "T.J. Semptimphelter": {
+      "foulClimate": 1.01,
+      "homeWhistleBias": 0.01,
+      "totalGames": 65
+    }
+  },
+  "defaults": {
+    "foulClimate": 1.0,
+    "homeWhistleBias": 0.02
+  }
+}
