@@ -367,6 +367,37 @@
         const POWER_CONFS = ['SEC', 'B10', 'B12', 'ACC', 'BE'];
         let coachData = {};
         let REFEREE_DATA = null;
+
+        // Dynamic spread calibration coefficients (loaded from /api/calibration)
+        let SPREAD_COEFFS = { close: 0.92, moderate: 0.85, logMult: 3.5 };
+
+        // Per-conference scaling overrides (loaded from /api/conf-adjustments)
+        let CONF_SCALE_OVERRIDES = {};
+
+        async function loadCalibration() {
+            try {
+                const resp = await fetch(`${API_BASE}/calibration`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.close_coeff) SPREAD_COEFFS.close = data.close_coeff;
+                    if (data.moderate_coeff) SPREAD_COEFFS.moderate = data.moderate_coeff;
+                    if (data.log_multiplier) SPREAD_COEFFS.logMult = data.log_multiplier;
+                    console.log('[calibration] Loaded:', SPREAD_COEFFS);
+                }
+            } catch (e) { /* use defaults */ }
+        }
+        loadCalibration();
+
+        async function loadConfAdjustments() {
+            try {
+                const resp = await fetch(`${API_BASE}/conf-adjustments`);
+                if (resp.ok) {
+                    CONF_SCALE_OVERRIDES = await resp.json();
+                    console.log('[conf-adj] Loaded overrides:', CONF_SCALE_OVERRIDES);
+                }
+            } catch (e) { /* use defaults */ }
+        }
+        loadConfAdjustments();
         
         async function loadCoachData() {
             try {
@@ -673,6 +704,7 @@
         }
 
         // Conference Strength — battle-tested reliability adjustment
+        // Uses per-conference scaling overrides when available (from calibration system)
         function calcConfAdj(t1, t2, confMap) {
             if (!confMap || Object.keys(confMap).length === 0) return { adj: 0, r1: 0, r2: 0, conf1: '', conf2: '' };
 
@@ -681,13 +713,16 @@
             const r1 = confMap[conf1] || 0;
             const r2 = confMap[conf2] || 0;
 
-            // Conference rating difference scaled down — KenPom already adjusts for SOS,
-            // so this is a small reliability bonus for tougher conference play.
-            // Each point of conf rating difference = ~0.06 pts, capped at ±1.5
-            const raw = (r1 - r2) * 0.06;
+            // Per-conference scaling (default 0.06)
+            const scale1 = CONF_SCALE_OVERRIDES[conf1] || 0.06;
+            const scale2 = CONF_SCALE_OVERRIDES[conf2] || 0.06;
+
+            // Use average of both conferences' scaling factors
+            const avgScale = (scale1 + scale2) / 2;
+            const raw = (r1 - r2) * avgScale;
             const adj = Math.max(-1.5, Math.min(1.5, raw));
 
-            return { adj, r1, r2, conf1, conf2 };
+            return { adj, r1, r2, conf1, conf2, scale1, scale2 };
         }
 
         // Momentum — recent trend in AdjEM
@@ -715,19 +750,18 @@
         function calibrateSpread(rawMargin) {
             const sign = rawMargin >= 0 ? 1 : -1;
             const abs = Math.abs(rawMargin);
-            // Piecewise dampening:
-            //   0-7 pts:  0.92x (close games, mostly accurate)
-            //   7-14 pts: 0.85x (moderate spreads, some regression)
-            //   14+ pts:  logarithmic compression (blowouts rarely hit raw number)
+            // Piecewise dampening using dynamic coefficients:
+            //   0-7 pts:  SPREAD_COEFFS.close (default 0.92)
+            //   7-14 pts: SPREAD_COEFFS.moderate (default 0.85)
+            //   14+ pts:  logarithmic compression with SPREAD_COEFFS.logMult (default 3.5)
             let calibrated;
             if (abs <= 7) {
-                calibrated = abs * 0.92;
+                calibrated = abs * SPREAD_COEFFS.close;
             } else if (abs <= 14) {
-                calibrated = 7 * 0.92 + (abs - 7) * 0.85;
+                calibrated = 7 * SPREAD_COEFFS.close + (abs - 7) * SPREAD_COEFFS.moderate;
             } else {
-                // Log compression for extreme spreads: 14pt base + diminishing returns
-                const base = 7 * 0.92 + 7 * 0.85;
-                calibrated = base + Math.log(1 + (abs - 14) * 0.5) * 3.5;
+                const base = 7 * SPREAD_COEFFS.close + 7 * SPREAD_COEFFS.moderate;
+                calibrated = base + Math.log(1 + (abs - 14) * 0.5) * SPREAD_COEFFS.logMult;
             }
             return sign * calibrated;
         }
@@ -4105,6 +4139,183 @@
                 `).join('');
             }
 
+            // Signed error by bucket (calibration feedback loop)
+            let signedBucketHTML = '';
+            if (data.signed_error_by_bucket && Object.keys(data.signed_error_by_bucket).length > 0) {
+                signedBucketHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-amber-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-crosshairs mr-1 text-amber-400"></i>Signed Error by Spread Bucket (Calibration Feedback)</h4>
+                    <p class="text-xs text-gray-400 mb-3">Positive = overpredicts (said team wins by more than they did). Negative = underpredicts.</p>
+                    <div class="grid grid-cols-5 gap-2">
+                    ${Object.entries(data.signed_error_by_bucket).map(([name, s]) => `
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">${name} pts</p>
+                            <p class="text-lg font-bold ${s.direction === 'overpredicts' ? 'text-red-400' : s.direction === 'underpredicts' ? 'text-blue-400' : 'text-green-400'}">${s.mean_signed_error > 0 ? '+' : ''}${s.mean_signed_error}</p>
+                            <p class="text-xs ${s.direction === 'overpredicts' ? 'text-red-300' : s.direction === 'underpredicts' ? 'text-blue-300' : 'text-green-300'}">${s.direction}</p>
+                            <p class="text-xs text-gray-500">${s.games} games</p>
+                            <p class="text-xs text-gray-500">SD: ${s.std_dev}</p>
+                        </div>
+                    `).join('')}
+                    </div>
+                </div>`;
+            }
+
+            // Calibration recommendations
+            let calibHTML = '';
+            if (data.calibration_recommendations && Object.keys(data.calibration_recommendations).length > 0) {
+                const recs = data.calibration_recommendations;
+                let recRows = '';
+                if (recs.close_games_0_7) {
+                    const r = recs.close_games_0_7;
+                    recRows += `<tr class="border-t border-gray-700">
+                        <td class="px-3 py-2 text-sm">Close (0-7 pts)</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.current}</td>
+                        <td class="px-3 py-2 text-center text-sm font-bold ${r.recommended !== r.current ? 'text-amber-400' : 'text-gray-400'}">${r.recommended}</td>
+                        <td class="px-3 py-2 text-center text-sm ${r.mean_signed_error > 0 ? 'text-red-400' : r.mean_signed_error < 0 ? 'text-blue-400' : ''}">${r.mean_signed_error > 0 ? '+' : ''}${r.mean_signed_error}</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.sample_size}</td>
+                        <td class="px-3 py-2 text-center text-sm"><span class="px-2 py-0.5 rounded text-xs ${r.confidence === 'high' ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}">${r.confidence}</span></td>
+                    </tr>`;
+                }
+                if (recs.moderate_spreads_7_14) {
+                    const r = recs.moderate_spreads_7_14;
+                    recRows += `<tr class="border-t border-gray-700">
+                        <td class="px-3 py-2 text-sm">Moderate (7-14 pts)</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.current}</td>
+                        <td class="px-3 py-2 text-center text-sm font-bold ${r.recommended !== r.current ? 'text-amber-400' : 'text-gray-400'}">${r.recommended}</td>
+                        <td class="px-3 py-2 text-center text-sm ${r.mean_signed_error > 0 ? 'text-red-400' : r.mean_signed_error < 0 ? 'text-blue-400' : ''}">${r.mean_signed_error > 0 ? '+' : ''}${r.mean_signed_error}</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.sample_size}</td>
+                        <td class="px-3 py-2 text-center text-sm"><span class="px-2 py-0.5 rounded text-xs ${r.confidence === 'high' ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}">${r.confidence}</span></td>
+                    </tr>`;
+                }
+                if (recs.blowouts_14_plus) {
+                    const r = recs.blowouts_14_plus;
+                    recRows += `<tr class="border-t border-gray-700">
+                        <td class="px-3 py-2 text-sm">Blowouts (14+ pts)</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.current_log_mult}</td>
+                        <td class="px-3 py-2 text-center text-sm font-bold ${r.recommended_log_mult !== r.current_log_mult ? 'text-amber-400' : 'text-gray-400'}">${r.recommended_log_mult}</td>
+                        <td class="px-3 py-2 text-center text-sm ${r.mean_signed_error > 0 ? 'text-red-400' : r.mean_signed_error < 0 ? 'text-blue-400' : ''}">${r.mean_signed_error > 0 ? '+' : ''}${r.mean_signed_error}</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.sample_size}</td>
+                        <td class="px-3 py-2 text-center text-sm"><span class="px-2 py-0.5 rounded text-xs ${r.confidence === 'high' ? 'bg-green-900/50 text-green-400' : 'bg-yellow-900/50 text-yellow-400'}">${r.confidence}</span></td>
+                    </tr>`;
+                }
+                // Check if any recommendation has high confidence
+                const hasHighConf = Object.values(recs).some(r => r.confidence === 'high');
+                calibHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-amber-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-sliders-h mr-1 text-amber-400"></i>Spread Calibration Recommendations</h4>
+                    <table class="w-full text-xs"><thead class="bg-gray-700"><tr>
+                        <th class="px-3 py-1 text-left">Bucket</th><th class="px-3 py-1 text-center">Current</th>
+                        <th class="px-3 py-1 text-center">Recommended</th><th class="px-3 py-1 text-center">Signed Error</th>
+                        <th class="px-3 py-1 text-center">Sample</th><th class="px-3 py-1 text-center">Confidence</th>
+                    </tr></thead><tbody>${recRows}</tbody></table>
+                    ${!hasHighConf ? '<p class="text-xs text-yellow-400 mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>All recommendations are low confidence. More games needed for reliable calibration.</p>' : ''}
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="applyCalibrationRecommendations(${hasHighConf ? 'true' : 'false'})" class="px-4 py-2 rounded-lg text-xs font-medium ${hasHighConf ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'} transition-colors">
+                            <i class="fas fa-check mr-1"></i>${hasHighConf ? 'Apply High-Confidence Only' : 'Apply All (Low Confidence)'}
+                        </button>
+                        <button onclick="applyCalibrationRecommendations(false)" class="px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
+                            <i class="fas fa-magic mr-1"></i>Apply All Recommendations
+                        </button>
+                        <button onclick="resetCalibration()" class="px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 text-gray-400 transition-colors">
+                            <i class="fas fa-undo mr-1"></i>Reset to Defaults
+                        </button>
+                    </div>
+                </div>`;
+                // Store recommendations globally for the apply button
+                window._lastCalibrationRecs = recs;
+            }
+
+            // Conference breakdown
+            let confHTML = '';
+            if (data.by_conference_full && Object.keys(data.by_conference_full).length > 0) {
+                const confRows = Object.entries(data.by_conference_full)
+                    .sort((a, b) => b[1].games - a[1].games)
+                    .map(([conf, s]) => {
+                        const mse = s.mean_signed_error;
+                        const biasColor = s.bias_direction === 'overpredicts' ? 'text-red-400' : s.bias_direction === 'underpredicts' ? 'text-blue-400' : 'text-gray-400';
+                        const rowBg = Math.abs(mse || 0) > 1.5 ? 'bg-yellow-900/10' : '';
+                        return `<tr class="border-t border-gray-700 ${rowBg}">
+                            <td class="px-3 py-2 text-sm font-medium">${conf}</td>
+                            <td class="px-3 py-2 text-center text-sm">${s.games}</td>
+                            <td class="px-3 py-2 text-center text-sm ${s.pick_pct >= 65 ? 'text-green-400' : s.pick_pct >= 50 ? 'text-yellow-400' : 'text-red-400'}">${s.pick_pct}%</td>
+                            <td class="px-3 py-2 text-center text-sm">${s.avg_error || '-'}</td>
+                            <td class="px-3 py-2 text-center text-sm ${biasColor}">${mse !== null ? (mse > 0 ? '+' : '') + mse : '-'}</td>
+                            <td class="px-3 py-2 text-center text-sm ${biasColor}">${s.bias_direction}</td>
+                            <td class="px-3 py-2 text-center text-sm">${s.ats_record || '-'}</td>
+                            <td class="px-3 py-2 text-center text-sm ${(s.ats_pct || 0) >= 55 ? 'text-green-400' : (s.ats_pct || 0) >= 45 ? 'text-yellow-400' : s.ats_pct ? 'text-red-400' : ''}">${s.ats_pct ? s.ats_pct + '%' : '-'}</td>
+                        </tr>`;
+                    }).join('');
+
+                confHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-cyan-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-university mr-1 text-cyan-400"></i>Conference Breakdown (Full)</h4>
+                    <div class="max-h-72 overflow-y-auto">
+                    <table class="w-full text-xs"><thead class="bg-gray-700 sticky top-0"><tr>
+                        <th class="px-3 py-1 text-left">Conference</th><th class="px-3 py-1 text-center">Games</th>
+                        <th class="px-3 py-1 text-center">Pick %</th><th class="px-3 py-1 text-center">Avg Error</th>
+                        <th class="px-3 py-1 text-center">Signed Error</th><th class="px-3 py-1 text-center">Bias</th>
+                        <th class="px-3 py-1 text-center">ATS</th><th class="px-3 py-1 text-center">ATS %</th>
+                    </tr></thead><tbody>${confRows}</tbody></table></div>
+                </div>`;
+            }
+
+            // Conference adjustment recommendations
+            let confRecHTML = '';
+            if (data.conference_adjustment_recommendations && data.conference_adjustment_recommendations.length > 0) {
+                const confRecRows = data.conference_adjustment_recommendations.map(r => `
+                    <tr class="border-t border-gray-700">
+                        <td class="px-3 py-2 text-sm font-medium">${r.conference}</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.games}</td>
+                        <td class="px-3 py-2 text-center text-sm ${r.mean_signed_error > 0 ? 'text-red-400' : 'text-blue-400'}">${r.mean_signed_error > 0 ? '+' : ''}${r.mean_signed_error}</td>
+                        <td class="px-3 py-2 text-center text-sm">${r.direction}</td>
+                        <td class="px-3 py-2 text-center text-sm">0.06</td>
+                        <td class="px-3 py-2 text-center text-sm font-bold text-cyan-400">${r.suggested_scale}</td>
+                        <td class="px-3 py-2 text-center text-sm"><span class="px-2 py-0.5 rounded text-xs ${r.confidence === 'high' ? 'bg-green-900/50 text-green-400' : r.confidence === 'medium' ? 'bg-yellow-900/50 text-yellow-400' : 'bg-gray-700 text-gray-400'}">${r.confidence}</span></td>
+                    </tr>
+                `).join('');
+                confRecHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-cyan-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-balance-scale mr-1 text-cyan-400"></i>Conference Adjustment Recommendations</h4>
+                    <p class="text-xs text-gray-400 mb-3">Conferences with significant systematic bias (|signed error| > 1.5 pts). Suggested scale replaces the default 0.06 per-conference factor.</p>
+                    <table class="w-full text-xs"><thead class="bg-gray-700"><tr>
+                        <th class="px-3 py-1 text-left">Conference</th><th class="px-3 py-1 text-center">Games</th>
+                        <th class="px-3 py-1 text-center">Signed Error</th><th class="px-3 py-1 text-center">Bias</th>
+                        <th class="px-3 py-1 text-center">Current Scale</th><th class="px-3 py-1 text-center">Suggested Scale</th>
+                        <th class="px-3 py-1 text-center">Confidence</th>
+                    </tr></thead><tbody>${confRecRows}</tbody></table>
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="applyConfRecommendations()" class="px-4 py-2 rounded-lg text-xs font-medium bg-cyan-600 hover:bg-cyan-500 text-white transition-colors">
+                            <i class="fas fa-check mr-1"></i>Apply Conference Adjustments
+                        </button>
+                        <button onclick="resetConfAdjustments()" class="px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 text-gray-400 transition-colors">
+                            <i class="fas fa-undo mr-1"></i>Reset to Defaults
+                        </button>
+                    </div>
+                </div>`;
+                window._lastConfRecs = data.conference_adjustment_recommendations;
+            }
+
+            // Cross-conference vs intra-conference comparison
+            let crossConfHTML = '';
+            if (data.cross_conf_stats && data.cross_conf_stats.games > 0 && data.intra_conf_stats && data.intra_conf_stats.games > 0) {
+                const cc = data.cross_conf_stats;
+                const ic = data.intra_conf_stats;
+                crossConfHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-exchange-alt mr-1 text-purple-400"></i>Cross-Conference vs Intra-Conference</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">Cross-Conference</p>
+                            <p class="text-lg font-bold ${cc.pick_pct >= 65 ? 'text-green-400' : cc.pick_pct >= 50 ? 'text-yellow-400' : 'text-red-400'}">${cc.pick_pct}%</p>
+                            <p class="text-xs text-gray-500">${cc.games} games | MAE: ${cc.avg_error || '-'}</p>
+                            <p class="text-xs ${(cc.mean_signed_error || 0) > 0.5 ? 'text-red-400' : (cc.mean_signed_error || 0) < -0.5 ? 'text-blue-400' : 'text-gray-400'}">Signed: ${cc.mean_signed_error !== null ? (cc.mean_signed_error > 0 ? '+' : '') + cc.mean_signed_error : '-'}</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">Intra-Conference</p>
+                            <p class="text-lg font-bold ${ic.pick_pct >= 65 ? 'text-green-400' : ic.pick_pct >= 50 ? 'text-yellow-400' : 'text-red-400'}">${ic.pick_pct}%</p>
+                            <p class="text-xs text-gray-500">${ic.games} games | MAE: ${ic.avg_error || '-'}</p>
+                            <p class="text-xs ${(ic.mean_signed_error || 0) > 0.5 ? 'text-red-400' : (ic.mean_signed_error || 0) < -0.5 ? 'text-blue-400' : 'text-gray-400'}">Signed: ${ic.mean_signed_error !== null ? (ic.mean_signed_error > 0 ? '+' : '') + ic.mean_signed_error : '-'}</p>
+                        </div>
+                    </div>
+                    ${cc.pick_pct < ic.pick_pct - 3 ? '<p class="text-xs text-yellow-400 mt-2"><i class="fas fa-exclamation-triangle mr-1"></i>Cross-conference accuracy is notably lower, suggesting calcConfAdj() may need tuning.</p>' : ''}
+                </div>`;
+            }
+
             let dailyHTML = '';
             if (data.by_date && data.by_date.length > 0) {
                 dailyHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
@@ -4157,9 +4368,120 @@
                         <div class="grid grid-cols-5 gap-2">${bucketHTML}</div>
                     </div>` : ''}
 
+                    <!-- Signed Error by Bucket (Calibration Feedback) -->
+                    ${signedBucketHTML}
+
+                    <!-- Spread Calibration Recommendations -->
+                    ${calibHTML}
+
+                    <!-- Cross-Conference vs Intra-Conference -->
+                    ${crossConfHTML}
+
+                    <!-- Conference Breakdown -->
+                    ${confHTML}
+
+                    <!-- Conference Adjustment Recommendations -->
+                    ${confRecHTML}
+
                     <!-- Daily -->
                     ${dailyHTML}
                 </div>`;
+        }
+
+        // Apply calibration recommendations to the live system
+        async function applyCalibrationRecommendations(highConfOnly) {
+            const recs = window._lastCalibrationRecs;
+            if (!recs) { alert('No recommendations available'); return; }
+
+            const body = {
+                close_coeff: SPREAD_COEFFS.close,
+                moderate_coeff: SPREAD_COEFFS.moderate,
+                log_multiplier: SPREAD_COEFFS.logMult,
+                sample_size: 0,
+                source_backtest: new Date().toISOString(),
+            };
+
+            if (recs.close_games_0_7 && (!highConfOnly || recs.close_games_0_7.confidence === 'high')) {
+                body.close_coeff = recs.close_games_0_7.recommended;
+                body.sample_size += recs.close_games_0_7.sample_size;
+            }
+            if (recs.moderate_spreads_7_14 && (!highConfOnly || recs.moderate_spreads_7_14.confidence === 'high')) {
+                body.moderate_coeff = recs.moderate_spreads_7_14.recommended;
+                body.sample_size += recs.moderate_spreads_7_14.sample_size;
+            }
+            if (recs.blowouts_14_plus && (!highConfOnly || recs.blowouts_14_plus.confidence === 'high')) {
+                body.log_multiplier = recs.blowouts_14_plus.recommended_log_mult;
+                body.sample_size += recs.blowouts_14_plus.sample_size;
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/calibration`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(body),
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    SPREAD_COEFFS.close = data.close_coeff;
+                    SPREAD_COEFFS.moderate = data.moderate_coeff;
+                    SPREAD_COEFFS.logMult = data.log_multiplier;
+                    alert(`Calibration updated!\nClose: ${data.close_coeff}\nModerate: ${data.moderate_coeff}\nLog Mult: ${data.log_multiplier}\n\nRe-run the backtest to verify improvement.`);
+                } else {
+                    alert('Failed to update calibration');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function resetCalibration() {
+            if (!confirm('Reset spread calibration to defaults (0.92 / 0.85 / 3.5)?')) return;
+            try {
+                const resp = await fetch(`${API_BASE}/calibration`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ close_coeff: 0.92, moderate_coeff: 0.85, log_multiplier: 3.5, sample_size: 0 }),
+                });
+                if (resp.ok) {
+                    SPREAD_COEFFS = { close: 0.92, moderate: 0.85, logMult: 3.5 };
+                    alert('Calibration reset to defaults.');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        // Apply conference adjustment recommendations
+        async function applyConfRecommendations() {
+            const recs = window._lastConfRecs;
+            if (!recs || recs.length === 0) { alert('No conference recommendations available'); return; }
+
+            const adjustments = {};
+            for (const r of recs) {
+                adjustments[r.conference] = r.suggested_scale;
+            }
+
+            try {
+                const resp = await fetch(`${API_BASE}/conf-adjustments`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(adjustments),
+                });
+                if (resp.ok) {
+                    CONF_SCALE_OVERRIDES = await resp.json();
+                    const summary = Object.entries(CONF_SCALE_OVERRIDES).map(([c, s]) => `${c}: ${s}`).join(', ');
+                    alert(`Conference adjustments applied!\n${summary}\n\nRe-run the backtest to verify improvement.`);
+                } else {
+                    alert('Failed to update conference adjustments');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function resetConfAdjustments() {
+            if (!confirm('Reset all per-conference scaling to default (0.06)?')) return;
+            try {
+                const resp = await fetch(`${API_BASE}/conf-adjustments`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({}),
+                });
+                if (resp.ok) {
+                    CONF_SCALE_OVERRIDES = {};
+                    alert('Conference adjustments reset to defaults.');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
         }
 
         // ── ATS TRACKER FUNCTIONS ──
