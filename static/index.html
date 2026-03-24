@@ -1671,6 +1671,9 @@
             const winnerProb = compositeT1Score > compositeT2Score ? compositeT1Win : 1 - compositeT1Win;
             const spread = Math.abs(compositeMargin);
 
+            // Referee foul climate from MC result (for display in template)
+            const refFoulClimate = (mc.refStats && mc.refStats.foulClimate) || 1.0;
+
             // Luck warning
             const t1Luck = (t1.Luck || 0), t2Luck = (t2.Luck || 0);
             const luckWarning = (Math.abs(t1Luck) + Math.abs(t2Luck)) > 0.06;
