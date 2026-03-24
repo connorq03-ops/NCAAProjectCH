@@ -1211,11 +1211,13 @@ def update_model_weights():
     }
     k = api_cache._key('dynamic_model_weights', {})
     conn = sqlite3.connect(api_cache.db_path)
-    conn.execute(
-        'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
-        (k, json.dumps(data, default=str), time.time(), 86400 * 365))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+            (k, json.dumps(data, default=str), time.time(), 86400 * 365))
+        conn.commit()
+    finally:
+        conn.close()
     return jsonify(data)
 
 
@@ -1241,11 +1243,13 @@ def update_kp_blend_ratio():
     }
     k = api_cache._key('kp_blend_ratio', {})
     conn = sqlite3.connect(api_cache.db_path)
-    conn.execute(
-        'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
-        (k, json.dumps(data), time.time(), 86400 * 365))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+            (k, json.dumps(data), time.time(), 86400 * 365))
+        conn.commit()
+    finally:
+        conn.close()
     return jsonify(data)
 
 

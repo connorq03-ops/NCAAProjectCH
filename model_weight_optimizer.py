@@ -162,6 +162,9 @@ def should_reset_weights(last_updated_str):
         return False
     try:
         last_updated = datetime.fromisoformat(last_updated_str.replace('Z', '+00:00'))
+        # Strip timezone info for comparison with naive datetimes
+        if last_updated.tzinfo is not None:
+            last_updated = last_updated.replace(tzinfo=None)
     except (ValueError, TypeError):
         return False
 
