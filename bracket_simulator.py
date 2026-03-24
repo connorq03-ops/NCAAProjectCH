@@ -473,7 +473,7 @@ class BracketSimulator:
         elapsed = time.time() - start_time
 
         return self._aggregate_results(
-            round_counts, champion_counts, num_tournaments, elapsed,
+            round_counts, champion_counts, completed or num_tournaments, elapsed,
             num_sims_per_game)
 
     def _run_sequential(self, num_tournaments, num_sims_per_game,
