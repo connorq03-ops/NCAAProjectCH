@@ -1012,7 +1012,7 @@ _bracket_sim_state = {
 _bracket_sim_lock = threading.Lock()
 
 
-def _run_bracket_sim(num_tournaments, num_sims_per_game):
+def _run_bracket_sim(num_tournaments, num_sims_per_game, num_workers=None):
     """Background thread target for bracket simulation."""
     global _bracket_sim_state
     try:
@@ -1024,8 +1024,15 @@ def _run_bracket_sim(num_tournaments, num_sims_per_game):
 
         # Prefetch all team data
         num_teams = _bracket_sim.prefetch_data()
+
+        # Determine worker count
+        if num_workers is None:
+            num_workers = max(1, (os.cpu_count() or 1) - 1)
+
         with _bracket_sim_lock:
-            _bracket_sim_state['message'] = f'Loaded {num_teams} teams. Starting simulations...'
+            _bracket_sim_state['message'] = (
+                f'Loaded {num_teams} teams. '
+                f'Starting parallel simulation ({num_workers} workers)...')
             _bracket_sim_state['progress'] = 5
 
         def progress_cb(pct, msg):
@@ -1036,12 +1043,13 @@ def _run_bracket_sim(num_tournaments, num_sims_per_game):
         results = _bracket_sim.run(
             num_tournaments=num_tournaments,
             num_sims_per_game=num_sims_per_game,
-            progress_callback=progress_cb)
+            progress_callback=progress_cb,
+            num_workers=num_workers)
 
         with _bracket_sim_lock:
             _bracket_sim_state['status'] = 'complete'
             _bracket_sim_state['progress'] = 100
-            _bracket_sim_state['message'] = 'Simulation complete'
+            _bracket_sim_state['message'] = f'Complete ({num_workers} workers)'
             _bracket_sim_state['results'] = results
             _bracket_sim_state['completed_at'] = time.time()
             _bracket_sim_state['error'] = None
@@ -1074,6 +1082,7 @@ def start_bracket_simulation():
     body = request.get_json(force=True, silent=True) or {}
     num_tournaments = min(body.get('num_tournaments', 1000), 10000)
     num_sims_per_game = min(body.get('num_sims_per_game', 500), 2000)
+    num_workers = body.get('num_workers', None)  # None = auto-detect
 
     with _bracket_sim_lock:
         _bracket_sim_state['status'] = 'running'
@@ -1084,7 +1093,7 @@ def start_bracket_simulation():
 
     thread = threading.Thread(
         target=_run_bracket_sim,
-        args=(num_tournaments, num_sims_per_game),
+        args=(num_tournaments, num_sims_per_game, num_workers),
         daemon=True)
     thread.start()
 
@@ -1092,6 +1101,7 @@ def start_bracket_simulation():
         'status': 'started',
         'num_tournaments': num_tournaments,
         'num_sims_per_game': num_sims_per_game,
+        'num_workers': num_workers or max(1, (os.cpu_count() or 1) - 1),
     }), 202
 
 
@@ -1110,6 +1120,7 @@ def bracket_simulation_status():
             'elapsed_seconds': elapsed,
             'has_results': _bracket_sim_state['results'] is not None,
             'error': _bracket_sim_state['error'],
+            'num_workers': max(1, (os.cpu_count() or 1) - 1),
         })
 
 
