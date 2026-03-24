@@ -428,7 +428,6 @@ def build_matchup_params(team1_name, team2_name, team_data,
             (t1_physicality - t2_physicality) * (1.0 - ref_foul_climate) * 2,
             -1.5, 1.5
         )
-
     # ── Enrichment Adjustments ──
     total_adj = (injury_adj + ref_fit_edge) * (game_tempo_ctr / 100)
 

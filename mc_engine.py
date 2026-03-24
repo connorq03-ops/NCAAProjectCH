@@ -572,7 +572,6 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
     total_t2_ft_att = 0
     t1_early_bonus_games = 0
     t2_early_bonus_games = 0
-
     # Plan 07: Tempo
     t1_pull = p.get("t1_preferred_tempo") or p.get("game_tempo_ctr", 67.5)
     t2_pull = p.get("t2_preferred_tempo") or p.get("game_tempo_ctr", 67.5)
@@ -932,43 +931,63 @@ if __name__ == "__main__":
     baseline_params["ref_foul_climate"] = 1.0
     print(f"\nRunning {N_CLIMATE_SIMS} sims with ref_foul_climate = 1.0 (baseline)...")
     baseline = simulate_game(baseline_params, num_sims=N_CLIMATE_SIMS)
-    baseline_fta = baseline.get("ref_stats", {}).get("t1_avg_fouls_drawn", 0) + baseline.get("ref_stats", {}).get("t2_avg_fouls_drawn", 0)
+    baseline_rs = baseline.get("ref_stats", {})
+    baseline_fouls = baseline_rs.get("t1_avg_fouls_drawn", 0) + baseline_rs.get("t2_avg_fouls_drawn", 0)
+    baseline_fta = baseline_rs.get("t1_avg_ft_att", 0) + baseline_rs.get("t2_avg_ft_att", 0)
     print(f"  Avg score: {baseline['t1_score']:.1f} - {baseline['t2_score']:.1f}")
-    print(f"  Avg total fouls drawn (proxy for FTA): {baseline_fta:.1f}")
+    print(f"  Avg total fouls drawn: {baseline_fouls:.1f}, Avg total FTA: {baseline_fta:.1f}")
 
     # Whistle-happy: foulClimate = 1.15
     whistle_params = dict(test_params)
     whistle_params["ref_foul_climate"] = 1.15
     print(f"\nRunning {N_CLIMATE_SIMS} sims with ref_foul_climate = 1.15 (whistle-happy)...")
     whistle = simulate_game(whistle_params, num_sims=N_CLIMATE_SIMS)
-    whistle_fta = whistle.get("ref_stats", {}).get("t1_avg_fouls_drawn", 0) + whistle.get("ref_stats", {}).get("t2_avg_fouls_drawn", 0)
+    whistle_rs = whistle.get("ref_stats", {})
+    whistle_fouls = whistle_rs.get("t1_avg_fouls_drawn", 0) + whistle_rs.get("t2_avg_fouls_drawn", 0)
+    whistle_fta = whistle_rs.get("t1_avg_ft_att", 0) + whistle_rs.get("t2_avg_ft_att", 0)
     print(f"  Avg score: {whistle['t1_score']:.1f} - {whistle['t2_score']:.1f}")
-    print(f"  Avg total fouls drawn: {whistle_fta:.1f}")
+    print(f"  Avg total fouls drawn: {whistle_fouls:.1f}, Avg total FTA: {whistle_fta:.1f}")
 
     # Let-them-play: foulClimate = 0.85
     loose_params = dict(test_params)
     loose_params["ref_foul_climate"] = 0.85
     print(f"\nRunning {N_CLIMATE_SIMS} sims with ref_foul_climate = 0.85 (let-them-play)...")
     loose = simulate_game(loose_params, num_sims=N_CLIMATE_SIMS)
-    loose_fta = loose.get("ref_stats", {}).get("t1_avg_fouls_drawn", 0) + loose.get("ref_stats", {}).get("t2_avg_fouls_drawn", 0)
+    loose_rs = loose.get("ref_stats", {})
+    loose_fouls = loose_rs.get("t1_avg_fouls_drawn", 0) + loose_rs.get("t2_avg_fouls_drawn", 0)
+    loose_fta = loose_rs.get("t1_avg_ft_att", 0) + loose_rs.get("t2_avg_ft_att", 0)
     print(f"  Avg score: {loose['t1_score']:.1f} - {loose['t2_score']:.1f}")
-    print(f"  Avg total fouls drawn: {loose_fta:.1f}")
+    print(f"  Avg total fouls drawn: {loose_fouls:.1f}, Avg total FTA: {loose_fta:.1f}")
 
     # Validation checks
     print("\nFoul Climate Validation Results:")
 
-    if baseline_fta > 0:
-        whistle_pct = (whistle_fta - baseline_fta) / baseline_fta * 100
-        loose_pct = (baseline_fta - loose_fta) / baseline_fta * 100
-        print(f"  Whistle-happy (1.15) fouls vs baseline: {whistle_pct:+.1f}% {'OK' if 5 <= whistle_pct <= 30 else 'WARN (expected 15-20%)'}")
-        print(f"  Let-them-play (0.85) fouls vs baseline: {loose_pct:+.1f}% fewer {'OK' if 5 <= loose_pct <= 25 else 'WARN (expected 10-15%)'}")
+    if baseline_fouls > 0:
+        whistle_foul_pct = (whistle_fouls - baseline_fouls) / baseline_fouls * 100
+        loose_foul_pct = (baseline_fouls - loose_fouls) / baseline_fouls * 100
+        print(f"  Whistle-happy (1.15) fouls vs baseline: {whistle_foul_pct:+.1f}% {'OK' if 5 <= whistle_foul_pct <= 30 else 'WARN (expected 15-20%)'}")
+        print(f"  Let-them-play (0.85) fouls vs baseline: {loose_foul_pct:+.1f}% fewer {'OK' if 5 <= loose_foul_pct <= 25 else 'WARN (expected 10-15%)'}")
     else:
-        print("  [WARN] Baseline FTA is 0 — cannot compute percentages")
+        print("  [WARN] Baseline fouls drawn is 0 — cannot compute foul percentages")
+
+    if baseline_fta > 0:
+        whistle_fta_pct = (whistle_fta - baseline_fta) / baseline_fta * 100
+        loose_fta_pct = (baseline_fta - loose_fta) / baseline_fta * 100
+        print(f"  Whistle-happy (1.15) FTA vs baseline: {whistle_fta_pct:+.1f}% {'OK' if 3 <= whistle_fta_pct <= 35 else 'WARN'}")
+        print(f"  Let-them-play (0.85) FTA vs baseline: {loose_fta_pct:+.1f}% fewer {'OK' if 3 <= loose_fta_pct <= 30 else 'WARN'}")
+    else:
+        print("  [WARN] Baseline FTA is 0 — cannot compute FTA percentages")
 
     score_diff_whistle = abs((whistle['t1_score'] + whistle['t2_score']) - (baseline['t1_score'] + baseline['t2_score']))
     score_diff_loose = abs((loose['t1_score'] + loose['t2_score']) - (baseline['t1_score'] + baseline['t2_score']))
     print(f"  Total score change (whistle): {score_diff_whistle:.1f} pts {'OK' if score_diff_whistle < 8 else 'WARN (expected <5)'}")
     print(f"  Total score change (loose): {score_diff_loose:.1f} pts {'OK' if score_diff_loose < 8 else 'WARN (expected <5)'}")
+
+    # Early bonus rate comparison
+    baseline_eb = baseline_rs.get("t1_early_bonus_rate", 0) + baseline_rs.get("t2_early_bonus_rate", 0)
+    whistle_eb = whistle_rs.get("t1_early_bonus_rate", 0) + whistle_rs.get("t2_early_bonus_rate", 0)
+    loose_eb = loose_rs.get("t1_early_bonus_rate", 0) + loose_rs.get("t2_early_bonus_rate", 0)
+    print(f"  Early bonus rate — baseline: {baseline_eb:.2f}, whistle: {whistle_eb:.2f}, loose: {loose_eb:.2f}")
 
     # Graceful degradation: missing/None climate should default to 1.0
     default_params = dict(test_params)
