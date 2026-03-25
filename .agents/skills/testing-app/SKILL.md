@@ -1,76 +1,53 @@
-# Testing the NCAA Basketball Prediction App
+# Testing NCAAProjectCH App
 
-## Local Setup
+## Environment Setup
 
-1. Install dependencies:
+1. Start Flask server:
    ```bash
-   pip install flask requests
-   ```
-
-2. The app requires `KENPOM_API_KEY` to start. For testing without real KenPom data:
-   ```bash
-   echo 'KENPOM_API_KEY=dummy_key_for_testing' > .env
-   source .env
-   ```
-   This allows the Flask server to start. KenPom API calls will return 401, but all custom API endpoints and UI structure will work.
-
-3. Start the Flask server:
-   ```bash
-   python app.py
+   cd /home/ubuntu/repos/NCAAProjectCH
+   KENPOM_API_KEY=dummy python3 app.py
    ```
    Server runs on `http://localhost:5001`.
 
-## What Can Be Tested Without Real KenPom Key
+2. The app requires `KENPOM_API_KEY` env var to start. A dummy value works for testing features that don't need live KenPom data.
 
-- **API endpoints**: All custom endpoints (`/api/model-weights`, `/api/kp-blend-ratio`, `/api/calibration`, `/api/conf-adjustments`, etc.) work fully.
-- **Frontend UI structure**: The main page loads, tabs work, matchup predictor modal opens with all UI elements.
-- **Console integration**: Dynamic weights and KP blend ratio loading can be verified via browser console logs (`[weights]`, `[kp-blend]` prefixed messages).
-- **Validation logic**: POST endpoints enforce constraints (weight sum = 1.0, each >= 0.05, ratio clamped to [0, 0.30]).
+3. `ANTHROPIC_API_KEY` is optional — without it, injury features are disabled (non-blocking warning).
 
-## What Requires Real KenPom Key
+## Devin Secrets Needed
 
-- **Team data loading**: The ratings table, team search, and team selection in matchup predictor all require real KenPom data.
-- **Full matchup predictions**: Selecting two teams and running a prediction requires real team stats.
-- **Backtester**: Running backtests requires both KenPom data and ESPN score data.
-- **Bracket simulator**: Requires real team data and matchup params.
+- `KENPOM_API_KEY` — Required for full end-to-end testing with live data (ratings, fanmatch, game scores). Without it, only cached data and non-data-dependent features can be tested.
 
-## Key UI Paths
+## Cache Behavior
 
-- **Matchup Predictor**: Click the orange "Matchup Predictor" button in the header bar. Modal opens with Team 1/Team 2 search fields, location selector (@ Team 1 / Neutral / @ Team 2), NCAA Tournament Mode toggle, and Predict button.
-- **NCAA Tournament Toggle**: Checkbox inside the matchup predictor modal, labeled "NCAA Tournament Mode (applies 15% margin dampening)". Unchecked by default.
-- **Tabs**: Ratings, Four Factors, Height/Exp, Scoring, Shooting, Conferences, Games, Recap, Archive, Picks, Backtest, ATS Tracker.
+- Cache DB: `.cache.db` (SQLite)
+- **KenPom API data** (ratings, fanmatch, odds, scores): **3600s TTL (1 hour)**. This cache expires quickly, so testing data-dependent features (Recap tab game data, Backtest runs, Matchup Predictor predictions) requires either a real API key or very recently cached data.
+- **ATS history** data: **7776000s TTL (90 days)**. This data persists much longer and can be used for testing the ATS Tracker tab.
+- **Calibration data** (spread and total calibration): **86400 * 365 TTL (1 year)**. Very long-lived.
+- Cache keys are MD5 hashes of API call parameters, so you can't easily look up data by date.
 
-## API Testing via curl
+## What's Testable Without Real KenPom API Key
 
-```bash
-# Get current dynamic weights
-curl http://localhost:5001/api/model-weights
+- **Page load**: Verify no JS syntax errors (check DevTools Console)
+- **API endpoints**: `/api/total-calibration` GET/POST, `/api/calibration` GET/POST, `/api/model-weights`, etc.
+- **JS functions**: `calibrateTotal()`, `calibrateSpread()`, `TOTAL_COEFFS`, `SPREAD_COEFFS` via DevTools Console
+- **Tab navigation**: All tabs switch without JS crashes (Ratings, Recap, ATS Tracker, Backtest, etc.)
+- **ATS Tracker tab**: Renders with existing ATS history data (90-day TTL)
+- **Matchup Predictor modal**: Opens without crash (but can't run predictions without team data)
+- **Backtest tab**: Form renders (but can't run backtests without game data)
+- **Python backend functions**: `calibrate_total()`, `_compute_metrics()`, `_compute_total_calibration_recommendations()` via Python shell with mock data
 
-# Set custom weights
-curl -X POST http://localhost:5001/api/model-weights \
-  -H 'Content-Type: application/json' \
-  -d '{"weights": {"efficiency": 0.15, "similar": 0.12, "conrat": 0.18, "mc": 0.55}, "source": "optimizer"}'
+## What Requires Real KenPom API Key
 
-# Get KP blend ratio
-curl http://localhost:5001/api/kp-blend-ratio
+- Recap tab with actual game data and predictions
+- Running backtests (needs fanmatch + ratings data)
+- Matchup Predictor predictions (needs team ratings)
+- ATS Tracker with fresh O/U data (needs new Recap saves that include O/U tracking)
 
-# Set custom ratio (clamped to [0, 0.30])
-curl -X POST http://localhost:5001/api/kp-blend-ratio \
-  -H 'Content-Type: application/json' \
-  -d '{"ratio": 0.12, "source": "optimizer"}'
-```
+## Testing Tips
 
-## Verifying Frontend Integration
-
-After POSTing custom weights/ratio with a non-"default" source:
-1. Reload the page
-2. Open browser console (F12)
-3. Look for:
-   - `[weights] Loaded dynamic weights: {conrat: 0.15, efficiency: 0.2, mc: 0.5, similar: 0.15}`
-   - `[kp-blend] Loaded KP blend ratio: 0.12`
-4. Verify JS globals: type `DYNAMIC_WEIGHTS` and `KP_BLEND_RATIO` in the console
-
-## Data Storage
-
-- SQLite cache at `.cache.db` stores API responses, predictions, calibration, weights, and blend ratio.
-- Injury cache at `.injury_cache/` stores scraped injury data.
+- The `browser_console` tool may not work reliably with this app. Use DevTools (F12) and type directly in the Console tab instead.
+- When testing Python backend functions, create mock results with realistic data ranges (e.g., predicted_total 125-165, actual_total 125-165, vegas_ou 130-160).
+- The app's `index.html` is very large (~5000+ lines) with deeply nested template literals. JS syntax errors from template literal changes are a key risk — always verify page loads without SyntaxError after making changes.
+- Conference/ratings data loads on startup; 401 errors are expected and non-blocking with a dummy API key.
+- To test the total calibration API: `curl -s http://localhost:5001/api/total-calibration` (GET) and `curl -s -X POST http://localhost:5001/api/total-calibration -H 'Content-Type: application/json' -d '{"center": 138, "compression": 0.85}'` (POST).
+- Bounds validation: center is clamped to [120, 160], compression to [0.70, 1.0].
