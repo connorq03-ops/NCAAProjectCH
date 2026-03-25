@@ -840,6 +840,39 @@ def update_calibration():
     return jsonify(data)
 
 
+@app.route('/api/total-calibration', methods=['GET'])
+def get_total_calibration():
+    """Get total calibration coefficients."""
+    cached = api_cache.get('total_calibration', {}, ttl=86400 * 365)
+    if cached:
+        return jsonify(cached)
+    return jsonify({'center': 140.0, 'compression': 0.90, 'last_updated': None})
+
+
+@app.route('/api/total-calibration', methods=['POST'])
+def set_total_calibration():
+    """Update total calibration coefficients."""
+    body = request.get_json(force=True)
+    center = max(120, min(160, body.get('center', 140.0)))
+    compression = max(0.70, min(1.0, body.get('compression', 0.90)))
+    data = {
+        'center': round(center, 1),
+        'compression': round(compression, 3),
+        'last_updated': datetime.now().isoformat(),
+        'sample_size': body.get('sample_size', 0),
+    }
+    k = api_cache._key('total_calibration', {})
+    conn = sqlite3.connect(api_cache.db_path)
+    try:
+        conn.execute(
+            'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+            (k, json.dumps(data), time.time(), 86400 * 365))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify(data)
+
+
 @app.route('/api/conf-adjustments', methods=['GET'])
 def get_conf_adjustments():
     """Get per-conference scaling overrides for calcConfAdj()."""

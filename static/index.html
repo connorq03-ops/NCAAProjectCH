@@ -415,6 +415,9 @@
         // Dynamic spread calibration coefficients (loaded from /api/calibration)
         let SPREAD_COEFFS = { close: 0.92, moderate: 0.85, logMult: 3.5 };
 
+        // Dynamic total calibration coefficients (loaded from /api/total-calibration)
+        let TOTAL_COEFFS = { center: 140, compression: 0.90 };
+
         // Per-conference scaling overrides (loaded from /api/conf-adjustments)
         let CONF_SCALE_OVERRIDES = {};
 
@@ -431,6 +434,19 @@
             } catch (e) { /* use defaults */ }
         }
         loadCalibration();
+
+        async function loadTotalCalibration() {
+            try {
+                const resp = await fetch(`${API_BASE}/total-calibration`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.center) TOTAL_COEFFS.center = data.center;
+                    if (data.compression) TOTAL_COEFFS.compression = data.compression;
+                    console.log('[total-calibration] Loaded:', TOTAL_COEFFS);
+                }
+            } catch (e) { /* use defaults */ }
+        }
+        loadTotalCalibration();
 
         async function loadConfAdjustments() {
             try {
@@ -808,6 +824,14 @@
                 calibrated = base + Math.log(1 + (abs - 14) * 0.5) * SPREAD_COEFFS.logMult;
             }
             return sign * calibrated;
+        }
+
+        // Total calibration: compress extreme totals toward NCAA average (~140 pts)
+        function calibrateTotal(rawTotal) {
+            const center = TOTAL_COEFFS ? TOTAL_COEFFS.center : 140;
+            const compression = TOTAL_COEFFS ? TOTAL_COEFFS.compression : 0.90;
+            const deviation = rawTotal - center;
+            return center + deviation * compression;
         }
 
         // Conference-tier Home Court Advantage
@@ -1750,9 +1774,11 @@
             }
             const rawT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
             const rawT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
-            const scoreMid = (rawT1Score + rawT2Score) / 2;
-            const compositeT1Score = scoreMid + compositeMargin / 2;
-            const compositeT2Score = scoreMid - compositeMargin / 2;
+            const rawTotal = rawT1Score + rawT2Score;
+            const calibratedTotal = calibrateTotal(rawTotal);
+            const calibratedMid = calibratedTotal / 2;
+            const compositeT1Score = calibratedMid + compositeMargin / 2;
+            const compositeT2Score = calibratedMid - compositeMargin / 2;
             // Derive win prob from calibrated margin
             const compositeAvgTempo = eff.tempo * wEff + sim.tempo * wSim + cr.tempo * wCR + mc.tempo * wMC;
             const compositeSD = 11.0 * Math.sqrt(compositeAvgTempo / 67);
@@ -1898,7 +1924,7 @@
                     </div>
 
                     <!-- Key Stats Grid -->
-                    <div class="grid grid-cols-5 gap-2 text-center text-sm mb-4">
+                    <div class="grid grid-cols-6 gap-2 text-center text-sm mb-4">
                         <div class="bg-gray-800 rounded-lg p-2">
                             <p class="text-gray-400 text-xs">Spread</p>
                             <p class="font-bold text-orange-400">${winner.TeamName.length > 10 ? winner.TeamName.substring(0,10) + '..' : winner.TeamName} -${spread.toFixed(1)}</p>
@@ -1919,7 +1945,26 @@
                             <p class="text-gray-400 text-xs">Blowouts</p>
                             <p class="font-bold">${((mc.blowouts / mc.numSims) * 100).toFixed(0)}%</p>
                         </div>
+                        <div class="bg-gray-800 rounded-lg p-2 border ${vegasOdds && vegasOdds.over_under ? (Math.abs((compositeT1Score + compositeT2Score) - vegasOdds.over_under) >= 3 ? 'border-green-500/40' : 'border-gray-700') : 'border-gray-700'}">
+                            <p class="text-gray-400 text-xs">Pred Total</p>
+                            <p class="font-bold ${vegasOdds && vegasOdds.over_under && Math.abs((compositeT1Score + compositeT2Score) - vegasOdds.over_under) >= 3 ? 'text-green-400' : 'text-gray-300'}">${(compositeT1Score + compositeT2Score).toFixed(0)}</p>
+                            ${vegasOdds && vegasOdds.over_under ? `<p class="text-[10px] text-gray-500">O/U ${vegasOdds.over_under}</p>` : ''}
+                        </div>
                     </div>
+                    ${vegasOdds && vegasOdds.over_under ? (() => {
+                        const ourTotal = compositeT1Score + compositeT2Score;
+                        const vegasOU = parseFloat(vegasOdds.over_under);
+                        const ouEdge = Math.abs(ourTotal - vegasOU);
+                        const ouSide = ourTotal > vegasOU ? 'OVER' : 'UNDER';
+                        const edgeColor = ouEdge >= 3 ? 'text-green-400 border-green-500/30' : 'text-gray-400 border-gray-700';
+                        return `<div class="bg-gray-800/40 rounded-lg p-2 mb-4 border ${ouEdge >= 3 ? 'border-green-500/30' : 'border-gray-700'} text-center text-xs">
+                            <span class="text-gray-400">Our Total:</span> <span class="font-bold text-white">${ourTotal.toFixed(1)}</span>
+                            <span class="text-gray-600 mx-1">|</span>
+                            <span class="text-gray-400">Vegas O/U:</span> <span class="font-bold text-cyan-400">${vegasOU}</span>
+                            <span class="text-gray-600 mx-1">|</span>
+                            <span class="text-gray-400">Edge:</span> <span class="font-bold ${edgeColor}">${ouEdge.toFixed(1)} ${ouSide}</span>
+                        </div>`;
+                    })() : ''}
 
                     <!-- Injury Report -->
                     ${injuryData && (injuryData.team1_injuries?.filter(i => i.status === 'Out').length || injuryData.team2_injuries?.filter(i => i.status === 'Out').length) ? `
@@ -2361,6 +2406,7 @@
                 t1Score: compositeT1Score,
                 t2Score: compositeT2Score,
                 t1WinProb: compositeT1Win,
+                ourTotal: compositeT1Score + compositeT2Score,
             };
             window._gamePredCache[t1.TeamName + '|' + t2.TeamName] = _predData;
             // Persist to backend so it survives page reloads
@@ -2383,6 +2429,7 @@
                 raw_spread: parseFloat(rawCompositeMargin.toFixed(1)),
                 vegas_spread: vegasOdds ? vegasOdds.spread : null,
                 vegas_details: vegasOdds ? vegasOdds.details : null,
+                predicted_total: parseFloat((compositeT1Score + compositeT2Score).toFixed(1)),
                 vegas_ou: vegasOdds ? vegasOdds.over_under : null,
                 line_movement: window._matchupIntel ? window._matchupIntel.line_movement : null,
                 open_spread: window._matchupIntel ? window._matchupIntel.open_spread : null,
@@ -3385,14 +3432,15 @@
                 if (Array.isArray(savedPreds)) {
                     savedPreds.forEach(p => {
                         if (p.visitor && p.home) {
-                            window._gamePredCache[p.visitor + '|' + p.home] = {
-                                ourMargin: p.ourMargin,
-                                ourPredWinner: p.ourPredWinner,
-                                ourPredHome: p.ourPredHome,
-                                t1Score: p.t1Score,
-                                t2Score: p.t2Score,
-                                t1WinProb: p.t1WinProb,
-                            };
+                                    window._gamePredCache[p.visitor + '|' + p.home] = {
+                                        ourMargin: p.ourMargin,
+                                        ourPredWinner: p.ourPredWinner,
+                                        ourPredHome: p.ourPredHome,
+                                        t1Score: p.t1Score,
+                                        t2Score: p.t2Score,
+                                        t1WinProb: p.t1WinProb,
+                                        ourTotal: p.ourTotal || ((p.t1Score || 0) + (p.t2Score || 0)),
+                                    };
                         }
                     });
                 }
@@ -3558,10 +3606,11 @@
                 // Our model: use cached prediction from Games tab if available, else run fresh
                 const cacheKey = visitor + '|' + home;
                 const cached = window._gamePredCache[cacheKey];
-                let ourMargin, ourPredWinner;
+                let ourMargin, ourPredWinner, ourPredTotal;
                 if (cached) {
                     ourMargin = cached.ourMargin;
                     ourPredWinner = cached.ourPredWinner;
+                    ourPredTotal = cached.ourTotal || ((cached.t1Score || 0) + (cached.t2Score || 0));
                 } else {
                     const ff1 = findTeam(ffAll, visitor), ff2 = findTeam(ffAll, home);
                     const ht1 = findTeam(htAll, visitor), ht2 = findTeam(htAll, home);
@@ -3587,6 +3636,10 @@
                     const rwMC = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.mc : 0.60;
                     ourMargin = calibrateSpread(eff.margin * rwEff + sim.margin * rwSim + cr.margin * rwCR + mc.margin * rwMC);
                     ourPredWinner = ourMargin >= 0 ? visitor : home;
+                    // Compute predicted total from sub-model scores
+                    const rawT1 = eff.t1Score * rwEff + sim.t1Score * rwSim + cr.t1Score * rwCR + mc.t1Score * rwMC;
+                    const rawT2 = eff.t2Score * rwEff + sim.t2Score * rwSim + cr.t2Score * rwCR + mc.t2Score * rwMC;
+                    ourPredTotal = calibrateTotal(rawT1 + rawT2);
                 }
 
                 const ourCorrect = ourPredWinner === inferredWinner;
@@ -3605,7 +3658,7 @@
                 // spread is home-relative from ESPN (negative = home favored)
                 const dkSpread = odds ? parseFloat(odds.spread) : null;
                 const dkDetails = odds ? (odds.details || '') : '';
-                const dkOverUnder = odds ? odds.over_under : null;
+                const dkOverUnder = odds ? parseFloat(odds.over_under) : null;
                 const dkHomeFav = odds ? odds.home_favorite : null;
                 // ATS: compare our predicted spread vs DK line to determine bet side,
                 // then check vs final score to see if that bet covered.
@@ -3640,17 +3693,40 @@
                     }
                 }
 
+                // O/U (Over/Under) comparison logic
+                let ourOU = null;   // 'hit', 'miss', 'push'
+                let ouBetSide = null; // 'over' or 'under'
+                let ouEdge = null;
+                if (dkOverUnder !== null && !isNaN(dkOverUnder) && dkOverUnder > 0 && hasActual && ourPredTotal) {
+                    const actualTotal = actualHomeScore + actualAwayScore;
+                    ouEdge = Math.abs(ourPredTotal - dkOverUnder);
+                    if (ourPredTotal > dkOverUnder) {
+                        ouBetSide = 'over';
+                    } else if (ourPredTotal < dkOverUnder) {
+                        ouBetSide = 'under';
+                    }
+                    const actualVsLine = actualTotal - dkOverUnder;
+                    if (actualVsLine === 0) {
+                        ourOU = 'push';
+                    } else if (ouBetSide === 'over') {
+                        ourOU = actualVsLine > 0 ? 'hit' : 'miss';
+                    } else if (ouBetSide === 'under') {
+                        ourOU = actualVsLine < 0 ? 'hit' : 'miss';
+                    }
+                }
+
                 games.push({
                     home, visitor, homeRank: g.HomeRank, visRank: g.VisitorRank,
                     kpHomePred: g.HomePred, kpVisPred: g.VisitorPred,
                     kpPredMargin, kpPredWinner, kpCorrect,
-                    ourMargin, ourPredWinner, ourCorrect,
+                    ourMargin, ourPredWinner, ourCorrect, ourPredTotal,
                     homeEMChg, visEMChg, homeRkChg, visRkChg,
                     resultSignal, inferredWinner, confidence,
                     thrillScore: g.ThrillScore || 0,
                     hasActual, actualHomeScore, actualAwayScore, actualMargin, actualWinner,
                     ourSpreadError, kpSpreadError,
-                    dkSpread, dkDetails, dkOverUnder, dkHomeFav, ourATS, atsBetSide, atsEdge
+                    dkSpread, dkDetails, dkOverUnder, dkHomeFav, ourATS, atsBetSide, atsEdge,
+                    ourOU, ouBetSide, ouEdge
                 });
             }
 
@@ -3700,9 +3776,33 @@
             const hcPct = hcTotal > 0 ? ((hcHits / hcTotal) * 100).toFixed(0) : '-';
             const hasHC = hcTotal > 0;
 
+            // O/U stats
+            const ouGames = games.filter(g => g.ourOU !== null);
+            const ouHits = ouGames.filter(g => g.ourOU === 'hit').length;
+            const ouMisses = ouGames.filter(g => g.ourOU === 'miss').length;
+            const ouPushes = ouGames.filter(g => g.ourOU === 'push').length;
+            const ouTotal = ouHits + ouMisses;
+            const ouPct = ouTotal > 0 ? ((ouHits / ouTotal) * 100).toFixed(0) : '-';
+            const hasOU = ouTotal > 0;
+
+            // High-conviction O/U: only games where our edge >= 3 pts
+            const ouHcGames = ouGames.filter(g => g.ouEdge !== null && g.ouEdge >= EDGE_THRESHOLD);
+            const ouHcHits = ouHcGames.filter(g => g.ourOU === 'hit').length;
+            const ouHcMisses = ouHcGames.filter(g => g.ourOU === 'miss').length;
+            const ouHcTotal = ouHcHits + ouHcMisses;
+            const ouHcPct = ouHcTotal > 0 ? ((ouHcHits / ouHcTotal) * 100).toFixed(0) : '-';
+            const hasOUHC = ouHcTotal > 0;
+
+            // Total prediction error
+            const totalErrors = games.filter(g => g.hasActual && g.ourPredTotal)
+                .map(g => Math.abs(g.ourPredTotal - (g.actualHomeScore + g.actualAwayScore)));
+            const avgTotalError = totalErrors.length > 0
+                ? (totalErrors.reduce((a, b) => a + b, 0) / totalErrors.length).toFixed(1) : '-';
+
             // Auto-save ATS results for the tracker
-            if (atsGames.length > 0) {
+            if (atsGames.length > 0 || ouGames.length > 0) {
                 const atsDateStr = recapDate.toISOString().slice(0, 10);
+                const saveGames = games.filter(g => g.ourATS !== null || g.ourOU !== null);
                 const atsSaveData = {
                     date: atsDateStr,
                     summary: {
@@ -3711,13 +3811,23 @@
                         hcHits, hcMisses, hcPushes, hcPct: hcTotal > 0 ? Math.round((hcHits / hcTotal) * 100) : null,
                         ourPct: Math.round((ourRight / total) * 100),
                         avgErr: ourAvgErr !== '-' ? parseFloat(ourAvgErr) : null,
+                        // O/U fields
+                        ouHits, ouMisses, ouPushes,
+                        ouPct: ouTotal > 0 ? Math.round((ouHits / ouTotal) * 100) : null,
+                        ouHcHits, ouHcMisses,
+                        ouHcPct: ouHcTotal > 0 ? Math.round((ouHcHits / ouHcTotal) * 100) : null,
+                        avgTotalError: avgTotalError !== '-' ? parseFloat(avgTotalError) : null,
                     },
-                    games: atsGames.map(g => ({
+                    games: saveGames.map(g => ({
                         home: g.home, visitor: g.visitor,
                         ourPredWinner: g.ourPredWinner, ourMargin: g.ourMargin,
                         dkSpread: g.dkSpread, dkDetails: g.dkDetails,
                         actualMargin: g.actualMargin, actualWinner: g.actualWinner,
                         ourATS: g.ourATS, atsBetSide: g.atsBetSide, atsEdge: g.atsEdge,
+                        // O/U fields
+                        ourPredTotal: g.ourPredTotal,
+                        dkOverUnder: g.dkOverUnder,
+                        ourOU: g.ourOU, ouBetSide: g.ouBetSide, ouEdge: g.ouEdge,
                     }))
                 };
                 fetch(`${API_BASE}/ats-results`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(atsSaveData) }).catch(() => {});
@@ -3735,7 +3845,7 @@
                 </div>
 
                 <!-- Accuracy Summary -->
-                <div class="grid grid-cols-2 md:grid-cols-${scored > 0 && hasHC ? '5' : scored > 0 && atsWithLines > 0 ? '4' : scored > 0 ? '3' : '2'} gap-3 mb-6">
+                <div class="grid grid-cols-2 md:grid-cols-${scored > 0 && hasOU && hasHC ? '8' : scored > 0 && hasOU ? '7' : scored > 0 && hasHC ? '5' : scored > 0 && atsWithLines > 0 ? '4' : scored > 0 ? '3' : '2'} gap-3 mb-6">
                     <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(ourPct) >= parseInt(kpPct) ? 'border-green-500/40' : 'border-gray-700'}">
                         <p class="text-3xl font-bold ${parseInt(ourPct) >= 70 ? 'text-green-400' : parseInt(ourPct) >= 55 ? 'text-yellow-400' : 'text-red-400'}">${ourPct}%</p>
                         <p class="text-xs text-gray-400 mt-1">Our SU Pick</p>
@@ -3765,6 +3875,27 @@
                         <p class="text-3xl font-bold ${parseInt(hcPct) >= 60 ? 'text-emerald-400' : parseInt(hcPct) >= 50 ? 'text-yellow-400' : 'text-red-400'}">${hcPct}%</p>
                         <p class="text-xs text-gray-400 mt-1">ATS ${EDGE_THRESHOLD}+ pt Edge</p>
                         <p class="text-xs text-gray-500">${hcHits}-${hcMisses}${hcPushes > 0 ? `-${hcPushes}P` : ''} high conviction</p>
+                    </div>
+                    ` : ''}
+                    ${hasOU ? `
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(ouPct) >= 55 ? 'border-violet-500/40' : 'border-gray-700'}">
+                        <p class="text-3xl font-bold ${parseInt(ouPct) >= 60 ? 'text-violet-400' : parseInt(ouPct) >= 50 ? 'text-yellow-400' : 'text-red-400'}">${ouPct}%</p>
+                        <p class="text-xs text-gray-400 mt-1">O/U All Bets</p>
+                        <p class="text-xs text-gray-500">${ouHits}-${ouMisses}${ouPushes > 0 ? `-${ouPushes}P` : ''} vs O/U line</p>
+                    </div>
+                    ` : ''}
+                    ${hasOUHC ? `
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border ${parseInt(ouHcPct) >= 55 ? 'border-pink-500/40' : 'border-gray-700'}">
+                        <p class="text-3xl font-bold ${parseInt(ouHcPct) >= 60 ? 'text-pink-400' : parseInt(ouHcPct) >= 50 ? 'text-yellow-400' : 'text-red-400'}">${ouHcPct}%</p>
+                        <p class="text-xs text-gray-400 mt-1">O/U ${EDGE_THRESHOLD}+ pt Edge</p>
+                        <p class="text-xs text-gray-500">${ouHcHits}-${ouHcMisses} high conviction</p>
+                    </div>
+                    ` : ''}
+                    ${avgTotalError !== '-' ? `
+                    <div class="bg-gray-800 rounded-xl p-4 text-center border border-gray-700">
+                        <p class="text-3xl font-bold ${parseFloat(avgTotalError) <= 14 ? 'text-green-400' : parseFloat(avgTotalError) <= 18 ? 'text-yellow-400' : 'text-red-400'}">${avgTotalError}</p>
+                        <p class="text-xs text-gray-400 mt-1">Total Error</p>
+                        <p class="text-xs text-gray-500">avg pts off total</p>
                     </div>
                     ` : ''}
                 </div>
@@ -3820,6 +3951,8 @@
                                     <th class="px-2 py-2 text-center tooltip" data-tip="How many points off our spread was">Err</th>
                                     <th class="px-2 py-2 text-center tooltip" data-tip="Straight-up pick correct?">SU</th>
                                     <th class="px-2 py-2 text-center tooltip" data-tip="Against the spread vs DK line">ATS</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="Predicted total vs Vegas O/U">Total</th>
+                                    <th class="px-2 py-2 text-center tooltip" data-tip="Over/Under bet result">O/U</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -3863,6 +3996,8 @@
                                         <td class="px-2 py-2 text-center text-xs">${ourErrStr}</td>
                                         <td class="px-2 py-2 text-center">${g.ourCorrect ? '<i class="fas fa-check text-green-400"></i>' : '<i class="fas fa-times text-red-400"></i>'}</td>
                                         <td class="px-2 py-2 text-center">${atsStr}</td>
+                                        <td class="px-2 py-2 text-center text-xs whitespace-nowrap">${g.ourPredTotal ? `<span class="text-gray-300">${g.ourPredTotal.toFixed(0)}</span>${g.dkOverUnder ? `<span class="text-gray-600">/</span><span class="text-cyan-400">${g.dkOverUnder}</span>` : ''}${g.hasActual ? `<span class="text-gray-600">/</span><span class="text-white">${g.actualHomeScore + g.actualAwayScore}</span>` : ''}` : '<span class="text-gray-600">-</span>'}</td>
+                                        <td class="px-2 py-2 text-center">${g.ourOU === 'hit' ? `<i class="fas fa-check ${g.ouEdge >= EDGE_THRESHOLD ? 'text-violet-400' : 'text-violet-300'}"></i>${g.ouEdge >= EDGE_THRESHOLD ? `<span class="text-[9px] text-violet-400 ml-0.5">${g.ouEdge.toFixed(1)}</span>` : ''}` : g.ourOU === 'miss' ? `<i class="fas fa-times text-red-400"></i>${g.ouEdge >= EDGE_THRESHOLD ? `<span class="text-[9px] text-red-300 ml-0.5">${g.ouEdge.toFixed(1)}</span>` : ''}` : g.ourOU === 'push' ? '<span class="text-yellow-400 text-xs font-bold">P</span>' : '<span class="text-gray-600">-</span>'}</td>
                                     </tr>`;
                                 }).join('')}
                             </tbody>
@@ -4409,6 +4544,93 @@
                 </div>`;
             }
 
+            // O/U summary cards
+            let ouSummaryHTML = '';
+            if (data.ou_record) {
+                ouSummaryHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-violet-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-arrows-alt-v mr-1 text-violet-400"></i>Over/Under Performance</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">O/U Hit Rate</p>
+                            <p class="text-xl font-bold ${data.ou_pct >= 55 ? 'text-violet-400' : data.ou_pct >= 45 ? 'text-yellow-400' : 'text-red-400'}">${data.ou_pct || '-'}%</p>
+                            <p class="text-xs text-gray-500">${data.ou_record}${data.ou_pushes ? ' (' + data.ou_pushes + 'P)' : ''}</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">O/U HC (3+ pts)</p>
+                            <p class="text-xl font-bold ${(data.ou_hc_pct || 0) >= 55 ? 'text-pink-400' : (data.ou_hc_pct || 0) >= 45 ? 'text-yellow-400' : data.ou_hc_pct ? 'text-red-400' : 'text-gray-500'}">${data.ou_hc_pct || '-'}%</p>
+                            <p class="text-xs text-gray-500">${data.ou_hc_record || '-'}</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">Avg Total Error</p>
+                            <p class="text-xl font-bold ${(data.avg_total_error || 99) <= 14 ? 'text-green-400' : (data.avg_total_error || 99) <= 18 ? 'text-yellow-400' : 'text-red-400'}">${data.avg_total_error || '-'}</p>
+                            <p class="text-xs text-gray-500">points off actual</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">Mean Signed Error</p>
+                            <p class="text-xl font-bold ${data.total_bias === 'overpredicts' ? 'text-red-400' : data.total_bias === 'underpredicts' ? 'text-blue-400' : 'text-green-400'}">${data.mean_total_signed_error != null ? (data.mean_total_signed_error > 0 ? '+' : '') + data.mean_total_signed_error : '-'}</p>
+                            <p class="text-xs text-gray-500">${data.total_bias || 'neutral'}</p>
+                        </div>
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">Sub-Model Best</p>
+                            <p class="text-xl font-bold text-white">${data.sub_model_total_accuracy ? Object.entries(data.sub_model_total_accuracy).sort((a,b) => a[1].avg_total_error - b[1].avg_total_error)[0]?.[0] || '-' : '-'}</p>
+                            <p class="text-xs text-gray-500">${data.sub_model_total_accuracy ? Object.entries(data.sub_model_total_accuracy).sort((a,b) => a[1].avg_total_error - b[1].avg_total_error)[0]?.[1]?.avg_total_error + ' avg err' : ''}</p>
+                        </div>
+                    </div>
+                </div>`;
+            }
+
+            // O/U by edge bucket
+            let ouEdgeBucketHTML = '';
+            if (data.ou_by_edge && Object.keys(data.ou_by_edge).length > 0) {
+                const ouBuckets = Object.entries(data.ou_by_edge).map(([name, b]) => `
+                    <div class="bg-gray-800 rounded-lg p-3 text-center">
+                        <p class="text-xs text-gray-400">${name} pts</p>
+                        <p class="text-lg font-bold ${b.hit_pct >= 55 ? 'text-violet-400' : b.hit_pct >= 45 ? 'text-yellow-400' : 'text-red-400'}">${b.hit_pct}%</p>
+                        <p class="text-xs text-gray-500">${b.record} (${b.games} bets)</p>
+                    </div>
+                `).join('');
+                ouEdgeBucketHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-violet-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-chart-bar mr-1 text-violet-400"></i>O/U Hit Rate by Edge Bucket</h4>
+                    <div class="grid grid-cols-4 gap-2">${ouBuckets}</div>
+                </div>`;
+            }
+
+            // Total calibration recommendations
+            let totalCalibHTML = '';
+            if (data.total_calibration_recommendations && Object.keys(data.total_calibration_recommendations).length > 0) {
+                const tr = data.total_calibration_recommendations;
+                totalCalibHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-violet-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-sliders-h mr-1 text-violet-400"></i>Total Calibration Recommendations</h4>
+                    <table class="w-full text-xs"><thead class="bg-gray-700"><tr>
+                        <th class="px-3 py-1 text-left">Parameter</th><th class="px-3 py-1 text-center">Current</th>
+                        <th class="px-3 py-1 text-center">Recommended</th><th class="px-3 py-1 text-center">Info</th>
+                    </tr></thead><tbody>
+                        <tr class="border-t border-gray-700">
+                            <td class="px-3 py-2 text-sm">Center</td>
+                            <td class="px-3 py-2 text-center text-sm">${tr.current_center}</td>
+                            <td class="px-3 py-2 text-center text-sm font-bold ${tr.recommended_center !== tr.current_center ? 'text-violet-400' : 'text-gray-400'}">${tr.recommended_center}</td>
+                            <td class="px-3 py-2 text-center text-sm text-gray-400">NCAA avg total anchor</td>
+                        </tr>
+                        <tr class="border-t border-gray-700">
+                            <td class="px-3 py-2 text-sm">Compression</td>
+                            <td class="px-3 py-2 text-center text-sm">${tr.current_compression}</td>
+                            <td class="px-3 py-2 text-center text-sm font-bold ${tr.recommended_compression !== tr.current_compression ? 'text-violet-400' : 'text-gray-400'}">${tr.recommended_compression}</td>
+                            <td class="px-3 py-2 text-center text-sm text-gray-400">Pull toward center</td>
+                        </tr>
+                    </tbody></table>
+                    <p class="text-xs text-gray-400 mt-2">Mean total signed error: ${tr.mean_total_signed_error > 0 ? '+' : ''}${tr.mean_total_signed_error} | Sample: ${tr.sample_size} games | Confidence: <span class="${tr.confidence === 'high' ? 'text-green-400' : 'text-yellow-400'}">${tr.confidence}</span></p>
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="applyTotalCalibrationRecommendations()" class="px-4 py-2 rounded-lg text-xs font-medium ${tr.confidence === 'high' ? 'bg-violet-600 hover:bg-violet-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'} transition-colors">
+                            <i class="fas fa-check mr-1"></i>Apply Total Calibration
+                        </button>
+                        <button onclick="resetTotalCalibration()" class="px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 text-gray-400 transition-colors">
+                            <i class="fas fa-undo mr-1"></i>Reset to Defaults
+                        </button>
+                    </div>
+                </div>`;
+                window._lastTotalCalibRecs = tr;
+            }
+
             let dailyHTML = '';
             if (data.by_date && data.by_date.length > 0) {
                 dailyHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
@@ -4478,6 +4700,15 @@
                     <!-- Conference Adjustment Recommendations -->
                     ${confRecHTML}
 
+                    <!-- O/U Performance -->
+                    ${ouSummaryHTML}
+
+                    <!-- O/U by Edge Bucket -->
+                    ${ouEdgeBucketHTML}
+
+                    <!-- Total Calibration Recommendations -->
+                    ${totalCalibHTML}
+
                     <!-- Daily -->
                     ${dailyHTML}
                 </div>`;
@@ -4536,6 +4767,44 @@
                 if (resp.ok) {
                     SPREAD_COEFFS = { close: 0.92, moderate: 0.85, logMult: 3.5 };
                     alert('Calibration reset to defaults.');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        // Apply total calibration recommendations from backtest
+        async function applyTotalCalibrationRecommendations() {
+            const recs = window._lastTotalCalibRecs;
+            if (!recs) { alert('No total calibration recommendations available'); return; }
+            try {
+                const resp = await fetch(`${API_BASE}/total-calibration`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        center: recs.recommended_center,
+                        compression: recs.recommended_compression,
+                        sample_size: recs.sample_size,
+                    }),
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    TOTAL_COEFFS.center = data.center;
+                    TOTAL_COEFFS.compression = data.compression;
+                    alert(`Total calibration updated!\nCenter: ${data.center}\nCompression: ${data.compression}\n\nRe-run the backtest to verify improvement.`);
+                } else {
+                    alert('Failed to update total calibration');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function resetTotalCalibration() {
+            if (!confirm('Reset total calibration to defaults (center=140, compression=0.90)?')) return;
+            try {
+                const resp = await fetch(`${API_BASE}/total-calibration`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ center: 140.0, compression: 0.90, sample_size: 0 }),
+                });
+                if (resp.ok) {
+                    TOTAL_COEFFS = { center: 140, compression: 0.90 };
+                    alert('Total calibration reset to defaults.');
                 }
             } catch (e) { alert('Error: ' + e.message); }
         }
@@ -4618,6 +4887,22 @@
             const hcTotal = hcHits + hcMisses;
             const hcPct = hcTotal > 0 ? Math.round((hcHits / hcTotal) * 100) : 0;
 
+            // O/U cumulative stats
+            const ouAllGames = allGames.filter(g => g.ourOU != null);
+            const ouAllHits = ouAllGames.filter(g => g.ourOU === 'hit').length;
+            const ouAllMisses = ouAllGames.filter(g => g.ourOU === 'miss').length;
+            const ouAllPushes = ouAllGames.filter(g => g.ourOU === 'push').length;
+            const ouAllTotal = ouAllHits + ouAllMisses;
+            const ouAllPct = ouAllTotal > 0 ? Math.round((ouAllHits / ouAllTotal) * 100) : 0;
+            const hasOUData = ouAllTotal > 0;
+
+            // O/U high conviction (3+ pt edge)
+            const ouHcAll = ouAllGames.filter(g => (g.ouEdge || 0) >= 3);
+            const ouHcHits = ouHcAll.filter(g => g.ourOU === 'hit').length;
+            const ouHcMisses = ouHcAll.filter(g => g.ourOU === 'miss').length;
+            const ouHcTotal = ouHcHits + ouHcMisses;
+            const ouHcPct = ouHcTotal > 0 ? Math.round((ouHcHits / ouHcTotal) * 100) : 0;
+
             // Edge buckets: 0-1, 1-3, 3-5, 5-8, 8+
             const edgeBuckets = {'0-1': [], '1-3': [], '3-5': [], '5-8': [], '8+': []};
             for (const g of allGames) {
@@ -4641,18 +4926,45 @@
                 </div>`;
             }).join('');
 
+            // O/U edge buckets
+            const ouEdgeBuckets = {'0-2': [], '2-4': [], '4-6': [], '6+': []};
+            for (const g of ouAllGames) {
+                const e = g.ouEdge || 0;
+                if (e < 2) ouEdgeBuckets['0-2'].push(g);
+                else if (e < 4) ouEdgeBuckets['2-4'].push(g);
+                else if (e < 6) ouEdgeBuckets['4-6'].push(g);
+                else ouEdgeBuckets['6+'].push(g);
+            }
+            const ouBucketHTML = Object.entries(ouEdgeBuckets).map(([name, games]) => {
+                const h = games.filter(g => g.ourOU === 'hit').length;
+                const m = games.filter(g => g.ourOU === 'miss').length;
+                const t = h + m;
+                const pct = t > 0 ? Math.round((h / t) * 100) : '-';
+                return `<div class="bg-gray-800 rounded-lg p-3 text-center">
+                    <p class="text-xs text-gray-400">${name} pts</p>
+                    <p class="text-lg font-bold ${pct !== '-' && pct >= 60 ? 'text-violet-400' : pct !== '-' && pct >= 50 ? 'text-yellow-400' : pct !== '-' ? 'text-red-400' : 'text-gray-500'}">${pct}${pct !== '-' ? '%' : ''}</p>
+                    <p class="text-xs text-gray-500">${h}-${m} (${t} bets)</p>
+                </div>`;
+            }).join('');
+
             // Rolling cumulative record by day
             let cumHits = 0, cumMisses = 0, cumHcHits = 0, cumHcMisses = 0;
+            let cumOUHits = 0, cumOUMisses = 0;
             const dailyRows = history.map(h => {
                 const s = h.summary || {};
                 cumHits += (s.atsHits || 0); cumMisses += (s.atsMisses || 0);
                 cumHcHits += (s.hcHits || 0); cumHcMisses += (s.hcMisses || 0);
+                cumOUHits += (s.ouHits || 0); cumOUMisses += (s.ouMisses || 0);
                 const cumT = cumHits + cumMisses;
                 const cumPct = cumT > 0 ? Math.round((cumHits / cumT) * 100) : '-';
                 const cumHcT = cumHcHits + cumHcMisses;
                 const cumHcPct = cumHcT > 0 ? Math.round((cumHcHits / cumHcT) * 100) : '-';
                 const dayT = (s.atsHits || 0) + (s.atsMisses || 0);
                 const dayPct = dayT > 0 ? Math.round(((s.atsHits || 0) / dayT) * 100) : '-';
+                const dayOUT = (s.ouHits || 0) + (s.ouMisses || 0);
+                const dayOUPct = dayOUT > 0 ? Math.round(((s.ouHits || 0) / dayOUT) * 100) : '-';
+                const cumOUT = cumOUHits + cumOUMisses;
+                const cumOUPct = cumOUT > 0 ? Math.round((cumOUHits / cumOUT) * 100) : '-';
                 return `<tr class="border-t border-gray-700 hover:bg-gray-700/30">
                     <td class="px-3 py-2 text-sm">${h.date}</td>
                     <td class="px-3 py-2 text-center text-sm">${s.totalGames || '-'}</td>
@@ -4662,6 +4974,8 @@
                     <td class="px-3 py-2 text-center text-sm font-bold ${cumPct !== '-' && cumPct >= 55 ? 'text-emerald-400' : cumPct !== '-' && cumPct >= 45 ? 'text-yellow-400' : cumPct !== '-' ? 'text-red-400' : ''}">${cumPct !== '-' ? cumPct + '%' : '-'}</td>
                     <td class="px-3 py-2 text-center text-sm text-gray-400">${cumHits}-${cumMisses}</td>
                     <td class="px-3 py-2 text-center text-sm font-medium ${cumHcPct !== '-' && cumHcPct >= 55 ? 'text-emerald-400' : cumHcPct !== '-' && cumHcPct >= 45 ? 'text-yellow-400' : cumHcPct !== '-' ? 'text-red-400' : ''}">${cumHcPct !== '-' ? cumHcPct + '%' : '-'}</td>
+                    <td class="px-3 py-2 text-center text-sm font-medium ${dayOUPct !== '-' && dayOUPct >= 55 ? 'text-violet-400' : dayOUPct !== '-' && dayOUPct >= 45 ? 'text-yellow-400' : dayOUPct !== '-' ? 'text-red-400' : ''}">${dayOUPct !== '-' ? dayOUPct + '%' : '-'}</td>
+                    <td class="px-3 py-2 text-center text-sm font-bold ${cumOUPct !== '-' && cumOUPct >= 55 ? 'text-violet-400' : cumOUPct !== '-' && cumOUPct >= 45 ? 'text-yellow-400' : cumOUPct !== '-' ? 'text-red-400' : ''}">${cumOUPct !== '-' ? cumOUPct + '%' : '-'}</td>
                 </tr>`;
             }).join('');
 
@@ -4670,10 +4984,12 @@
             const winPayout = unitSize * (100/110); // ~$90.91 profit on win
             const allProfit = (allHits * winPayout) - (allMisses * unitSize);
             const hcProfit = (hcHits * winPayout) - (hcMisses * unitSize);
+            const ouProfit = (ouAllHits * winPayout) - (ouAllMisses * unitSize);
+            const ouHcProfit = (ouHcHits * winPayout) - (ouHcMisses * unitSize);
 
             container.innerHTML = `
                 <div class="space-y-4">
-                    <!-- Cumulative Summary Cards -->
+                    <!-- ATS Cumulative Summary Cards -->
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div class="bg-gradient-to-br from-emerald-900/40 to-gray-800 rounded-xl p-4 border border-emerald-500/30 text-center">
                             <p class="text-xs text-gray-400">All Bets ATS</p>
@@ -4691,16 +5007,47 @@
                             <p class="text-xs text-gray-500">${history.length} days tracked</p>
                         </div>
                         <div class="bg-gradient-to-br ${allProfit >= 0 ? 'from-green-900/40' : 'from-red-900/40'} to-gray-800 rounded-xl p-4 border ${allProfit >= 0 ? 'border-green-500/30' : 'border-red-500/30'} text-center">
-                            <p class="text-xs text-gray-400">All Bets P/L</p>
+                            <p class="text-xs text-gray-400">ATS P/L</p>
                             <p class="text-3xl font-bold ${allProfit >= 0 ? 'text-green-400' : 'text-red-400'}">${allProfit >= 0 ? '+' : ''}$${allProfit.toFixed(0)}</p>
                             <p class="text-xs text-gray-500">$${unitSize}/bet @ -110</p>
                         </div>
                         <div class="bg-gradient-to-br ${hcProfit >= 0 ? 'from-green-900/40' : 'from-red-900/40'} to-gray-800 rounded-xl p-4 border ${hcProfit >= 0 ? 'border-green-500/30' : 'border-red-500/30'} text-center">
-                            <p class="text-xs text-gray-400">HC Bets P/L</p>
+                            <p class="text-xs text-gray-400">HC ATS P/L</p>
                             <p class="text-3xl font-bold ${hcProfit >= 0 ? 'text-green-400' : 'text-red-400'}">${hcProfit >= 0 ? '+' : ''}$${hcProfit.toFixed(0)}</p>
                             <p class="text-xs text-gray-500">3+ pt edge only</p>
                         </div>
                     </div>
+
+                    ${hasOUData ? `
+                    <!-- O/U Cumulative Summary Cards -->
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div class="bg-gradient-to-br from-violet-900/40 to-gray-800 rounded-xl p-4 border border-violet-500/30 text-center">
+                            <p class="text-xs text-gray-400">All Bets O/U</p>
+                            <p class="text-3xl font-bold ${ouAllPct >= 55 ? 'text-violet-400' : ouAllPct >= 45 ? 'text-yellow-400' : 'text-red-400'}">${ouAllPct}%</p>
+                            <p class="text-xs text-gray-500">${ouAllHits}-${ouAllMisses}${ouAllPushes ? '-' + ouAllPushes + 'P' : ''}</p>
+                        </div>
+                        <div class="bg-gradient-to-br from-pink-900/40 to-gray-800 rounded-xl p-4 border border-pink-500/30 text-center">
+                            <p class="text-xs text-gray-400">3+ pt Edge O/U</p>
+                            <p class="text-3xl font-bold ${ouHcPct >= 55 ? 'text-pink-400' : ouHcPct >= 45 ? 'text-yellow-400' : 'text-red-400'}">${ouHcPct}%</p>
+                            <p class="text-xs text-gray-500">${ouHcHits}-${ouHcMisses} high conviction</p>
+                        </div>
+                        <div class="bg-gradient-to-br from-purple-900/40 to-gray-800 rounded-xl p-4 border border-purple-500/30 text-center">
+                            <p class="text-xs text-gray-400">O/U Total Bets</p>
+                            <p class="text-3xl font-bold text-white">${ouAllTotal}</p>
+                            <p class="text-xs text-gray-500">${ouAllGames.length} w/ O/U lines</p>
+                        </div>
+                        <div class="bg-gradient-to-br ${ouProfit >= 0 ? 'from-green-900/40' : 'from-red-900/40'} to-gray-800 rounded-xl p-4 border ${ouProfit >= 0 ? 'border-green-500/30' : 'border-red-500/30'} text-center">
+                            <p class="text-xs text-gray-400">O/U P/L</p>
+                            <p class="text-3xl font-bold ${ouProfit >= 0 ? 'text-green-400' : 'text-red-400'}">${ouProfit >= 0 ? '+' : ''}$${ouProfit.toFixed(0)}</p>
+                            <p class="text-xs text-gray-500">$${unitSize}/bet @ -110</p>
+                        </div>
+                        <div class="bg-gradient-to-br ${ouHcProfit >= 0 ? 'from-green-900/40' : 'from-red-900/40'} to-gray-800 rounded-xl p-4 border ${ouHcProfit >= 0 ? 'border-green-500/30' : 'border-red-500/30'} text-center">
+                            <p class="text-xs text-gray-400">O/U HC P/L</p>
+                            <p class="text-3xl font-bold ${ouHcProfit >= 0 ? 'text-green-400' : 'text-red-400'}">${ouHcProfit >= 0 ? '+' : ''}$${ouHcProfit.toFixed(0)}</p>
+                            <p class="text-xs text-gray-500">3+ pt edge only</p>
+                        </div>
+                    </div>
+                    ` : ''}
 
                     <!-- ATS by Edge Bucket -->
                     <div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
@@ -4708,9 +5055,17 @@
                         <div class="grid grid-cols-5 gap-2">${bucketHTML}</div>
                     </div>
 
+                    ${hasOUData ? `
+                    <!-- O/U by Edge Bucket -->
+                    <div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-chart-bar mr-1 text-violet-400"></i>O/U Hit Rate by Model Edge (pts of disagreement with O/U line)</h4>
+                        <div class="grid grid-cols-4 gap-2">${ouBucketHTML}</div>
+                    </div>
+                    ` : ''}
+
                     <!-- Daily Breakdown Table -->
                     <div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
-                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-calendar mr-1 text-blue-400"></i>Daily ATS Breakdown</h4>
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-calendar mr-1 text-blue-400"></i>Daily ATS & O/U Breakdown</h4>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm">
                                 <thead class="bg-gray-700">
@@ -4723,6 +5078,8 @@
                                         <th class="px-3 py-2 text-center">Cum ATS%</th>
                                         <th class="px-3 py-2 text-center">Cum Record</th>
                                         <th class="px-3 py-2 text-center">Cum HC%</th>
+                                        <th class="px-3 py-2 text-center">Day O/U%</th>
+                                        <th class="px-3 py-2 text-center">Cum O/U%</th>
                                     </tr>
                                 </thead>
                                 <tbody>${dailyRows}</tbody>
@@ -4732,7 +5089,7 @@
 
                     <!-- Individual Game Log -->
                     <div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
-                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-list mr-1 text-orange-400"></i>All ATS Bets (${allGames.length} games)</h4>
+                        <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-list mr-1 text-orange-400"></i>All Bets (${allGames.length} games)</h4>
                         <div class="max-h-96 overflow-y-auto">
                             <table class="w-full text-xs">
                                 <thead class="bg-gray-700 sticky top-0">
@@ -4744,14 +5101,17 @@
                                         <th class="px-2 py-1 text-center">Edge</th>
                                         <th class="px-2 py-1 text-center">Result</th>
                                         <th class="px-2 py-1 text-center">ATS</th>
+                                        <th class="px-2 py-1 text-center">Total</th>
+                                        <th class="px-2 py-1 text-center">O/U</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     ${history.flatMap(h => (h.games || []).map(g => {
                                         const edgeColor = g.atsEdge >= 3 ? 'text-emerald-400' : 'text-gray-400';
-                                        const atsIcon = g.ourATS === 'hit' ? '<i class="fas fa-check text-emerald-400"></i>' : g.ourATS === 'miss' ? '<i class="fas fa-times text-red-400"></i>' : '<span class="text-yellow-400">P</span>';
-                                        const margin = g.actualMargin > 0 ? `${g.home} -${g.actualMargin}` : `${g.visitor} -${Math.abs(g.actualMargin)}`;
-                                        const ourDK = (-(-g.ourMargin)).toFixed(1);
+                                        const atsIcon = g.ourATS === 'hit' ? '<i class="fas fa-check text-emerald-400"></i>' : g.ourATS === 'miss' ? '<i class="fas fa-times text-red-400"></i>' : g.ourATS === 'push' ? '<span class="text-yellow-400">P</span>' : '<span class="text-gray-600">-</span>';
+                                        const margin = g.actualMargin != null ? (g.actualMargin > 0 ? `${g.home} -${g.actualMargin}` : `${g.visitor} -${Math.abs(g.actualMargin)}`) : '-';
+                                        const ouIcon = g.ourOU === 'hit' ? '<i class="fas fa-check text-violet-400"></i>' : g.ourOU === 'miss' ? '<i class="fas fa-times text-red-400"></i>' : g.ourOU === 'push' ? '<span class="text-yellow-400">P</span>' : '<span class="text-gray-600">-</span>';
+                                        const totalStr = g.ourPredTotal ? `${Math.round(g.ourPredTotal)}${g.dkOverUnder ? '/' + g.dkOverUnder : ''}` : '-';
                                         return `<tr class="border-t border-gray-700/50 hover:bg-gray-700/30">
                                             <td class="px-2 py-1">${h.date}</td>
                                             <td class="px-2 py-1">${g.visitor} @ ${g.home}</td>
@@ -4760,6 +5120,8 @@
                                             <td class="px-2 py-1 text-center ${edgeColor}">${g.atsEdge ? g.atsEdge.toFixed(1) : '-'}</td>
                                             <td class="px-2 py-1 text-center text-gray-300">${margin}</td>
                                             <td class="px-2 py-1 text-center">${atsIcon}</td>
+                                            <td class="px-2 py-1 text-center text-gray-400">${totalStr}</td>
+                                            <td class="px-2 py-1 text-center">${ouIcon}</td>
                                         </tr>`;
                                     })).join('')}
                                 </tbody>
