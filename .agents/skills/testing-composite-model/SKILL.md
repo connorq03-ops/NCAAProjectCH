@@ -124,7 +124,7 @@ Expected pick accuracy: ~65-72%, spread error: ~8-12 pts.
 
 ## Historical Backtest Mode
 
-The backtester supports two modes controlled by `use_historical` (default `True`):
+The backtester supports two modes controlled by `use_historical` (default `False` for backward compat; the UI checkbox sends `true` explicitly):
 
 - **Historical mode** (`use_historical=True`): Fetches per-date KenPom archive ratings so the backtest only uses data available at game time, eliminating lookahead bias. Momentum enrichment is also enabled (compares current date ratings to 28 days prior). Weekly batching (Monday of each week) keeps API calls low.
 - **Legacy mode** (`use_historical=False`): Uses current-day ratings for all dates (faster but has lookahead bias).
