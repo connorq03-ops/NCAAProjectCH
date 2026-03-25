@@ -249,9 +249,11 @@ class Backtester:
                     archive_data = self._get_archive_for_date(date_str, kenpom_client, cache)
                     archive_calls += 1
                     if archive_data and isinstance(archive_data, list) and len(archive_data) > 0:
+                        # Pass pre-fetched archive_data to avoid a redundant API call
                         historical_team_data = prefetch_historical_team_data(
                             kenpom_client, cache, date_str,
                             supplemental_data=current_team_data,
+                            archive_data=archive_data,
                         )
                         if historical_team_data:
                             day_team_data = historical_team_data

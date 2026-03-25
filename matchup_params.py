@@ -227,8 +227,9 @@ def prefetch_all_team_data(client, cache, year=2026):
     return team_data
 
 
-def prefetch_historical_team_data(client, cache, date_str, supplemental_data=None):
-    """Fetch historical KenPom ratings for a specific date, merged with supplemental data.
+def prefetch_historical_team_data(client, cache, date_str, supplemental_data=None,
+                                  archive_data=None):
+    """Merge historical KenPom archive ratings with supplemental data.
 
     The archive endpoint returns core ratings (AdjEM, AdjOE, AdjDE, AdjTempo, etc.)
     for the specified date. Supplemental data (ff, ms, ht, pd, stars, coach) is not
@@ -239,6 +240,7 @@ def prefetch_historical_team_data(client, cache, date_str, supplemental_data=Non
         cache: SQLiteCache instance
         date_str: YYYY-MM-DD date string
         supplemental_data: dict from prefetch_all_team_data() for ff/ms/ht/pd/stars/coach
+        archive_data: pre-fetched archive list (if provided, skips fetching)
 
     Returns:
         dict: {TeamName: {ratings, ff, ht, ms, pd, stars, coach}} with historical ratings
@@ -246,15 +248,16 @@ def prefetch_historical_team_data(client, cache, date_str, supplemental_data=Non
     if supplemental_data is None:
         supplemental_data = {}
 
-    # Fetch archive data with long TTL (historical data never changes)
-    cache_key = 'archive_historical'
-    cache_params = {'date': date_str}
-    cached = cache.get(cache_key, cache_params, ttl=86400 * 365)
-    if cached is not None:
-        archive_data = cached
-    else:
-        archive_data = client.get_archive(date=date_str)
-        cache.set(cache_key, cache_params, archive_data)
+    # Use pre-fetched archive data if provided, otherwise fetch
+    if archive_data is None:
+        cache_key = 'archive_historical'
+        cache_params = {'date': date_str}
+        cached = cache.get(cache_key, cache_params, ttl=86400 * 365)
+        if cached is not None:
+            archive_data = cached
+        else:
+            archive_data = client.get_archive(date=date_str)
+            cache.set(cache_key, cache_params, archive_data)
 
     if not archive_data or not isinstance(archive_data, list):
         return None
