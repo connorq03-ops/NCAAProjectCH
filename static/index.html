@@ -3651,22 +3651,24 @@
                     const rawT1 = eff.t1Score * rwEff + sim.t1Score * rwSim + cr.t1Score * rwCR + mc.t1Score * rwMC;
                     const rawT2 = eff.t2Score * rwEff + sim.t2Score * rwSim + cr.t2Score * rwCR + mc.t2Score * rwMC;
                     ourPredTotal = calibrateTotal(rawT1 + rawT2);
-                }
 
-                // Situational dampening (mirrors matchup predictor lines 1757-1774)
-                const isNeutral = odds && odds.neutral_site;
-                const sameConf = dV.ConfShort && dV.ConfShort === dH.ConfShort;
-                const currentMonth = new Date().getMonth(); // 0-indexed
-                const isConfTourney = isNeutral && sameConf && currentMonth === 2; // March
-                const isEarlySeason = currentMonth >= 10 || currentMonth === 0; // Nov-Jan
-                // Note: NCAA tournament toggle not available in Recap tab, skip that check
-                if (isConfTourney) {
-                    ourMargin *= 0.88;
-                } else if (isNeutral) {
-                    ourMargin *= 0.90;
-                }
-                if (isEarlySeason) {
-                    ourMargin *= 0.95;
+                    // Situational dampening (mirrors matchup predictor lines 1757-1774)
+                    // Only apply to fresh predictions; cached values already include dampening
+                    const isNeutral = odds && odds.neutral_site;
+                    const sameConf = dV.ConfShort && dV.ConfShort === dH.ConfShort;
+                    const currentMonth = new Date().getMonth(); // 0-indexed
+                    const isConfTourney = isNeutral && sameConf && currentMonth === 2; // March
+                    const isEarlySeason = currentMonth >= 10 || currentMonth === 0; // Nov-Jan
+                    // Note: NCAA tournament toggle not available in Recap tab, skip that check
+                    if (isConfTourney) {
+                        ourMargin *= 0.88;
+                    } else if (isNeutral) {
+                        ourMargin *= 0.90;
+                    }
+                    if (isEarlySeason) {
+                        ourMargin *= 0.95;
+                    }
+                    ourPredWinner = ourMargin >= 0 ? visitor : home;
                 }
 
                 const ourCorrect = ourPredWinner === inferredWinner;
