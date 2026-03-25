@@ -146,7 +146,7 @@ The `compare=true` flag runs both modes and returns a `bias_analysis` section qu
 
 ## Known Limitations
 - MC simulation uses 200 sims per game for speed.
-- Supplemental data (four factors, misc stats, height, point distribution) uses current-season values since the archive endpoint does not provide them.
+- Supplemental data (four factors, misc stats, height, point distribution) uses current-season values since the archive endpoint does not provide them. Historical mode (`use_historical=True`) addresses lookahead bias for core KenPom ratings by fetching per-date archive data.
 - Port 5001 may be in use from previous runs — use `pkill -f 'python3 app.py'` to clear it.
 - Without a real `KENPOM_API_KEY`, the main ratings page shows a 401 error but all calibration/self-test endpoints still work.
 - The `.cache.db` file should be deleted (`rm .cache.db`) when testing with a clean state.

@@ -3603,6 +3603,9 @@
                 const kpPredMargin = (g.HomePred || 0) - (g.VisitorPred || 0);
                 const kpPredWinner = kpPredMargin >= 0 ? home : visitor;
 
+                // Fetch odds early so situational dampening can be applied
+                const odds = findOdds(home, visitor);
+
                 // Our model: use cached prediction from Games tab if available, else run fresh
                 const cacheKey = visitor + '|' + home;
                 const cached = window._gamePredCache[cacheKey];
@@ -3629,17 +3632,41 @@
                     const sim = modelSimilarOpponents(dV, dH, 0, HCA, extra);
                     const cr = modelConRat(dV, dH, 0, HCA, extra);
                     const mc = await modelMonteCarlo(dV, dH, 0, HCA, 5000, extra);
-                    // Use dynamic weights if available (Part A)
-                    const rwEff = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.efficiency : 0.10;
-                    const rwSim = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.similar : 0.10;
-                    const rwCR = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.conrat : 0.20;
-                    const rwMC = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.mc : 0.60;
+                    // Use dynamic weights with data-quality adjustments (mirrors Matchup Predictor)
+                    const hasRichData = !!(ff1 && ff2 && ms1 && ms2 && ht1 && ht2);
+                    const avgSOS = ((dV.SOS || 0) + (dH.SOS || 0)) / 2;
+                    const avgGames = ((dV.Wins||0) + (dV.Losses||0) + (dH.Wins||0) + (dH.Losses||0)) / 2;
+                    let rwEff = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.efficiency : 0.10;
+                    let rwSim = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.similar : 0.10;
+                    let rwCR = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.conrat : 0.20;
+                    let rwMC = DYNAMIC_WEIGHTS ? DYNAMIC_WEIGHTS.mc : 0.60;
+                    if (!hasRichData) { rwMC -= 0.10; rwEff += 0.05; rwCR += 0.05; }
+                    if (avgGames < 15) { rwMC -= 0.05; rwCR += 0.05; }
+                    if (Math.abs(avgSOS) > 5) { rwSim += 0.03; rwMC -= 0.03; }
+                    const rwTotal = rwEff + rwSim + rwCR + rwMC;
+                    rwEff /= rwTotal; rwSim /= rwTotal; rwCR /= rwTotal; rwMC /= rwTotal;
                     ourMargin = calibrateSpread(eff.margin * rwEff + sim.margin * rwSim + cr.margin * rwCR + mc.margin * rwMC);
                     ourPredWinner = ourMargin >= 0 ? visitor : home;
                     // Compute predicted total from sub-model scores
                     const rawT1 = eff.t1Score * rwEff + sim.t1Score * rwSim + cr.t1Score * rwCR + mc.t1Score * rwMC;
                     const rawT2 = eff.t2Score * rwEff + sim.t2Score * rwSim + cr.t2Score * rwCR + mc.t2Score * rwMC;
                     ourPredTotal = calibrateTotal(rawT1 + rawT2);
+                }
+
+                // Situational dampening (mirrors matchup predictor lines 1757-1774)
+                const isNeutral = odds && odds.neutral_site;
+                const sameConf = dV.ConfShort && dV.ConfShort === dH.ConfShort;
+                const currentMonth = new Date().getMonth(); // 0-indexed
+                const isConfTourney = isNeutral && sameConf && currentMonth === 2; // March
+                const isEarlySeason = currentMonth >= 10 || currentMonth === 0; // Nov-Jan
+                // Note: NCAA tournament toggle not available in Recap tab, skip that check
+                if (isConfTourney) {
+                    ourMargin *= 0.88;
+                } else if (isNeutral) {
+                    ourMargin *= 0.90;
+                }
+                if (isEarlySeason) {
+                    ourMargin *= 0.95;
                 }
 
                 const ourCorrect = ourPredWinner === inferredWinner;
@@ -3653,8 +3680,7 @@
                 const ourSpreadError = hasActual ? Math.abs(ourPredHome - actualMargin) : null;
                 const kpSpreadError = hasActual ? Math.abs(kpPredMargin - actualMargin) : null;
 
-                // DraftKings spread from ESPN odds
-                const odds = findOdds(home, visitor);
+                // DraftKings spread from ESPN odds (odds already fetched above)
                 // spread is home-relative from ESPN (negative = home favored)
                 const dkSpread = odds ? parseFloat(odds.spread) : null;
                 const dkDetails = odds ? (odds.details || '') : '';

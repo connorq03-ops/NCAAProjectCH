@@ -7,7 +7,7 @@ Uses the full 4-model composite pipeline (KenPom + Similar Opponents + ConRat + 
 matching the frontend logic in static/index.html, with a built-in validation loop.
 
 Historical mode (use_historical=True) fetches per-date KenPom archive
-ratings so the backtest only sees data available at game time -- eliminating
+ratings so the backtest only sees data available at game time, eliminating
 lookahead bias. Supplemental data (four factors, misc stats, height, point
 distribution) still uses current-season values since the archive endpoint does
 not provide them. Weekly batching (Monday of each week) keeps API usage low.
