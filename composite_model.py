@@ -69,6 +69,27 @@ def calibrate_spread(raw_margin, coeffs=None):
     return sign * calibrated
 
 
+def calibrate_total(raw_total, coeffs=None):
+    """Apply total calibration — compress extreme totals toward the mean.
+
+    NCAA average total is ~140 points. Very high (160+) and very low (<120)
+    totals are overpredicted by raw efficiency models.
+
+    Args:
+        raw_total: Raw predicted total (t1_score + t2_score)
+        coeffs: Optional dict with keys 'center', 'compression' to override defaults.
+    """
+    center = 140.0  # NCAA average total
+    compression = 0.90  # Pull extreme totals 10% toward center
+    if coeffs:
+        center = coeffs.get('center', center)
+        compression = coeffs.get('compression', compression)
+
+    deviation = raw_total - center
+    calibrated = center + deviation * compression
+    return calibrated
+
+
 # ─── 3. Conference-tier HCA ──────────────────────────────────────────────────
 # Port of getHCA() — index.html line 730-734
 
@@ -484,7 +505,8 @@ def model_con_rat(t1, t2, hca1, hca2, extra=None):
 # Port of composite logic — index.html line 1582-1607
 
 def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
-                      weight_overrides=None, context=None):
+                      weight_overrides=None, context=None,
+                      total_calibration_coeffs=None):
     """Blend 4 model outputs with dynamic weights, apply spread calibration.
 
     Args:
@@ -495,6 +517,8 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
                           Data-quality adjustments are still applied on top.
         context: Optional dict with boolean flags for situational adjustments
                  (neutral_site, conf_tournament, ncaa_tournament, early_season).
+        total_calibration_coeffs: Optional dict with keys 'center', 'compression'
+                                  passed through to calibrate_total().
     """
 
     # Dynamic weights based on data quality
@@ -547,7 +571,10 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
                     + cr['t1_score'] * w_cr + mc['t1_score'] * w_mc)
     raw_t2_score = (eff['t2_score'] * w_eff + sim['t2_score'] * w_sim
                     + cr['t2_score'] * w_cr + mc['t2_score'] * w_mc)
-    score_mid = (raw_t1_score + raw_t2_score) / 2
+    raw_total = raw_t1_score + raw_t2_score
+    # Apply total calibration to the midpoint (independent of spread calibration)
+    calibrated_total = calibrate_total(raw_total, coeffs=total_calibration_coeffs)
+    score_mid = calibrated_total / 2
     composite_t1_score = score_mid + composite_margin / 2
     composite_t2_score = score_mid - composite_margin / 2
 
@@ -643,6 +670,19 @@ def self_test():
     # base = 7*0.92 + 7*0.85 = 12.39; 12.39 + log(1+3)*3.5 = 12.39+4.85 = 17.24
     ok = 16 < cs20 < 18
     results['calibrate_spread(20) < 20 (compressed)'] = 'PASS' if ok else f'FAIL (got {cs20:.3f})'
+
+    # --- calibrate_total ---
+    ct140 = calibrate_total(140)
+    ok = abs(ct140 - 140.0) < 0.01  # center should stay at center
+    results['calibrate_total(140) == 140'] = 'PASS' if ok else f'FAIL (got {ct140:.3f})'
+
+    ct160 = calibrate_total(160)
+    ok = ct160 < 160 and ct160 > 140  # compressed toward center
+    results['calibrate_total(160) compressed'] = 'PASS' if ok else f'FAIL (got {ct160:.3f})'
+
+    ct120 = calibrate_total(120)
+    ok = ct120 > 120 and ct120 < 140  # compressed toward center
+    results['calibrate_total(120) compressed'] = 'PASS' if ok else f'FAIL (got {ct120:.3f})'
 
     # --- gaussian_cdf ---
     cases_cdf = [(0, 0.5, 0.01), (1, 0.8413, 0.01), (-1, 0.1587, 0.01)]

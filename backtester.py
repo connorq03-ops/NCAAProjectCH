@@ -605,7 +605,52 @@ class Backtester:
                     'mc': mc['margin'],
                 },
                 'sub_model_signed_errors': sub_model_signed_errors,
+                'sub_model_totals': {
+                    'efficiency': eff['t1_score'] + eff['t2_score'],
+                    'similar': sim['t1_score'] + sim['t2_score'],
+                    'conrat': cr['t1_score'] + cr['t2_score'],
+                    'mc': mc['t1_score'] + mc['t2_score'],
+                },
             }
+
+            # O/U (Over/Under) tracking
+            vegas_ou = score.get('over_under')
+            pred_result['vegas_ou'] = vegas_ou
+
+            if vegas_ou is not None and vegas_ou != 0 and pred_result['actual_total'] > 0:
+                try:
+                    vegas_ou_f = float(vegas_ou)
+                except (TypeError, ValueError):
+                    vegas_ou_f = None
+
+                if vegas_ou_f is not None and vegas_ou_f > 0:
+                    pred_result['ou_edge'] = round(abs(pred_result['predicted_total'] - vegas_ou_f), 1)
+                    pred_result['ou_bet_side'] = 'over' if pred_result['predicted_total'] > vegas_ou_f else 'under'
+                    actual_vs_ou = pred_result['actual_total'] - vegas_ou_f
+                    if actual_vs_ou == 0:
+                        pred_result['ou_result'] = 'push'
+                    elif pred_result['ou_bet_side'] == 'over':
+                        pred_result['ou_result'] = 'hit' if actual_vs_ou > 0 else 'miss'
+                    else:
+                        pred_result['ou_result'] = 'hit' if actual_vs_ou < 0 else 'miss'
+
+                    # Signed total error: positive = we predicted higher total than actual
+                    pred_result['total_signed_error'] = round(pred_result['predicted_total'] - pred_result['actual_total'], 1)
+
+                    # Flag possible overtime games (total > 170 is unusual for regulation)
+                    pred_result['is_overtime'] = pred_result['actual_total'] > 170
+                else:
+                    pred_result['ou_edge'] = None
+                    pred_result['ou_bet_side'] = None
+                    pred_result['ou_result'] = None
+                    pred_result['total_signed_error'] = round(pred_result['predicted_total'] - pred_result['actual_total'], 1) if pred_result['actual_total'] > 0 else None
+                    pred_result['is_overtime'] = False
+            else:
+                pred_result['ou_edge'] = None
+                pred_result['ou_bet_side'] = None
+                pred_result['ou_result'] = None
+                pred_result['total_signed_error'] = round(pred_result['predicted_total'] - pred_result['actual_total'], 1) if pred_result['actual_total'] > 0 else None
+                pred_result['is_overtime'] = pred_result.get('actual_total', 0) > 170
 
             # Situational context tagging
             is_neutral = score.get('neutral_site', False)
@@ -907,6 +952,79 @@ class Backtester:
                     'bias': 'overpredicts' if mse > 1.5 else 'underpredicts' if mse < -1.5 else 'neutral',
                 }
 
+        # ── O/U (Over/Under) metrics ──
+        ou_results = [r for r in results if r.get('ou_result') is not None]
+        ou_hits = sum(1 for r in ou_results if r['ou_result'] == 'hit')
+        ou_misses = sum(1 for r in ou_results if r['ou_result'] == 'miss')
+        ou_pushes = sum(1 for r in ou_results if r['ou_result'] == 'push')
+        ou_total = ou_hits + ou_misses
+        ou_pct = round(ou_hits / ou_total * 100, 1) if ou_total > 0 else None
+
+        # High-conviction O/U (edge >= 3 pts)
+        ou_hc = [r for r in ou_results if (r.get('ou_edge') or 0) >= 3]
+        ou_hc_hits = sum(1 for r in ou_hc if r['ou_result'] == 'hit')
+        ou_hc_misses = sum(1 for r in ou_hc if r['ou_result'] == 'miss')
+        ou_hc_total = ou_hc_hits + ou_hc_misses
+        ou_hc_pct = round(ou_hc_hits / ou_hc_total * 100, 1) if ou_hc_total > 0 else None
+
+        # Total prediction error
+        total_errors = [abs(r['predicted_total'] - r['actual_total']) for r in results
+                        if r.get('predicted_total') and r.get('actual_total')]
+        total_signed_errors = [r['total_signed_error'] for r in results if r.get('total_signed_error') is not None]
+        avg_total_error = round(sum(total_errors) / len(total_errors), 1) if total_errors else None
+        mean_total_signed_error = round(sum(total_signed_errors) / len(total_signed_errors), 2) if total_signed_errors else None
+
+        # O/U by edge bucket
+        ou_edge_buckets = {'0-2': [], '2-4': [], '4-6': [], '6+': []}
+        for r in ou_results:
+            edge = r.get('ou_edge') or 0
+            if edge < 2:
+                ou_edge_buckets['0-2'].append(r)
+            elif edge < 4:
+                ou_edge_buckets['2-4'].append(r)
+            elif edge < 6:
+                ou_edge_buckets['4-6'].append(r)
+            else:
+                ou_edge_buckets['6+'].append(r)
+
+        ou_edge_stats = {}
+        for bname, games in ou_edge_buckets.items():
+            if games:
+                h = sum(1 for g in games if g['ou_result'] == 'hit')
+                m = sum(1 for g in games if g['ou_result'] == 'miss')
+                t = h + m
+                ou_edge_stats[bname] = {
+                    'games': t,
+                    'hit_pct': round(h / t * 100, 1) if t > 0 else None,
+                    'record': f"{h}-{m}",
+                }
+
+        # Sub-model total accuracy (which sub-model predicts totals best)
+        sub_model_total_errors = {'efficiency': [], 'similar': [], 'conrat': [], 'mc': []}
+        for r in results:
+            subs = r.get('sub_model_totals', {})
+            actual_t = r.get('actual_total', 0)
+            if actual_t > 0:
+                for model_name, model_total in subs.items():
+                    if model_total > 0:
+                        sub_model_total_errors[model_name].append(abs(model_total - actual_t))
+
+        sub_model_total_accuracy = {}
+        for name, errs in sub_model_total_errors.items():
+            if errs:
+                sub_model_total_accuracy[name] = {
+                    'avg_total_error': round(sum(errs) / len(errs), 1),
+                    'games': len(errs),
+                }
+
+        # Total bias direction
+        total_bias = 'neutral'
+        if mean_total_signed_error is not None:
+            if mean_total_signed_error > 2:
+                total_bias = 'overpredicts'
+            elif mean_total_signed_error < -2:
+                total_bias = 'underpredicts'
+
         return {
             'total_games': total,
             'our_pick_accuracy': round(picks_correct / total * 100, 1) if total else 0,
@@ -939,6 +1057,18 @@ class Backtester:
             'calibration_recommendations': self._compute_calibration_recommendations(signed_bucket_stats, calibration_coeffs=calibration_coeffs),
             'by_date': daily,
             'by_context': by_context,
+            # O/U metrics
+            'ou_pct': ou_pct,
+            'ou_record': f"{ou_hits}-{ou_misses}" if ou_total > 0 else None,
+            'ou_pushes': ou_pushes,
+            'ou_hc_pct': ou_hc_pct,
+            'ou_hc_record': f"{ou_hc_hits}-{ou_hc_misses}" if ou_hc_total > 0 else None,
+            'avg_total_error': avg_total_error,
+            'mean_total_signed_error': mean_total_signed_error,
+            'total_bias': total_bias,
+            'ou_by_edge': ou_edge_stats,
+            'sub_model_total_accuracy': sub_model_total_accuracy,
+            'total_calibration_recommendations': self._compute_total_calibration_recommendations(results),
             'results': results,
         }
 
@@ -1011,6 +1141,37 @@ class Backtester:
             }
 
         return recommendations
+
+    def _compute_total_calibration_recommendations(self, results, total_coeffs=None):
+        """Compute recommended total calibration adjustments."""
+        tc = total_coeffs or {}
+        current_center = tc.get('center', 140.0)
+        current_compression = tc.get('compression', 0.90)
+
+        total_signed_errors = [r['total_signed_error'] for r in results
+                               if r.get('total_signed_error') is not None]
+        if len(total_signed_errors) < 20:
+            return {}
+
+        mean_error = sum(total_signed_errors) / len(total_signed_errors)
+
+        # If we systematically overpredict totals, increase compression (pull more toward center)
+        # Each 1pt of mean error -> adjust compression by 0.01
+        new_compression = max(0.70, min(1.0, current_compression - mean_error * 0.01))
+
+        # If the center is wrong, adjust it
+        # Mean error > 0 means we predict too high -> lower center slightly
+        new_center = max(120, min(160, current_center - mean_error * 0.3))
+
+        return {
+            'current_center': current_center,
+            'recommended_center': round(new_center, 1),
+            'current_compression': current_compression,
+            'recommended_compression': round(new_compression, 3),
+            'mean_total_signed_error': round(mean_error, 2),
+            'sample_size': len(total_signed_errors),
+            'confidence': 'high' if len(total_signed_errors) >= 100 else 'low',
+        }
 
     def _compute_conf_recommendations(self, by_conference, conf_overrides=None):
         """Identify conferences where the model is systematically biased.
