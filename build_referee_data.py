@@ -119,7 +119,15 @@ def fetch_summary(eid, cache_dir):
 # ─── Extraction Helpers ──────────────────────────────────────────────────────
 
 def extract_fouls_from_summary(summary):
-    """Extract total personal fouls and FTA for home/away from game summary."""
+    """Extract total personal fouls and FTA for home/away from game summary.
+
+    ESPN's summary API returns team statistics in two possible formats:
+    1. Named entries: each stat is a dict with 'name', 'displayValue', 'label'
+       (e.g. name='fouls', displayValue='18')
+    2. Tabular: stat groups with 'labels' and 'totals' arrays
+       (e.g. labels=['PF','FTA'], totals=['18','22'])
+    This function handles both formats.
+    """
     if not summary:
         return None
 
@@ -134,13 +142,28 @@ def extract_fouls_from_summary(summary):
         stats = team_data.get("statistics", [])
         fouls = None
         fta = None
+
         for stat_group in stats:
-            # Look in the stats array for fouls and FTA
+            # Format 1: Named entries (name='fouls', displayValue='18')
+            stat_name = stat_group.get("name", "")
+            display_value = stat_group.get("displayValue", "")
+
+            if stat_name == "fouls" and display_value:
+                try:
+                    fouls = int(display_value)
+                except (ValueError, TypeError):
+                    pass
+            elif stat_name == "freeThrowsMade-freeThrowsAttempted" and display_value:
+                # Format: "7-14" -> FTA is the second number
+                parts = display_value.split("-")
+                if len(parts) == 2:
+                    try:
+                        fta = int(parts[1])
+                    except (ValueError, TypeError):
+                        pass
+
+            # Format 2: Tabular (labels/totals arrays)
             labels = stat_group.get("labels", [])
-            display_values = stat_group.get("displayValue", "")
-            # Alternative: stats may be structured differently
-            stats_list = stat_group.get("athletes", [])
-            # Try the totals row
             totals = stat_group.get("totals", [])
             if labels and totals:
                 for idx, label in enumerate(labels):
@@ -154,6 +177,7 @@ def extract_fouls_from_summary(summary):
                             fta = int(totals[idx])
                         except (ValueError, TypeError):
                             pass
+
         result[home_away] = {"fouls": fouls, "fta": fta}
 
     if "home" in result and "away" in result:
