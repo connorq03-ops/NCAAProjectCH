@@ -6,7 +6,7 @@ Computes accuracy metrics: pick %, ATS %, MAE, by conference, by spread bucket.
 Uses the full 4-model composite pipeline (KenPom + Similar Opponents + ConRat + MC)
 matching the frontend logic in static/index.html, with a built-in validation loop.
 
-Historical mode (use_historical=True, the default) fetches per-date KenPom archive
+Historical mode (use_historical=True) fetches per-date KenPom archive
 ratings so the backtest only sees data available at game time -- eliminating
 lookahead bias. Supplemental data (four factors, misc stats, height, point
 distribution) still uses current-season values since the archive endpoint does
@@ -164,7 +164,7 @@ class Backtester:
         Ratings don't change dramatically within a week, so this is a good tradeoff.
 
         Returns:
-            list of team archive dicts, or None if unavailable.
+            tuple: (list of team archive dicts or None, was_api_call: bool)
         """
         dt = datetime.strptime(date_str, '%Y-%m-%d')
         monday = dt - timedelta(days=dt.weekday())
@@ -174,14 +174,14 @@ class Backtester:
         cache_params = {'date': monday_str}
         cached = cache.get(cache_key, cache_params, ttl=86400 * 365)
         if cached is not None:
-            return cached
+            return cached, False
 
         data = kenpom_client.get_archive(date=monday_str)
         cache.set(cache_key, cache_params, data)
-        return data
+        return data, True
 
     def backtest_date_range(self, start_date, end_date, kenpom_client, cache,
-                            use_historical=True):
+                            use_historical=False):
         """
         Backtest a range of dates using KenPom fanmatch data + ESPN scores.
         This is the full automated pipeline that doesn't require pre-saved predictions.
@@ -192,9 +192,10 @@ class Backtester:
             end_date: YYYY-MM-DD end date
             kenpom_client: KenpomClient instance
             cache: SQLiteCache instance
-            use_historical: If True (default), use per-date archive ratings to
+            use_historical: If True, use per-date archive ratings to
                 eliminate lookahead bias and enable momentum enrichment.
-                If False, use current-day ratings (legacy behavior).
+                If False (default), use current-day ratings (legacy behavior).
+                The UI checkbox sends historical=true explicitly when checked.
         """
         # -- Load stored calibration overrides --
         stored_cal = cache.get('spread_calibration', {}, ttl=86400 * 365) or {}
@@ -246,8 +247,9 @@ class Backtester:
             # Build team_data for this day
             if use_historical:
                 try:
-                    archive_data = self._get_archive_for_date(date_str, kenpom_client, cache)
-                    archive_calls += 1
+                    archive_data, was_api_call = self._get_archive_for_date(date_str, kenpom_client, cache)
+                    if was_api_call:
+                        archive_calls += 1
                     if archive_data and isinstance(archive_data, list) and len(archive_data) > 0:
                         # Pass pre-fetched archive_data to avoid a redundant API call
                         historical_team_data = prefetch_historical_team_data(
@@ -430,7 +432,7 @@ class Backtester:
             # Skip momentum if 28 days ago is before season start (November)
             if momentum_date >= f'{year_for_season}-11-01':
                 try:
-                    arch_28d = self._get_archive_for_date(momentum_date, kenpom_client, cache)
+                    arch_28d, _ = self._get_archive_for_date(momentum_date, kenpom_client, cache)
                     if arch_28d and isinstance(arch_28d, list):
                         momentum_archive_map = {t.get('TeamName', ''): t for t in arch_28d}
                 except Exception:
