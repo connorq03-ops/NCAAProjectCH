@@ -3656,7 +3656,7 @@
                     // Only apply to fresh predictions; cached values already include dampening
                     const isNeutral = odds && odds.neutral_site;
                     const sameConf = dV.ConfShort && dV.ConfShort === dH.ConfShort;
-                    const currentMonth = new Date().getMonth(); // 0-indexed
+                    const currentMonth = recapDate.getMonth(); // 0-indexed, use recap date not today
                     const isConfTourney = isNeutral && sameConf && currentMonth === 2; // March
                     const isEarlySeason = currentMonth >= 10 || currentMonth === 0; // Nov-Jan
                     // Note: NCAA tournament toggle not available in Recap tab, skip that check
