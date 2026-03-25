@@ -1,158 +1,98 @@
-# Testing the Composite Model & Backtester Pipeline
+# Testing the Composite Model & Recap Tab
 
-## Overview
-The composite model pipeline (`composite_model.py`) and backtester (`backtester.py`) have built-in self-tests that validate all model functions with synthetic data. These do NOT require a KenPom API key.
+## Environment Setup
 
-## Devin Secrets Needed
-- `KENPOM_API_KEY` — Required to start Flask app and run real backtests. NOT required for self-tests.
-- `ANTHROPIC_API_KEY` — Optional, only for injury analysis features.
+1. **Start Flask server:**
+   ```bash
+   cd /home/ubuntu/repos/NCAAProjectCH
+   export KENPOM_API_KEY=dummy  # Use real key if available
+   python3 app.py &
+   # App runs on localhost:5001
+   ```
 
-## Quick Self-Test (No API Key Needed)
+2. **Install dependencies if needed:**
+   ```bash
+   pip install flask flask-cors python-dotenv requests beautifulsoup4 lxml anthropic numpy
+   ```
 
-### Standalone composite_model.py self-test (14 checks)
-```bash
-cd /home/ubuntu/repos/NCAAProjectCH
-python3 composite_model.py
+3. **Cache Management:**
+   - SQLite cache at `.cache.db` uses hashed keys (MD5), not human-readable
+   - Cache has TTL; refresh timestamps before testing stale data:
+     ```python
+     import sqlite3, time
+     conn = sqlite3.connect('.cache.db')
+     conn.execute('UPDATE cache SET ts = ?', (time.time(),))
+     conn.commit()
+     ```
+   - Frontend prediction cache (`window._gamePredCache`) is in-memory only, populated when users click "Predict" on Games tab
+   - Dates with cached fanmatch + archive data (as of March 2026): 2026-03-09
+
+## Testing the Recap Tab
+
+### Navigating to Recap Tab with a specific date
+The date input doesn't respond well to direct typing. Use JavaScript injection via address bar:
 ```
-Expected: All 14 lines print `[PASS]`, final line says "All tests PASSED."
-
-### Standalone Backtester self-test (7 checks)
-```bash
-python3 -c "
-from backtester import Backtester
-bt = Backtester()
-results = bt.run_self_test()
-for k, v in results.items():
-    print(f'  {k}: {v}')
-all_pass = all(v == 'PASS' for v in results.values())
-print('ALL PASS' if all_pass else 'SOME FAILED')
-"
+javascript:void(document.querySelector('input[type="date"]').value='2026-03-09')
 ```
-Expected: All 7 tests show PASS.
-
-## Flask Self-Test Endpoint
-
-To test the `/api/backtest/self-test` endpoint via HTTP:
-
-1. Start Flask with a dummy API key (self-test doesn't call KenPom):
-```bash
-KENPOM_API_KEY=dummy python3 app.py &
-sleep 3
+Then trigger the change event:
 ```
-
-2. Hit the self-test endpoint:
-```bash
-curl -s http://localhost:5001/api/backtest/self-test | python3 -m json.tool
+javascript:void(document.querySelector('input[type="date"]').dispatchEvent(new Event('change',{bubbles:true})))
 ```
 
-3. Expected: HTTP 200, JSON with `model_tests` (14 PASS) and `backtester_tests` (7 PASS).
+### Verifying Weight Adjustments (Issue #3)
+Add temporary `console.log` in the fresh-prediction branch (around line 3635-3650) to log:
+- `hasRichData`, `avgSOS`, `avgGames` values
+- Raw vs adjusted weights
+- Look for `avgGames < 15` adjustment (common with cached data that has 0 wins/losses)
 
-## Calibration API Endpoints
+### Verifying Situational Dampening (Issue #4)
+Add temporary `console.log` after the dampening block (around line 3655-3670) to log:
+- `recapDate.getMonth()` (should match the selected date, not today)
+- `isNeutral`, `isConfTourney`, `isEarlySeason` flags
+- Pre/post dampening margins
+- For March dates: conference tournament games (neutral + same conf) get x0.88
+- For Nov-Jan dates: early season games get x0.95
 
-The calibration feedback loop uses 4 endpoints. All work with `KENPOM_API_KEY=dummy`.
-
-### Spread Calibration (GET/POST /api/calibration)
-```bash
-# GET defaults (when no calibration stored)
-curl -s http://localhost:5001/api/calibration | python3 -m json.tool
-# Expected: {close_coeff: 0.92, moderate_coeff: 0.85, log_multiplier: 3.5, last_updated: null}
-
-# POST custom values
-curl -s -X POST http://localhost:5001/api/calibration \
-  -H 'Content-Type: application/json' \
-  -d '{"close_coeff": 0.88, "moderate_coeff": 0.82, "log_multiplier": 4.0, "sample_size": 150}' | python3 -m json.tool
-
-# GET should return stored values (NOT defaults)
-curl -s http://localhost:5001/api/calibration | python3 -m json.tool
+### Verifying No Double-Dampening (Issue #4)
+Inject a cached prediction via JavaScript:
 ```
-
-Bounds clamping: `close_coeff` [0.80-1.0], `moderate_coeff` [0.70-0.95], `log_multiplier` [2.0-5.0]
-
-### Conference Adjustments (GET/POST /api/conf-adjustments)
-```bash
-# GET defaults (empty when no overrides stored)
-curl -s http://localhost:5001/api/conf-adjustments | python3 -m json.tool
-# Expected: {}
-
-# POST per-conference overrides
-curl -s -X POST http://localhost:5001/api/conf-adjustments \
-  -H 'Content-Type: application/json' \
-  -d '{"SEC": 0.04, "WCC": 0.08, "B12": 0.05}' | python3 -m json.tool
-
-# GET should return stored values
-curl -s http://localhost:5001/api/conf-adjustments | python3 -m json.tool
+javascript:void(window._gamePredCache['TeamA|TeamB']={ourMargin:-12.5,ourPredWinner:'TeamB',ourTotal:140})
 ```
+Then reload Recap — the `[RECAP-CACHED]` log should show the exact injected margin with no dampening applied.
 
-Bounds clamping: all values clamped to [0.01, 0.12]
+## Running Validation Scripts
 
-### Frontend Loading Verification
-After POSTing custom calibration values, open browser to `http://localhost:5001` and check the console for:
-- `[calibration] Loaded:` — should show custom values, not defaults
-- `[conf-adj] Loaded overrides:` — should show posted conference overrides
-
-You can also verify via browser console:
-```js
-JSON.stringify(SPREAD_COEFFS)       // e.g. {"close":0.88,"moderate":0.82,"logMult":4.2}
-JSON.stringify(CONF_SCALE_OVERRIDES) // e.g. {"SEC":0.04,"WCC":0.09}
-```
-
-### Cache Key Consistency Check
-The `_key` method in `SQLiteCache` (app.py) uses `md5(endpoint + json.dumps(params))`. To verify POST and GET use the same key:
+### Referee Data (Issue #1)
 ```bash
 python3 -c "
-import hashlib, json, sqlite3
-def _key(endpoint, params):
-    raw = endpoint + json.dumps(params, sort_keys=True, default=str)
-    return hashlib.md5(raw.encode()).hexdigest()
-cal_key = _key('spread_calibration', {})
-conf_key = _key('conf_adjustments', {})
-conn = sqlite3.connect('.cache.db')
-keys = [r[0] for r in conn.execute('SELECT key FROM cache').fetchall()]
-print(f'spread_calibration match: {cal_key in keys}')
-print(f'conf_adjustments match: {conf_key in keys}')
-conn.close()
+import json
+with open('static/referee_data.json') as f:
+    data = json.load(f)
+refs = data.get('referees', {})
+print(f'Total referees: {len(refs)}')
+climates = [r['foulClimate'] for r in refs.values()]
+print(f'Mean: {sum(climates)/len(climates):.3f}')
+print(f'Range: [{min(climates):.3f}, {max(climates):.3f}]')
 "
 ```
+Expect: 452 refs, mean ~0.998, range [0.75, 1.30]
 
-## Real Backtest (Requires KenPom API Key)
-
-To run a real backtest against ESPN scores:
+### Style Correlation Validation (Issue #2)
 ```bash
-curl 'http://localhost:5001/api/backtest?start=2025-03-01&end=2025-03-05'
+python3 validate_style_correlations.py --skip-espn --sims 100
 ```
-Expected pick accuracy: ~65-72%, spread error: ~8-12 pts.
+Runs MC simulations and checks internal consistency. Use `--skip-espn` when no ESPN scraping is needed.
 
-## Historical Backtest Mode
-
-The backtester supports two modes controlled by `use_historical` (default `False` for backward compat; the UI checkbox sends `true` explicitly):
-
-- **Historical mode** (`use_historical=True`): Fetches per-date KenPom archive ratings so the backtest only uses data available at game time, eliminating lookahead bias. Momentum enrichment is also enabled (compares current date ratings to 28 days prior). Weekly batching (Monday of each week) keeps API calls low.
-- **Legacy mode** (`use_historical=False`): Uses current-day ratings for all dates (faster but has lookahead bias).
-
-### API Endpoints
+### Backtester Docstring (Issue #5)
 ```bash
-# Historical backtest (default)
-curl 'http://localhost:5001/api/backtest?start=2025-03-01&end=2025-03-05&historical=true'
-
-# Legacy backtest (current-day ratings)
-curl 'http://localhost:5001/api/backtest?start=2025-03-01&end=2025-03-05'
-
-# Dedicated historical endpoint with optional bias comparison
-curl 'http://localhost:5001/api/backtest/historical?start=2025-03-01&end=2025-03-05'
-curl 'http://localhost:5001/api/backtest/historical?start=2025-03-01&end=2025-03-05&compare=true'
+python3 -c "import backtester; print(backtester.__doc__)"
 ```
-
-The `compare=true` flag runs both modes and returns a `bias_analysis` section quantifying how much lookahead bias inflates accuracy.
+Should describe historical mode and legacy mode without stale "KNOWN LIMITATION" phrasing.
 
 ## Known Limitations
-- MC simulation uses 200 sims per game for speed.
-- Supplemental data (four factors, misc stats, height, point distribution) uses current-season values since the archive endpoint does not provide them. Historical mode (`use_historical=True`) addresses lookahead bias for core KenPom ratings by fetching per-date archive data.
-- Port 5001 may be in use from previous runs — use `pkill -f 'python3 app.py'` to clear it.
-- Without a real `KENPOM_API_KEY`, the main ratings page shows a 401 error but all calibration/self-test endpoints still work.
-- The `.cache.db` file should be deleted (`rm .cache.db`) when testing with a clean state.
 
-## Dependencies
-```bash
-pip install -r requirements.txt
-```
-Key packages: flask, flask-cors, requests, python-dotenv, beautifulsoup4, lxml, anthropic
+- Without a real KenPom API key (`$KENPOM_API_KEY`), can only test with cached data
+- The Games tab "Predict" button requires live KenPom data, so the full Games→Recap flow can't be tested without credentials
+- `use_historical=True` in the backtester addresses lookahead bias for core ratings; supplemental data still uses current-season values
+- The referee data `meta.gamesAnalyzed` field may be 0 if not populated during scrape; the actual ref data is still valid
+- Referee field is `totalGames` (not `gamesOfficiated` as originally documented)
