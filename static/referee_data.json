@@ -1,246 +1,3176 @@
 {
   "_metadata": {
     "description": "NCAA referee foul-calling tendencies",
-    "lastUpdated": "2026-03-24",
-    "source": "ESPN game data + manual curation from public sources",
-    "notes": "foulClimate: 1.0 = average. >1.0 = more fouls called. <1.0 = fewer fouls.",
-    "gamesAnalyzed": 0
+    "lastUpdated": "2026-03-25",
+    "source": "ESPN game data",
+    "gamesAnalyzed": 1131,
+    "leagueAvgFoulsPerGame": 34.5,
+    "notes": "foulClimate: 1.0 = average. >1.0 = more fouls called. <1.0 = fewer fouls."
   },
   "referees": {
-    "TV Teddy Valentine": {
-      "foulClimate": 1.18,
-      "homeWhistleBias": 0.03,
-      "totalGames": 145
+    "Nomi Kidwai": {
+      "foulClimate": 1.132,
+      "homeWhistleBias": 0.045,
+      "totalGames": 5,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 46.4
     },
-    "Ted Valentine": {
-      "foulClimate": 1.18,
-      "homeWhistleBias": 0.03,
-      "totalGames": 145
+    "Tommy Johnson": {
+      "foulClimate": 0.991,
+      "homeWhistleBias": 0.015,
+      "totalGames": 26,
+      "avgFoulsPerGame": 34.2,
+      "avgFTAPerGame": 39.8
     },
-    "Jamie Luckie": {
-      "foulClimate": 1.14,
-      "homeWhistleBias": 0.02,
-      "totalGames": 130
-    },
-    "Roger Ayers": {
-      "foulClimate": 1.12,
-      "homeWhistleBias": 0.02,
-      "totalGames": 155
-    },
-    "Karl Hess": {
-      "foulClimate": 1.15,
-      "homeWhistleBias": 0.03,
-      "totalGames": 120
-    },
-    "Pat Adams": {
-      "foulClimate": 1.1,
-      "homeWhistleBias": 0.02,
-      "totalGames": 140
-    },
-    "Tony Greene": {
-      "foulClimate": 1.11,
-      "homeWhistleBias": 0.02,
-      "totalGames": 125
-    },
-    "Les Jones": {
-      "foulClimate": 1.09,
-      "homeWhistleBias": 0.01,
-      "totalGames": 110
-    },
-    "Ray Natili": {
-      "foulClimate": 1.08,
-      "homeWhistleBias": 0.02,
-      "totalGames": 95
-    },
-    "Brian Dorsey": {
-      "foulClimate": 1.1,
-      "homeWhistleBias": 0.02,
-      "totalGames": 88
-    },
-    "John Higgins": {
-      "foulClimate": 1.08,
-      "homeWhistleBias": 0.01,
-      "totalGames": 198
+    "De Selle Dean": {
+      "foulClimate": 0.992,
+      "homeWhistleBias": -0.009,
+      "totalGames": 6,
+      "avgFoulsPerGame": 34.2,
+      "avgFTAPerGame": 39.8
     },
     "Kipp Kissinger": {
-      "foulClimate": 1.06,
-      "homeWhistleBias": 0.02,
-      "totalGames": 135
-    },
-    "Mike Eades": {
-      "foulClimate": 1.05,
-      "homeWhistleBias": 0.01,
-      "totalGames": 140
+      "foulClimate": 0.915,
+      "homeWhistleBias": 0.026,
+      "totalGames": 65,
+      "avgFoulsPerGame": 31.5,
+      "avgFTAPerGame": 36.3
     },
     "Keith Kimble": {
-      "foulClimate": 1.07,
-      "homeWhistleBias": 0.02,
-      "totalGames": 100
+      "foulClimate": 0.943,
+      "homeWhistleBias": 0.023,
+      "totalGames": 56,
+      "avgFoulsPerGame": 32.5,
+      "avgFTAPerGame": 36.8
     },
-    "Bert Smith": {
-      "foulClimate": 1.06,
-      "homeWhistleBias": 0.01,
-      "totalGames": 160
+    "Bart Lenox": {
+      "foulClimate": 1.049,
+      "homeWhistleBias": 0.018,
+      "totalGames": 32,
+      "avgFoulsPerGame": 36.1,
+      "avgFTAPerGame": 43.5
     },
-    "Brian O'Connell": {
-      "foulClimate": 1.04,
-      "homeWhistleBias": 0.02,
-      "totalGames": 85
+    "Jeff Clark": {
+      "foulClimate": 0.905,
+      "homeWhistleBias": 0.017,
+      "totalGames": 16,
+      "avgFoulsPerGame": 31.2,
+      "avgFTAPerGame": 33.8
     },
-    "Lamar Simpson": {
-      "foulClimate": 1.05,
-      "homeWhistleBias": 0.01,
-      "totalGames": 92
-    },
-    "Bo Boroski": {
-      "foulClimate": 1.02,
-      "homeWhistleBias": 0.02,
-      "totalGames": 175
-    },
-    "James Breeding": {
-      "foulClimate": 1.01,
-      "homeWhistleBias": 0.02,
-      "totalGames": 155
-    },
-    "Tony Padilla": {
-      "foulClimate": 1.0,
-      "homeWhistleBias": 0.02,
-      "totalGames": 120
-    },
-    "Doug Sirmons": {
-      "foulClimate": 1.0,
-      "homeWhistleBias": 0.01,
-      "totalGames": 145
-    },
-    "Randy McCall": {
+    "Tim Clougherty": {
       "foulClimate": 0.99,
-      "homeWhistleBias": 0.02,
-      "totalGames": 110
+      "homeWhistleBias": 0.03,
+      "totalGames": 21,
+      "avgFoulsPerGame": 34.1,
+      "avgFTAPerGame": 38.1
     },
-    "Terry Oglesby": {
-      "foulClimate": 1.01,
-      "homeWhistleBias": 0.02,
-      "totalGames": 130
+    "Vasili Mallios": {
+      "foulClimate": 0.924,
+      "homeWhistleBias": 0.036,
+      "totalGames": 6,
+      "avgFoulsPerGame": 31.8,
+      "avgFTAPerGame": 34.8
+    },
+    "Nathan Farrell": {
+      "foulClimate": 1.003,
+      "homeWhistleBias": 0.013,
+      "totalGames": 20,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 40.0
+    },
+    "Michael Palau": {
+      "foulClimate": 0.971,
+      "homeWhistleBias": 0.031,
+      "totalGames": 9,
+      "avgFoulsPerGame": 33.4,
+      "avgFTAPerGame": 34.7
+    },
+    "Tim Smith": {
+      "foulClimate": 0.933,
+      "homeWhistleBias": 0.038,
+      "totalGames": 8,
+      "avgFoulsPerGame": 32.1,
+      "avgFTAPerGame": 37.5
+    },
+    "Brian McNutt": {
+      "foulClimate": 0.853,
+      "homeWhistleBias": 0.046,
+      "totalGames": 8,
+      "avgFoulsPerGame": 29.4,
+      "avgFTAPerGame": 33.5
     },
     "Jeffrey Anderson": {
-      "foulClimate": 1.0,
-      "homeWhistleBias": 0.01,
-      "totalGames": 105
+      "foulClimate": 0.977,
+      "homeWhistleBias": 0.014,
+      "totalGames": 43,
+      "avgFoulsPerGame": 33.7,
+      "avgFTAPerGame": 36.6
     },
-    "Bill Covington": {
-      "foulClimate": 0.98,
-      "homeWhistleBias": 0.02,
-      "totalGames": 88
-    },
-    "Pat Driscoll": {
-      "foulClimate": 1.02,
-      "homeWhistleBias": 0.02,
-      "totalGames": 115
-    },
-    "Courtney Green": {
-      "foulClimate": 0.96,
-      "homeWhistleBias": 0.01,
-      "totalGames": 100
-    },
-    "Mike Roberts": {
-      "foulClimate": 0.97,
-      "homeWhistleBias": 0.02,
-      "totalGames": 130
-    },
-    "D.J. Carstensen": {
-      "foulClimate": 0.95,
-      "homeWhistleBias": 0.01,
-      "totalGames": 85
-    },
-    "Rick Crawford": {
-      "foulClimate": 0.96,
-      "homeWhistleBias": 0.02,
-      "totalGames": 125
-    },
-    "Brian Shuffett": {
-      "foulClimate": 0.97,
-      "homeWhistleBias": 0.01,
-      "totalGames": 90
+    "Anthony Burris": {
+      "foulClimate": 1.019,
+      "homeWhistleBias": 0.041,
+      "totalGames": 9,
+      "avgFoulsPerGame": 35.1,
+      "avgFTAPerGame": 38.6
     },
     "Brent Hampton": {
-      "foulClimate": 0.95,
-      "homeWhistleBias": 0.02,
-      "totalGames": 78
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 36.0
     },
-    "Doug Shows": {
-      "foulClimate": 0.92,
-      "homeWhistleBias": 0.01,
-      "totalGames": 167
+    "Marques Pettigrew": {
+      "foulClimate": 0.998,
+      "homeWhistleBias": 0.026,
+      "totalGames": 47,
+      "avgFoulsPerGame": 34.4,
+      "avgFTAPerGame": 38.9
+    },
+    "Owen Shortt": {
+      "foulClimate": 1.014,
+      "homeWhistleBias": 0.029,
+      "totalGames": 36,
+      "avgFoulsPerGame": 34.9,
+      "avgFTAPerGame": 40.1
+    },
+    "Jerry Heater": {
+      "foulClimate": 1.114,
+      "homeWhistleBias": 0.007,
+      "totalGames": 11,
+      "avgFoulsPerGame": 38.4,
+      "avgFTAPerGame": 46.8
+    },
+    "Steven Perry": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.065,
+      "totalGames": 1,
+      "avgFoulsPerGame": 46.0,
+      "avgFTAPerGame": 55.0
+    },
+    "Trey Styons": {
+      "foulClimate": 0.977,
+      "homeWhistleBias": 0.007,
+      "totalGames": 9,
+      "avgFoulsPerGame": 33.7,
+      "avgFTAPerGame": 34.7
+    },
+    "Verne Harris": {
+      "foulClimate": 1.031,
+      "homeWhistleBias": 0.004,
+      "totalGames": 17,
+      "avgFoulsPerGame": 35.5,
+      "avgFTAPerGame": 40.8
+    },
+    "Nate Harris": {
+      "foulClimate": 1.047,
+      "homeWhistleBias": 0.005,
+      "totalGames": 16,
+      "avgFoulsPerGame": 36.1,
+      "avgFTAPerGame": 42.2
+    },
+    "Randy Richardson": {
+      "foulClimate": 0.994,
+      "homeWhistleBias": 0.029,
+      "totalGames": 27,
+      "avgFoulsPerGame": 34.3,
+      "avgFTAPerGame": 39.8
+    },
+    "Patrick Evans": {
+      "foulClimate": 1.113,
+      "homeWhistleBias": 0.012,
+      "totalGames": 12,
+      "avgFoulsPerGame": 38.3,
+      "avgFTAPerGame": 48.4
     },
     "Joe Lindsay": {
-      "foulClimate": 0.91,
-      "homeWhistleBias": 0.02,
-      "totalGames": 110
-    },
-    "Michael Stephens": {
-      "foulClimate": 0.93,
-      "homeWhistleBias": 0.01,
-      "totalGames": 105
-    },
-    "Chris Beaver": {
-      "foulClimate": 0.9,
-      "homeWhistleBias": 0.02,
-      "totalGames": 95
-    },
-    "Gerry Pollard": {
-      "foulClimate": 0.91,
-      "homeWhistleBias": 0.01,
-      "totalGames": 140
-    },
-    "Tim Comer": {
-      "foulClimate": 0.93,
-      "homeWhistleBias": 0.02,
-      "totalGames": 88
-    },
-    "David Hall": {
-      "foulClimate": 0.89,
-      "homeWhistleBias": 0.01,
-      "totalGames": 72
-    },
-    "Mike Stuart": {
-      "foulClimate": 0.94,
-      "homeWhistleBias": 0.02,
-      "totalGames": 80
-    },
-    "J.D. Collins": {
-      "foulClimate": 1.03,
-      "homeWhistleBias": 0.02,
-      "totalGames": 115
-    },
-    "Ray Perone": {
-      "foulClimate": 0.98,
-      "homeWhistleBias": 0.01,
-      "totalGames": 90
-    },
-    "Wally Rutecki": {
       "foulClimate": 1.04,
-      "homeWhistleBias": 0.02,
-      "totalGames": 100
+      "homeWhistleBias": -0.003,
+      "totalGames": 32,
+      "avgFoulsPerGame": 35.8,
+      "avgFTAPerGame": 42.9
     },
-    "Tim Nestor": {
-      "foulClimate": 0.97,
-      "homeWhistleBias": 0.01,
-      "totalGames": 110
+    "Mike Nance": {
+      "foulClimate": 1.18,
+      "homeWhistleBias": 0.023,
+      "totalGames": 3,
+      "avgFoulsPerGame": 40.7,
+      "avgFTAPerGame": 54.0
     },
-    "Bill Ek": {
-      "foulClimate": 1.02,
+    "Don Daily": {
+      "foulClimate": 1.089,
+      "homeWhistleBias": 0.024,
+      "totalGames": 26,
+      "avgFoulsPerGame": 37.5,
+      "avgFTAPerGame": 46.2
+    },
+    "Rob Rorke": {
+      "foulClimate": 1.074,
       "homeWhistleBias": 0.02,
-      "totalGames": 85
+      "totalGames": 20,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 43.4
+    },
+    "Lucas Santos": {
+      "foulClimate": 1.017,
+      "homeWhistleBias": 0.018,
+      "totalGames": 23,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 41.7
+    },
+    "John St. Clair": {
+      "foulClimate": 1.078,
+      "homeWhistleBias": 0.018,
+      "totalGames": 7,
+      "avgFoulsPerGame": 37.1,
+      "avgFTAPerGame": 39.7
+    },
+    "Doug Sirmons": {
+      "foulClimate": 0.913,
+      "homeWhistleBias": 0.026,
+      "totalGames": 66,
+      "avgFoulsPerGame": 31.5,
+      "avgFTAPerGame": 34.2
+    },
+    "Grant Jeffres": {
+      "foulClimate": 0.907,
+      "homeWhistleBias": 0.018,
+      "totalGames": 4,
+      "avgFoulsPerGame": 31.2,
+      "avgFTAPerGame": 31.5
+    },
+    "Jim Bruno": {
+      "foulClimate": 0.89,
+      "homeWhistleBias": 0.074,
+      "totalGames": 3,
+      "avgFoulsPerGame": 30.7,
+      "avgFTAPerGame": 32.7
+    },
+    "Steve Honacki": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Jason Phillips": {
+      "foulClimate": 0.916,
+      "homeWhistleBias": 0.015,
+      "totalGames": 18,
+      "avgFoulsPerGame": 31.6,
+      "avgFTAPerGame": 33.7
+    },
+    "Pat Adams": {
+      "foulClimate": 1.051,
+      "homeWhistleBias": 0.018,
+      "totalGames": 23,
+      "avgFoulsPerGame": 36.2,
+      "avgFTAPerGame": 43.7
+    },
+    "Jason Barker": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": -0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 36.0
+    },
+    "R.B. Clyburn": {
+      "foulClimate": 0.972,
+      "homeWhistleBias": 0.006,
+      "totalGames": 4,
+      "avgFoulsPerGame": 33.5,
+      "avgFTAPerGame": 41.5
+    },
+    "Tyler Kumpf": {
+      "foulClimate": 0.993,
+      "homeWhistleBias": 0.02,
+      "totalGames": 14,
+      "avgFoulsPerGame": 34.2,
+      "avgFTAPerGame": 39.9
+    },
+    "Brooks Wells": {
+      "foulClimate": 0.972,
+      "homeWhistleBias": 0.037,
+      "totalGames": 46,
+      "avgFoulsPerGame": 33.5,
+      "avgFTAPerGame": 37.3
+    },
+    "Robert Felder": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Anthony Jordan": {
+      "foulClimate": 1.011,
+      "homeWhistleBias": 0.038,
+      "totalGames": 11,
+      "avgFoulsPerGame": 34.8,
+      "avgFTAPerGame": 43.3
+    },
+    "Doug Shows": {
+      "foulClimate": 1.122,
+      "homeWhistleBias": 0.029,
+      "totalGames": 36,
+      "avgFoulsPerGame": 38.7,
+      "avgFTAPerGame": 46.8
+    },
+    "Shane Land": {
+      "foulClimate": 1.183,
+      "homeWhistleBias": 0.073,
+      "totalGames": 4,
+      "avgFoulsPerGame": 40.8,
+      "avgFTAPerGame": 53.5
+    },
+    "Randy  McCall": {
+      "foulClimate": 1.035,
+      "homeWhistleBias": 0.012,
+      "totalGames": 25,
+      "avgFoulsPerGame": 35.6,
+      "avgFTAPerGame": 40.6
+    },
+    "Jason Garretson": {
+      "foulClimate": 1.003,
+      "homeWhistleBias": 0.016,
+      "totalGames": 16,
+      "avgFoulsPerGame": 34.6,
+      "avgFTAPerGame": 38.0
+    },
+    "Ray Ames": {
+      "foulClimate": 1.161,
+      "homeWhistleBias": -0.004,
+      "totalGames": 3,
+      "avgFoulsPerGame": 40.0,
+      "avgFTAPerGame": 44.7
+    },
+    "D.J. Carstensen": {
+      "foulClimate": 0.999,
+      "homeWhistleBias": 0.019,
+      "totalGames": 44,
+      "avgFoulsPerGame": 34.4,
+      "avgFTAPerGame": 37.1
+    },
+    "Amy Bonner": {
+      "foulClimate": 0.91,
+      "homeWhistleBias": 0.033,
+      "totalGames": 12,
+      "avgFoulsPerGame": 31.3,
+      "avgFTAPerGame": 33.2
+    },
+    "Alex Landis": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.09,
+      "totalGames": 6,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 32.7
+    },
+    "Brian Dorsey": {
+      "foulClimate": 0.983,
+      "homeWhistleBias": 0.017,
+      "totalGames": 48,
+      "avgFoulsPerGame": 33.9,
+      "avgFTAPerGame": 36.7
+    },
+    "Alfred Smith": {
+      "foulClimate": 1.063,
+      "homeWhistleBias": 0.054,
+      "totalGames": 8,
+      "avgFoulsPerGame": 36.6,
+      "avgFTAPerGame": 40.6
+    },
+    "Jourdan Love": {
+      "foulClimate": 1.125,
+      "homeWhistleBias": 0.051,
+      "totalGames": 8,
+      "avgFoulsPerGame": 38.8,
+      "avgFTAPerGame": 43.6
+    },
+    "Les Jones": {
+      "foulClimate": 0.849,
+      "homeWhistleBias": 0.038,
+      "totalGames": 4,
+      "avgFoulsPerGame": 29.2,
+      "avgFTAPerGame": 33.0
+    },
+    "A.J. Desai": {
+      "foulClimate": 0.986,
+      "homeWhistleBias": 0.021,
+      "totalGames": 30,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 39.2
+    },
+    "Kellen Miliner": {
+      "foulClimate": 0.965,
+      "homeWhistleBias": 0.034,
+      "totalGames": 12,
+      "avgFoulsPerGame": 33.2,
+      "avgFTAPerGame": 38.8
+    },
+    "Larry Scirotto": {
+      "foulClimate": 0.927,
+      "homeWhistleBias": 0.035,
+      "totalGames": 26,
+      "avgFoulsPerGame": 31.9,
+      "avgFTAPerGame": 33.8
+    },
+    "Tony Padilla": {
+      "foulClimate": 1.004,
+      "homeWhistleBias": 0.017,
+      "totalGames": 49,
+      "avgFoulsPerGame": 34.6,
+      "avgFTAPerGame": 38.6
+    },
+    "Roger Ayers": {
+      "foulClimate": 0.908,
+      "homeWhistleBias": 0.031,
+      "totalGames": 50,
+      "avgFoulsPerGame": 31.3,
+      "avgFTAPerGame": 34.1
+    },
+    "Byron Jarrett": {
+      "foulClimate": 1.072,
+      "homeWhistleBias": 0.018,
+      "totalGames": 32,
+      "avgFoulsPerGame": 36.9,
+      "avgFTAPerGame": 46.0
+    },
+    "K.B. Burdett": {
+      "foulClimate": 1.116,
+      "homeWhistleBias": 0.006,
+      "totalGames": 11,
+      "avgFoulsPerGame": 38.5,
+      "avgFTAPerGame": 47.5
+    },
+    "Erroll Lewis": {
+      "foulClimate": 1.064,
+      "homeWhistleBias": 0.026,
+      "totalGames": 9,
+      "avgFoulsPerGame": 36.7,
+      "avgFTAPerGame": 46.0
+    },
+    "Michael Greenstein": {
+      "foulClimate": 1.051,
+      "homeWhistleBias": 0.014,
+      "totalGames": 39,
+      "avgFoulsPerGame": 36.2,
+      "avgFTAPerGame": 42.4
+    },
+    "Chance Moore": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.023,
+      "totalGames": 31,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 37.6
+    },
+    "Lamar Simpson": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.031,
+      "totalGames": 5,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 41.2
+    },
+    "Justin Albrecht": {
+      "foulClimate": 0.999,
+      "homeWhistleBias": 0.016,
+      "totalGames": 5,
+      "avgFoulsPerGame": 34.4,
+      "avgFTAPerGame": 37.6
+    },
+    "James Breeding": {
+      "foulClimate": 1.062,
+      "homeWhistleBias": 0.007,
+      "totalGames": 33,
+      "avgFoulsPerGame": 36.6,
+      "avgFTAPerGame": 43.8
+    },
+    "Lee Cassell": {
+      "foulClimate": 1.033,
+      "homeWhistleBias": 0.032,
+      "totalGames": 32,
+      "avgFoulsPerGame": 35.6,
+      "avgFTAPerGame": 41.7
+    },
+    "Tony Chiazza": {
+      "foulClimate": 0.986,
+      "homeWhistleBias": 0.013,
+      "totalGames": 28,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 37.1
+    },
+    "Matt Potter": {
+      "foulClimate": 0.994,
+      "homeWhistleBias": 0.017,
+      "totalGames": 29,
+      "avgFoulsPerGame": 34.2,
+      "avgFTAPerGame": 39.4
+    },
+    "Bret Smith": {
+      "foulClimate": 0.954,
+      "homeWhistleBias": 0.018,
+      "totalGames": 34,
+      "avgFoulsPerGame": 32.9,
+      "avgFTAPerGame": 38.1
+    },
+    "Steven Anderson": {
+      "foulClimate": 1.017,
+      "homeWhistleBias": 0.025,
+      "totalGames": 29,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 42.4
+    },
+    "Chris Ford": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": 0.088,
+      "totalGames": 2,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 59.0
+    },
+    "Vladimir Voyard-Tadal": {
+      "foulClimate": 1.029,
+      "homeWhistleBias": 0.009,
+      "totalGames": 25,
+      "avgFoulsPerGame": 35.4,
+      "avgFTAPerGame": 43.5
+    },
+    "Chad Barlow": {
+      "foulClimate": 0.94,
+      "homeWhistleBias": 0.062,
+      "totalGames": 10,
+      "avgFoulsPerGame": 32.4,
+      "avgFTAPerGame": 34.5
+    },
+    "Brian  O'Connell": {
+      "foulClimate": 0.948,
+      "homeWhistleBias": 0.005,
+      "totalGames": 28,
+      "avgFoulsPerGame": 32.6,
+      "avgFTAPerGame": 35.5
+    },
+    "Nathan Hall": {
+      "foulClimate": 0.853,
+      "homeWhistleBias": 0.013,
+      "totalGames": 8,
+      "avgFoulsPerGame": 29.4,
+      "avgFTAPerGame": 34.5
+    },
+    "Chuck Jones": {
+      "foulClimate": 1.133,
+      "homeWhistleBias": 0.02,
+      "totalGames": 21,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 49.4
+    },
+    "Josue  Nieves": {
+      "foulClimate": 1.013,
+      "homeWhistleBias": 0.009,
+      "totalGames": 11,
+      "avgFoulsPerGame": 34.9,
+      "avgFTAPerGame": 42.3
+    },
+    "Gregory Nixon": {
+      "foulClimate": 1.031,
+      "homeWhistleBias": 0.027,
+      "totalGames": 37,
+      "avgFoulsPerGame": 35.5,
+      "avgFTAPerGame": 40.8
+    },
+    "Chris Pacsi": {
+      "foulClimate": 1.03,
+      "homeWhistleBias": 0.029,
+      "totalGames": 26,
+      "avgFoulsPerGame": 35.5,
+      "avgFTAPerGame": 41.2
+    },
+    "Earl Walton": {
+      "foulClimate": 0.982,
+      "homeWhistleBias": 0.018,
+      "totalGames": 37,
+      "avgFoulsPerGame": 33.8,
+      "avgFTAPerGame": 37.2
+    },
+    "Edwin  Young": {
+      "foulClimate": 1.019,
+      "homeWhistleBias": 0.003,
+      "totalGames": 22,
+      "avgFoulsPerGame": 35.1,
+      "avgFTAPerGame": 39.2
+    },
+    "Kelly Pfeifer": {
+      "foulClimate": 0.989,
+      "homeWhistleBias": 0.027,
+      "totalGames": 30,
+      "avgFoulsPerGame": 34.1,
+      "avgFTAPerGame": 38.4
+    },
+    "Ron Groover": {
+      "foulClimate": 0.986,
+      "homeWhistleBias": 0.026,
+      "totalGames": 57,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 38.6
+    },
+    "Bert Smith": {
+      "foulClimate": 1.012,
+      "homeWhistleBias": 0.03,
+      "totalGames": 41,
+      "avgFoulsPerGame": 34.9,
+      "avgFTAPerGame": 39.6
+    },
+    "John Gaffney": {
+      "foulClimate": 0.948,
+      "homeWhistleBias": 0.02,
+      "totalGames": 27,
+      "avgFoulsPerGame": 32.7,
+      "avgFTAPerGame": 35.5
+    },
+    "Mike Reed": {
+      "foulClimate": 1.007,
+      "homeWhistleBias": -0.012,
+      "totalGames": 23,
+      "avgFoulsPerGame": 34.7,
+      "avgFTAPerGame": 37.9
+    },
+    "Tariq Lucas": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": 0.018,
+      "totalGames": 2,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 50.0
+    },
+    "Chris Merlo": {
+      "foulClimate": 0.918,
+      "homeWhistleBias": 0.036,
+      "totalGames": 16,
+      "avgFoulsPerGame": 31.6,
+      "avgFTAPerGame": 33.2
+    },
+    "Courtney Green": {
+      "foulClimate": 1.012,
+      "homeWhistleBias": 0.024,
+      "totalGames": 38,
+      "avgFoulsPerGame": 34.9,
+      "avgFTAPerGame": 41.5
+    },
+    "Justin Porterfield": {
+      "foulClimate": 1.032,
+      "homeWhistleBias": 0.029,
+      "totalGames": 16,
+      "avgFoulsPerGame": 35.6,
+      "avgFTAPerGame": 40.0
+    },
+    "Clare Aubry": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": 0.075,
+      "totalGames": 5,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 44.4
+    },
+    "Deldre Carr": {
+      "foulClimate": 0.967,
+      "homeWhistleBias": 0.022,
+      "totalGames": 16,
+      "avgFoulsPerGame": 33.3,
+      "avgFTAPerGame": 36.9
+    },
+    "Keith Patterson": {
+      "foulClimate": 1.022,
+      "homeWhistleBias": 0.003,
+      "totalGames": 9,
+      "avgFoulsPerGame": 35.2,
+      "avgFTAPerGame": 41.8
+    },
+    "Garrick Shannon": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": -0.037,
+      "totalGames": 11,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 45.8
+    },
+    "Chuck McCoy": {
+      "foulClimate": 0.877,
+      "homeWhistleBias": 0.068,
+      "totalGames": 5,
+      "avgFoulsPerGame": 30.2,
+      "avgFTAPerGame": 33.2
+    },
+    "Justin Shamion": {
+      "foulClimate": 0.965,
+      "homeWhistleBias": -0.006,
+      "totalGames": 17,
+      "avgFoulsPerGame": 33.2,
+      "avgFTAPerGame": 34.0
+    },
+    "John Cahill Jr.": {
+      "foulClimate": 0.882,
+      "homeWhistleBias": 0.021,
+      "totalGames": 8,
+      "avgFoulsPerGame": 30.4,
+      "avgFTAPerGame": 30.4
+    },
+    "Jason Bradwell": {
+      "foulClimate": 0.919,
+      "homeWhistleBias": 0.018,
+      "totalGames": 3,
+      "avgFoulsPerGame": 31.7,
+      "avgFTAPerGame": 29.7
+    },
+    "Michael Nardone": {
+      "foulClimate": 1.006,
+      "homeWhistleBias": 0.016,
+      "totalGames": 6,
+      "avgFoulsPerGame": 34.7,
+      "avgFTAPerGame": 39.0
+    },
+    "Bharat Ramnanan": {
+      "foulClimate": 0.96,
+      "homeWhistleBias": 0.028,
+      "totalGames": 13,
+      "avgFoulsPerGame": 33.1,
+      "avgFTAPerGame": 40.7
+    },
+    "Devyn Page": {
+      "foulClimate": 1.06,
+      "homeWhistleBias": 0.054,
+      "totalGames": 4,
+      "avgFoulsPerGame": 36.5,
+      "avgFTAPerGame": 44.2
+    },
+    "Landon Brandes": {
+      "foulClimate": 1.026,
+      "homeWhistleBias": 0.038,
+      "totalGames": 6,
+      "avgFoulsPerGame": 35.3,
+      "avgFTAPerGame": 41.8
+    },
+    "Michael Wallace": {
+      "foulClimate": 0.937,
+      "homeWhistleBias": -0.016,
+      "totalGames": 7,
+      "avgFoulsPerGame": 32.3,
+      "avgFTAPerGame": 41.9
+    },
+    "K.B. Burdett Jr.": {
+      "foulClimate": 1.058,
+      "homeWhistleBias": 0.022,
+      "totalGames": 18,
+      "avgFoulsPerGame": 36.4,
+      "avgFTAPerGame": 44.1
+    },
+    "Tony Crisp": {
+      "foulClimate": 1.209,
+      "homeWhistleBias": -0.029,
+      "totalGames": 3,
+      "avgFoulsPerGame": 41.7,
+      "avgFTAPerGame": 53.0
+    },
+    "Mike Millione": {
+      "foulClimate": 1.176,
+      "homeWhistleBias": -0.001,
+      "totalGames": 4,
+      "avgFoulsPerGame": 40.5,
+      "avgFTAPerGame": 46.2
+    },
+    "Ryan Sassano": {
+      "foulClimate": 1.048,
+      "homeWhistleBias": 0.026,
+      "totalGames": 10,
+      "avgFoulsPerGame": 36.1,
+      "avgFTAPerGame": 42.8
+    },
+    "Billy Dunlap": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": -0.015,
+      "totalGames": 2,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 23.5
+    },
+    "Jason Deering": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.026,
+      "totalGames": 7,
+      "avgFoulsPerGame": 23.7,
+      "avgFTAPerGame": 25.0
+    },
+    "Jake Keller": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.021,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 35.5
+    },
+    "Ed Phillips": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 29.0
+    },
+    "Adam Sensibaugh": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 29.0
+    },
+    "Joseph Brogan": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Brian McAnally": {
+      "foulClimate": 1.147,
+      "homeWhistleBias": 0.012,
+      "totalGames": 2,
+      "avgFoulsPerGame": 39.5,
+      "avgFTAPerGame": 48.0
+    },
+    "Mark Riggs": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": -0.012,
+      "totalGames": 2,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 49.0
+    },
+    "Kelly Anlauf": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": -0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 54.0
+    },
+    "Brad Ferrie": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 34.0
+    },
+    "Jeff Malham": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.072,
+      "totalGames": 3,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 37.7
+    },
+    "Ed Crenshaw Jr.": {
+      "foulClimate": 0.975,
+      "homeWhistleBias": 0.015,
+      "totalGames": 5,
+      "avgFoulsPerGame": 33.6,
+      "avgFTAPerGame": 36.6
+    },
+    "Adam Vandenburgh": {
+      "foulClimate": 0.935,
+      "homeWhistleBias": 0.009,
+      "totalGames": 5,
+      "avgFoulsPerGame": 32.2,
+      "avgFTAPerGame": 34.0
+    },
+    "Daniel Basile": {
+      "foulClimate": 0.952,
+      "homeWhistleBias": 0.032,
+      "totalGames": 5,
+      "avgFoulsPerGame": 32.8,
+      "avgFTAPerGame": 35.0
+    },
+    "Greg Evans": {
+      "foulClimate": 0.972,
+      "homeWhistleBias": 0.015,
+      "totalGames": 22,
+      "avgFoulsPerGame": 33.5,
+      "avgFTAPerGame": 37.1
+    },
+    "Tom Deneen": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.025,
+      "totalGames": 4,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 39.2
+    },
+    "Randy Heimerman": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.046,
+      "totalGames": 4,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 39.2
+    },
+    "Gene Grimshaw": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": 0.022,
+      "totalGames": 4,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 49.2
+    },
+    "Tim Stewart": {
+      "foulClimate": 1.147,
+      "homeWhistleBias": 0.013,
+      "totalGames": 4,
+      "avgFoulsPerGame": 39.5,
+      "avgFTAPerGame": 48.8
+    },
+    "Chris Fuller": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.009,
+      "totalGames": 2,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 37.5
+    },
+    "RJ Johnson": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.021,
+      "totalGames": 2,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 35.5
+    },
+    "Olandis Poole": {
+      "foulClimate": 1.033,
+      "homeWhistleBias": -0.001,
+      "totalGames": 17,
+      "avgFoulsPerGame": 35.6,
+      "avgFTAPerGame": 42.7
+    },
+    "Bradley Yorkovich": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.082,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 26.0
+    },
+    "Isaiah  Conrad": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 17.0
+    },
+    "Alexander Thompson": {
+      "foulClimate": 0.769,
+      "homeWhistleBias": 0.053,
+      "totalGames": 2,
+      "avgFoulsPerGame": 26.5,
+      "avgFTAPerGame": 24.0
+    },
+    "Matt Rafferty": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": -0.006,
+      "totalGames": 3,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 33.7
+    },
+    "Rick Crawford": {
+      "foulClimate": 0.93,
+      "homeWhistleBias": 0.024,
+      "totalGames": 19,
+      "avgFoulsPerGame": 32.1,
+      "avgFTAPerGame": 36.8
+    },
+    "Gary Maxwell": {
+      "foulClimate": 0.893,
+      "homeWhistleBias": 0.016,
+      "totalGames": 4,
+      "avgFoulsPerGame": 30.8,
+      "avgFTAPerGame": 36.8
+    },
+    "Jeff Campbell": {
+      "foulClimate": 1.155,
+      "homeWhistleBias": 0.013,
+      "totalGames": 5,
+      "avgFoulsPerGame": 39.8,
+      "avgFTAPerGame": 49.4
+    },
+    "Ervin Wilson": {
+      "foulClimate": 1.205,
+      "homeWhistleBias": 0.063,
+      "totalGames": 4,
+      "avgFoulsPerGame": 41.5,
+      "avgFTAPerGame": 46.2
+    },
+    "Shaun Seales": {
+      "foulClimate": 0.977,
+      "homeWhistleBias": 0.033,
+      "totalGames": 9,
+      "avgFoulsPerGame": 33.7,
+      "avgFTAPerGame": 38.7
+    },
+    "Michael Luckie": {
+      "foulClimate": 1.097,
+      "homeWhistleBias": 0.012,
+      "totalGames": 5,
+      "avgFoulsPerGame": 37.8,
+      "avgFTAPerGame": 48.8
+    },
+    "Evon Burroughs": {
+      "foulClimate": 1.018,
+      "homeWhistleBias": -0.003,
+      "totalGames": 14,
+      "avgFoulsPerGame": 35.1,
+      "avgFTAPerGame": 39.5
+    },
+    "Mark Cook": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Eric Curry": {
+      "foulClimate": 0.976,
+      "homeWhistleBias": 0.009,
+      "totalGames": 13,
+      "avgFoulsPerGame": 33.6,
+      "avgFTAPerGame": 39.2
+    },
+    "Bryan Anslinger": {
+      "foulClimate": 1.023,
+      "homeWhistleBias": 0.034,
+      "totalGames": 4,
+      "avgFoulsPerGame": 35.2,
+      "avgFTAPerGame": 36.2
+    },
+    "Steve McJunkins": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.004,
+      "totalGames": 11,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 40.8
+    },
+    "Bill Covington Jr.": {
+      "foulClimate": 0.994,
+      "homeWhistleBias": 0.011,
+      "totalGames": 24,
+      "avgFoulsPerGame": 34.2,
+      "avgFTAPerGame": 38.5
+    },
+    "Scott Bennett": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": -0.006,
+      "totalGames": 2,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 52.0
+    },
+    "Donta Carter": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Daniel Nguyen": {
+      "foulClimate": 1.292,
+      "homeWhistleBias": 0.0,
+      "totalGames": 2,
+      "avgFoulsPerGame": 44.5,
+      "avgFTAPerGame": 56.0
+    },
+    "Wil Howard": {
+      "foulClimate": 1.076,
+      "homeWhistleBias": 0.022,
+      "totalGames": 19,
+      "avgFoulsPerGame": 37.1,
+      "avgFTAPerGame": 46.0
+    },
+    "Matt Jarman": {
+      "foulClimate": 1.11,
+      "homeWhistleBias": 0.057,
+      "totalGames": 4,
+      "avgFoulsPerGame": 38.2,
+      "avgFTAPerGame": 43.8
+    },
+    "Jason Creek": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.076,
+      "totalGames": 2,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 37.0
+    },
+    "Aaron  Denton": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.076,
+      "totalGames": 2,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 37.0
+    },
+    "Derek Henry": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 32.0
+    },
+    "Matthew Rukasin": {
+      "foulClimate": 1.106,
+      "homeWhistleBias": 0.062,
+      "totalGames": 9,
+      "avgFoulsPerGame": 38.1,
+      "avgFTAPerGame": 45.9
+    },
+    "Randal Anders": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.072,
+      "totalGames": 4,
+      "avgFoulsPerGame": 46.0,
+      "avgFTAPerGame": 55.2
+    },
+    "Mike Evans": {
+      "foulClimate": 1.08,
+      "homeWhistleBias": 0.029,
+      "totalGames": 5,
+      "avgFoulsPerGame": 37.2,
+      "avgFTAPerGame": 41.0
+    },
+    "Mike Littlewood": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.011,
+      "totalGames": 24,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 38.8
+    },
+    "Adam Flore": {
+      "foulClimate": 1.04,
+      "homeWhistleBias": -0.022,
+      "totalGames": 6,
+      "avgFoulsPerGame": 35.8,
+      "avgFTAPerGame": 37.7
+    },
+    "Antinio Petty": {
+      "foulClimate": 0.982,
+      "homeWhistleBias": 0.005,
+      "totalGames": 12,
+      "avgFoulsPerGame": 33.8,
+      "avgFTAPerGame": 39.4
+    },
+    "Luke Schumer": {
+      "foulClimate": 1.024,
+      "homeWhistleBias": 0.045,
+      "totalGames": 7,
+      "avgFoulsPerGame": 35.3,
+      "avgFTAPerGame": 43.7
+    },
+    "Ray Natili": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 24.0,
+      "avgFTAPerGame": 24.0
+    },
+    "Clarence Armstrong": {
+      "foulClimate": 0.99,
+      "homeWhistleBias": 0.031,
+      "totalGames": 32,
+      "avgFoulsPerGame": 34.1,
+      "avgFTAPerGame": 38.0
+    },
+    "Anthony Eades": {
+      "foulClimate": 1.183,
+      "homeWhistleBias": 0.017,
+      "totalGames": 8,
+      "avgFoulsPerGame": 40.8,
+      "avgFTAPerGame": 53.1
+    },
+    "Kevin Brill": {
+      "foulClimate": 0.945,
+      "homeWhistleBias": 0.002,
+      "totalGames": 14,
+      "avgFoulsPerGame": 32.6,
+      "avgFTAPerGame": 36.4
+    },
+    "Paul Szelc": {
+      "foulClimate": 1.055,
+      "homeWhistleBias": 0.03,
+      "totalGames": 42,
+      "avgFoulsPerGame": 36.4,
+      "avgFTAPerGame": 39.7
+    },
+    "Jemel Spearman": {
+      "foulClimate": 0.985,
+      "homeWhistleBias": 0.026,
+      "totalGames": 15,
+      "avgFoulsPerGame": 33.9,
+      "avgFTAPerGame": 37.7
+    },
+    "Jeff  Pon": {
+      "foulClimate": 0.969,
+      "homeWhistleBias": 0.041,
+      "totalGames": 8,
+      "avgFoulsPerGame": 33.4,
+      "avgFTAPerGame": 37.0
+    },
+    "Jeff Anderson": {
+      "foulClimate": 0.91,
+      "homeWhistleBias": 0.02,
+      "totalGames": 6,
+      "avgFoulsPerGame": 31.3,
+      "avgFTAPerGame": 32.3
+    },
+    "Mark Schnur": {
+      "foulClimate": 0.898,
+      "homeWhistleBias": 0.047,
+      "totalGames": 16,
+      "avgFoulsPerGame": 30.9,
+      "avgFTAPerGame": 37.2
+    },
+    "Eric Lewis": {
+      "foulClimate": 1.037,
+      "homeWhistleBias": 0.038,
+      "totalGames": 7,
+      "avgFoulsPerGame": 35.7,
+      "avgFTAPerGame": 43.0
+    },
+    "Darron George": {
+      "foulClimate": 1.106,
+      "homeWhistleBias": 0.015,
+      "totalGames": 23,
+      "avgFoulsPerGame": 38.1,
+      "avgFTAPerGame": 44.6
+    },
+    "D.G. Nelson": {
+      "foulClimate": 1.04,
+      "homeWhistleBias": -0.005,
+      "totalGames": 6,
+      "avgFoulsPerGame": 35.8,
+      "avgFTAPerGame": 38.8
+    },
+    "Peter Larson": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 17.0
+    },
+    "Ed Corliss": {
+      "foulClimate": 1.025,
+      "homeWhistleBias": 0.022,
+      "totalGames": 10,
+      "avgFoulsPerGame": 35.3,
+      "avgFTAPerGame": 44.1
+    },
+    "Ben Stirt": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": 0.008,
+      "totalGames": 3,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 48.0
+    },
+    "Michael Irving": {
+      "foulClimate": 0.921,
+      "homeWhistleBias": 0.022,
+      "totalGames": 23,
+      "avgFoulsPerGame": 31.7,
+      "avgFTAPerGame": 33.4
+    },
+    "Jeb Hartness": {
+      "foulClimate": 1.023,
+      "homeWhistleBias": 0.018,
+      "totalGames": 26,
+      "avgFoulsPerGame": 35.2,
+      "avgFTAPerGame": 42.7
+    },
+    "Pat Driscoll": {
+      "foulClimate": 0.966,
+      "homeWhistleBias": 0.016,
+      "totalGames": 18,
+      "avgFoulsPerGame": 33.3,
+      "avgFTAPerGame": 35.9
+    },
+    "Crystal Hogan": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": -0.05,
+      "totalGames": 4,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 50.8
+    },
+    "John Floyd": {
+      "foulClimate": 1.097,
+      "homeWhistleBias": 0.021,
+      "totalGames": 10,
+      "avgFoulsPerGame": 37.8,
+      "avgFTAPerGame": 42.8
+    },
+    "Hunter Allen": {
+      "foulClimate": 0.946,
+      "homeWhistleBias": 0.007,
+      "totalGames": 5,
+      "avgFoulsPerGame": 32.6,
+      "avgFTAPerGame": 37.6
+    },
+    "Rob Kueneman": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.058,
+      "totalGames": 6,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 37.8
+    },
+    "Mike Roberts": {
+      "foulClimate": 1.004,
+      "homeWhistleBias": 0.006,
+      "totalGames": 15,
+      "avgFoulsPerGame": 34.6,
+      "avgFTAPerGame": 40.6
+    },
+    "Jason Baker": {
+      "foulClimate": 1.009,
+      "homeWhistleBias": 0.019,
+      "totalGames": 13,
+      "avgFoulsPerGame": 34.8,
+      "avgFTAPerGame": 42.8
+    },
+    "Christopher Melo": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 36.0
+    },
+    "Isaac Barnett": {
+      "foulClimate": 0.941,
+      "homeWhistleBias": 0.038,
+      "totalGames": 7,
+      "avgFoulsPerGame": 32.4,
+      "avgFTAPerGame": 33.3
+    },
+    "Mason Siler": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": -0.002,
+      "totalGames": 3,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 49.0
+    },
+    "Tommy Morrissey": {
+      "foulClimate": 0.992,
+      "homeWhistleBias": 0.015,
+      "totalGames": 34,
+      "avgFoulsPerGame": 34.2,
+      "avgFTAPerGame": 40.6
+    },
+    "Chase Shaw": {
+      "foulClimate": 0.96,
+      "homeWhistleBias": 0.031,
+      "totalGames": 12,
+      "avgFoulsPerGame": 33.1,
+      "avgFTAPerGame": 36.8
+    },
+    "James Ford": {
+      "foulClimate": 1.081,
+      "homeWhistleBias": 0.007,
+      "totalGames": 12,
+      "avgFoulsPerGame": 37.2,
+      "avgFTAPerGame": 41.5
+    },
+    "Tony Henderson": {
+      "foulClimate": 1.044,
+      "homeWhistleBias": 0.005,
+      "totalGames": 21,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 41.5
     },
     "Sean Hull": {
-      "foulClimate": 0.96,
-      "homeWhistleBias": 0.02,
-      "totalGames": 70
+      "foulClimate": 1.033,
+      "homeWhistleBias": 0.034,
+      "totalGames": 7,
+      "avgFoulsPerGame": 35.6,
+      "avgFTAPerGame": 43.7
     },
-    "T.J. Semptimphelter": {
-      "foulClimate": 1.01,
+    "Todd Austin": {
+      "foulClimate": 1.085,
+      "homeWhistleBias": 0.006,
+      "totalGames": 19,
+      "avgFoulsPerGame": 37.4,
+      "avgFTAPerGame": 45.4
+    },
+    "Scott Gooden": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.014,
+      "totalGames": 3,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 38.3
+    },
+    "Michael Kashirsky": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.059,
+      "totalGames": 3,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 37.3
+    },
+    "Randall Wells": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Talmadge Scott": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.07,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Jeremy Campbell": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.035,
+      "totalGames": 3,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 38.7
+    },
+    "Mikalen Roussell": {
+      "foulClimate": 1.234,
+      "homeWhistleBias": 0.07,
+      "totalGames": 2,
+      "avgFoulsPerGame": 42.5,
+      "avgFTAPerGame": 56.0
+    },
+    "Jeff Spedoske": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.029,
+      "totalGames": 3,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Nick Meyer": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": 0.07,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Justin Hayes": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": 0.07,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Kendell Ridley": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": -0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 18.0,
+      "avgFTAPerGame": 17.0
+    },
+    "James Curran": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.031,
+      "totalGames": 4,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 44.8
+    },
+    "Connor Penn": {
+      "foulClimate": 1.035,
+      "homeWhistleBias": 0.033,
+      "totalGames": 3,
+      "avgFoulsPerGame": 35.7,
+      "avgFTAPerGame": 42.3
+    },
+    "Mick Fieldbinder": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": 0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Ross Cullins": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Matthew Martinez": {
+      "foulClimate": 1.06,
+      "homeWhistleBias": 0.023,
+      "totalGames": 2,
+      "avgFoulsPerGame": 36.5,
+      "avgFTAPerGame": 42.0
+    },
+    "Eric Kronebusch": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.031,
+      "totalGames": 3,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 40.0
+    },
+    "Deron White": {
+      "foulClimate": 0.938,
+      "homeWhistleBias": 0.008,
+      "totalGames": 10,
+      "avgFoulsPerGame": 32.3,
+      "avgFTAPerGame": 37.7
+    },
+    "Chad Shepherd": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 23.0,
+      "avgFTAPerGame": 32.0
+    },
+    "Earl Watson": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 27.5
+    },
+    "Tim Comer": {
+      "foulClimate": 0.983,
+      "homeWhistleBias": 0.027,
+      "totalGames": 20,
+      "avgFoulsPerGame": 33.9,
+      "avgFTAPerGame": 35.9
+    },
+    "Craig Lastres": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 19.0,
+      "avgFTAPerGame": 17.0
+    },
+    "Tyler Jones": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 19.0,
+      "avgFTAPerGame": 17.0
+    },
+    "Joseph Carmisione": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": -0.026,
+      "totalGames": 2,
+      "avgFoulsPerGame": 24.0,
+      "avgFTAPerGame": 19.5
+    },
+    "Josean Vega": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.012,
+      "totalGames": 4,
+      "avgFoulsPerGame": 24.2,
+      "avgFTAPerGame": 23.5
+    },
+    "Matthew LaGanke": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.07,
+      "totalGames": 1,
+      "avgFoulsPerGame": 24.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Justin McKie": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.033,
+      "totalGames": 3,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 47.0
+    },
+    "Shawn Lehigh": {
+      "foulClimate": 1.208,
+      "homeWhistleBias": -0.009,
+      "totalGames": 5,
+      "avgFoulsPerGame": 41.6,
+      "avgFTAPerGame": 46.0
+    },
+    "Jimmy Casas": {
+      "foulClimate": 1.161,
+      "homeWhistleBias": 0.006,
+      "totalGames": 3,
+      "avgFoulsPerGame": 40.0,
+      "avgFTAPerGame": 51.0
+    },
+    "Casey McClellan": {
+      "foulClimate": 1.118,
+      "homeWhistleBias": 0.021,
+      "totalGames": 2,
+      "avgFoulsPerGame": 38.5,
+      "avgFTAPerGame": 44.5
+    },
+    "Ed Corbett Jr.": {
+      "foulClimate": 0.822,
+      "homeWhistleBias": 0.002,
+      "totalGames": 3,
+      "avgFoulsPerGame": 28.3,
+      "avgFTAPerGame": 35.0
+    },
+    "Michael Redd": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 20.0
+    },
+    "Michael Swoboda": {
+      "foulClimate": 0.963,
+      "homeWhistleBias": 0.031,
+      "totalGames": 6,
+      "avgFoulsPerGame": 33.2,
+      "avgFTAPerGame": 40.3
+    },
+    "James Hicks": {
+      "foulClimate": 1.132,
+      "homeWhistleBias": 0.024,
+      "totalGames": 6,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 53.2
+    },
+    "Greg Moyer": {
+      "foulClimate": 0.936,
+      "homeWhistleBias": 0.0,
+      "totalGames": 4,
+      "avgFoulsPerGame": 32.2,
+      "avgFTAPerGame": 38.0
+    },
+    "Jack Loughran": {
+      "foulClimate": 1.03,
+      "homeWhistleBias": 0.073,
+      "totalGames": 2,
+      "avgFoulsPerGame": 35.5,
+      "avgFTAPerGame": 37.5
+    },
+    "Marcus Hawkins": {
+      "foulClimate": 0.919,
+      "homeWhistleBias": -0.004,
+      "totalGames": 3,
+      "avgFoulsPerGame": 31.7,
+      "avgFTAPerGame": 37.3
+    },
+    "John Jenkins Jr.": {
+      "foulClimate": 1.097,
+      "homeWhistleBias": 0.045,
+      "totalGames": 5,
+      "avgFoulsPerGame": 37.8,
+      "avgFTAPerGame": 45.6
+    },
+    "Leslie Jones": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.044,
+      "totalGames": 4,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 37.5
+    },
+    "Andy  O'Brien": {
+      "foulClimate": 1.037,
+      "homeWhistleBias": 0.013,
+      "totalGames": 15,
+      "avgFoulsPerGame": 35.7,
+      "avgFTAPerGame": 42.1
+    },
+    "Michael Kitts": {
+      "foulClimate": 0.968,
       "homeWhistleBias": 0.01,
-      "totalGames": 65
+      "totalGames": 9,
+      "avgFoulsPerGame": 33.3,
+      "avgFTAPerGame": 39.9
+    },
+    "Kevin Chambliss": {
+      "foulClimate": 0.856,
+      "homeWhistleBias": 0.021,
+      "totalGames": 2,
+      "avgFoulsPerGame": 29.5,
+      "avgFTAPerGame": 36.5
+    },
+    "Jordan Craddock": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 24.0,
+      "avgFTAPerGame": 27.0
+    },
+    "Kelly Davis": {
+      "foulClimate": 1.001,
+      "homeWhistleBias": -0.012,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 42.0
+    },
+    "Sparky Hamilton": {
+      "foulClimate": 1.132,
+      "homeWhistleBias": -0.023,
+      "totalGames": 3,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 48.0
+    },
+    "Jon Broska": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.029,
+      "totalGames": 3,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 35.7
+    },
+    "John Atanassov": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 27.0
+    },
+    "Jordan Conley": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.038,
+      "totalGames": 2,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 37.5
+    },
+    "Earl Lennie": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.0,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 34.0
+    },
+    "Stephen Orkus Jr": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": 0.0,
+      "totalGames": 2,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 56.0
+    },
+    "Craig Murley": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": 0.07,
+      "totalGames": 2,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 32.0
+    },
+    "Todd Von Sossan": {
+      "foulClimate": 0.856,
+      "homeWhistleBias": 0.072,
+      "totalGames": 4,
+      "avgFoulsPerGame": 29.5,
+      "avgFTAPerGame": 32.8
+    },
+    "Jeffrey Johnson": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 26.0
+    },
+    "Chris Balunek": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 26.0
+    },
+    "William Covington": {
+      "foulClimate": 0.914,
+      "homeWhistleBias": 0.021,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.5,
+      "avgFTAPerGame": 35.5
+    },
+    "Jacob Hirz": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": -0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 38.5
+    },
+    "Gerald Williams": {
+      "foulClimate": 1.239,
+      "homeWhistleBias": 0.082,
+      "totalGames": 3,
+      "avgFoulsPerGame": 42.7,
+      "avgFTAPerGame": 49.3
+    },
+    "Chase Furlough": {
+      "foulClimate": 1.03,
+      "homeWhistleBias": 0.032,
+      "totalGames": 2,
+      "avgFoulsPerGame": 35.5,
+      "avgFTAPerGame": 43.5
+    },
+    "Miguel Rodriguez": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 46.0,
+      "avgFTAPerGame": 52.0
+    },
+    "Luke  Chittum": {
+      "foulClimate": 0.943,
+      "homeWhistleBias": 0.018,
+      "totalGames": 4,
+      "avgFoulsPerGame": 32.5,
+      "avgFTAPerGame": 38.0
+    },
+    "Jesse Joseph": {
+      "foulClimate": 0.885,
+      "homeWhistleBias": 0.0,
+      "totalGames": 2,
+      "avgFoulsPerGame": 30.5,
+      "avgFTAPerGame": 35.0
+    },
+    "James Gibson": {
+      "foulClimate": 0.856,
+      "homeWhistleBias": 0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 29.5,
+      "avgFTAPerGame": 33.5
+    },
+    "CJ Middlebrooks": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.0,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 41.0
+    },
+    "Tommy Morrison": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 37.0
+    },
+    "Ron Tyburski": {
+      "foulClimate": 0.919,
+      "homeWhistleBias": -0.031,
+      "totalGames": 3,
+      "avgFoulsPerGame": 31.7,
+      "avgFTAPerGame": 37.3
+    },
+    "Mark Fulton": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 45.0,
+      "avgFTAPerGame": 68.0
+    },
+    "John Hampton": {
+      "foulClimate": 0.935,
+      "homeWhistleBias": -0.025,
+      "totalGames": 5,
+      "avgFoulsPerGame": 32.2,
+      "avgFTAPerGame": 39.0
+    },
+    "Chris Anderson": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.088,
+      "totalGames": 1,
+      "avgFoulsPerGame": 15.0,
+      "avgFTAPerGame": 19.0
+    },
+    "Gary Corbett": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.088,
+      "totalGames": 1,
+      "avgFoulsPerGame": 15.0,
+      "avgFTAPerGame": 19.0
+    },
+    "Brad Zapenas": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.088,
+      "totalGames": 1,
+      "avgFoulsPerGame": 15.0,
+      "avgFTAPerGame": 19.0
+    },
+    "Zelton Steed": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 39.0
+    },
+    "Josh White": {
+      "foulClimate": 1.06,
+      "homeWhistleBias": -0.03,
+      "totalGames": 6,
+      "avgFoulsPerGame": 36.5,
+      "avgFTAPerGame": 44.2
+    },
+    "Chase  Vaden": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 39.0
+    },
+    "Jose Carrion": {
+      "foulClimate": 1.255,
+      "homeWhistleBias": 0.032,
+      "totalGames": 4,
+      "avgFoulsPerGame": 43.2,
+      "avgFTAPerGame": 54.5
+    },
+    "Marvin Harris Jr.": {
+      "foulClimate": 1.001,
+      "homeWhistleBias": -0.047,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 43.0
+    },
+    "Art Vaulk": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Greg Langsdorf": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": 0.032,
+      "totalGames": 2,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 42.5
+    },
+    "Tony Meeks": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.082,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 36.0
+    },
+    "King  Whetstone": {
+      "foulClimate": 1.052,
+      "homeWhistleBias": 0.051,
+      "totalGames": 4,
+      "avgFoulsPerGame": 36.2,
+      "avgFTAPerGame": 41.2
+    },
+    "Blake Harris": {
+      "foulClimate": 0.948,
+      "homeWhistleBias": 0.022,
+      "totalGames": 3,
+      "avgFoulsPerGame": 32.7,
+      "avgFTAPerGame": 36.3
+    },
+    "John Garrett": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": -0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 23.0
+    },
+    "Tucson Grigg": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.05,
+      "totalGames": 2,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 38.5
+    },
+    "Chris Pasci": {
+      "foulClimate": 1.234,
+      "homeWhistleBias": 0.076,
+      "totalGames": 2,
+      "avgFoulsPerGame": 42.5,
+      "avgFTAPerGame": 54.0
+    },
+    "Damon Williams": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 40.0
+    },
+    "Jon Wall": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 40.0
+    },
+    "Trent Lovewell": {
+      "foulClimate": 1.052,
+      "homeWhistleBias": -0.007,
+      "totalGames": 4,
+      "avgFoulsPerGame": 36.2,
+      "avgFTAPerGame": 44.2
+    },
+    "Phil Cudd": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Eric Lowe": {
+      "foulClimate": 1.023,
+      "homeWhistleBias": -0.028,
+      "totalGames": 4,
+      "avgFoulsPerGame": 35.2,
+      "avgFTAPerGame": 44.2
+    },
+    "Cody Crum": {
+      "foulClimate": 1.001,
+      "homeWhistleBias": 0.009,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 42.5
+    },
+    "Kevin Driver": {
+      "foulClimate": 0.881,
+      "homeWhistleBias": 0.016,
+      "totalGames": 3,
+      "avgFoulsPerGame": 30.3,
+      "avgFTAPerGame": 31.3
+    },
+    "Wesley Harper": {
+      "foulClimate": 0.907,
+      "homeWhistleBias": 0.016,
+      "totalGames": 4,
+      "avgFoulsPerGame": 31.2,
+      "avgFTAPerGame": 34.8
+    },
+    "Steve Divine": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.063,
+      "totalGames": 3,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Steve Orkus": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 37.0
+    },
+    "Damien Richard": {
+      "foulClimate": 0.943,
+      "homeWhistleBias": 0.012,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.5,
+      "avgFTAPerGame": 36.0
+    },
+    "Wesley Ford": {
+      "foulClimate": 1.113,
+      "homeWhistleBias": 0.043,
+      "totalGames": 3,
+      "avgFoulsPerGame": 38.3,
+      "avgFTAPerGame": 40.7
+    },
+    "Blake Thomas": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 39.0
+    },
+    "Bobby Lineberger": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 52.0
+    },
+    "Nick Heater": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 52.0
+    },
+    "Sidney Cohen": {
+      "foulClimate": 1.06,
+      "homeWhistleBias": -0.05,
+      "totalGames": 2,
+      "avgFoulsPerGame": 36.5,
+      "avgFTAPerGame": 46.5
+    },
+    "Landen Cammack": {
+      "foulClimate": 1.161,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 40.0,
+      "avgFTAPerGame": 55.0
+    },
+    "Bryan Washer": {
+      "foulClimate": 0.972,
+      "homeWhistleBias": -0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 33.5,
+      "avgFTAPerGame": 41.5
+    },
+    "Kyle Ray": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.032,
+      "totalGames": 2,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 38.5
+    },
+    "Kirk Smith": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": -0.023,
+      "totalGames": 2,
+      "avgFoulsPerGame": 45.5,
+      "avgFTAPerGame": 62.0
+    },
+    "Larry Hamilton": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": -0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 50.0,
+      "avgFTAPerGame": 68.0
+    },
+    "Chris Hudson": {
+      "foulClimate": 1.026,
+      "homeWhistleBias": 0.025,
+      "totalGames": 3,
+      "avgFoulsPerGame": 35.3,
+      "avgFTAPerGame": 41.0
+    },
+    "Chance Wallesen": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 29.5
+    },
+    "John Dillon": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Coy Gammon": {
+      "foulClimate": 1.089,
+      "homeWhistleBias": 0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 37.5,
+      "avgFTAPerGame": 44.5
+    },
+    "Josh Pitto": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.038,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 34.5
+    },
+    "Doug Sturdivan": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 31.0
+    },
+    "Ryan Holmes": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": -0.035,
+      "totalGames": 3,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 41.3
+    },
+    "Nate Melson": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 47.0,
+      "avgFTAPerGame": 64.0
+    },
+    "James Duke": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.056,
+      "totalGames": 4,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 38.5
+    },
+    "Eric Dust": {
+      "foulClimate": 0.856,
+      "homeWhistleBias": 0.0,
+      "totalGames": 2,
+      "avgFoulsPerGame": 29.5,
+      "avgFTAPerGame": 30.0
+    },
+    "David Hall": {
+      "foulClimate": 0.968,
+      "homeWhistleBias": 0.069,
+      "totalGames": 3,
+      "avgFoulsPerGame": 33.3,
+      "avgFTAPerGame": 39.0
+    },
+    "Tim Marion": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 34.0
+    },
+    "Sean Samsel": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 34.0
+    },
+    "Vince Pease": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 34.0
+    },
+    "John Hendricks": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 37.0
+    },
+    "Damon Allen": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 49.0,
+      "avgFTAPerGame": 59.0
+    },
+    "Kenneth Moreland": {
+      "foulClimate": 1.068,
+      "homeWhistleBias": -0.018,
+      "totalGames": 5,
+      "avgFoulsPerGame": 36.8,
+      "avgFTAPerGame": 45.0
+    },
+    "Robert Riley": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.014,
+      "totalGames": 5,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 33.6
+    },
+    "Brian Zink": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.014,
+      "totalGames": 3,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 29.0
+    },
+    "Vasilli Malios": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 25.0,
+      "avgFTAPerGame": 22.0
+    },
+    "Matt Lavigne": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.01,
+      "totalGames": 3,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 36.3
+    },
+    "William Flowers Jr.": {
+      "foulClimate": 0.856,
+      "homeWhistleBias": -0.009,
+      "totalGames": 4,
+      "avgFoulsPerGame": 29.5,
+      "avgFTAPerGame": 35.0
+    },
+    "Steven Perry Jr.": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": -0.013,
+      "totalGames": 4,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 38.2
+    },
+    "Ian  Caldwell": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.015,
+      "totalGames": 2,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 38.5
+    },
+    "Verne Davis": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 32.0
+    },
+    "Scott Brown": {
+      "foulClimate": 0.948,
+      "homeWhistleBias": 0.025,
+      "totalGames": 3,
+      "avgFoulsPerGame": 32.7,
+      "avgFTAPerGame": 37.0
+    },
+    "Ernest Hamilton III": {
+      "foulClimate": 1.248,
+      "homeWhistleBias": 0.056,
+      "totalGames": 2,
+      "avgFoulsPerGame": 43.0,
+      "avgFTAPerGame": 54.5
+    },
+    "Damon Patterson II": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.0,
+      "totalGames": 1,
+      "avgFoulsPerGame": 46.0,
+      "avgFTAPerGame": 66.0
+    },
+    "Moe Najmyar": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 48.0
+    },
+    "Brian Hagedorn": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Bobby Bissant": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 54.0
+    },
+    "Adam James": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": -0.018,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 41.0
+    },
+    "Vlad Tadal": {
+      "foulClimate": 1.132,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 51.0
+    },
+    "Joe Prince": {
+      "foulClimate": 1.132,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 51.0
+    },
+    "Joe Switzer": {
+      "foulClimate": 0.98,
+      "homeWhistleBias": -0.015,
+      "totalGames": 4,
+      "avgFoulsPerGame": 33.8,
+      "avgFTAPerGame": 44.0
+    },
+    "Ian McClenny": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 49.0,
+      "avgFTAPerGame": 69.0
+    },
+    "Galen Durant": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 49.0,
+      "avgFTAPerGame": 69.0
+    },
+    "Doug George": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 37.0
+    },
+    "Rufus Lott": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.0,
+      "totalGames": 1,
+      "avgFoulsPerGame": 58.0,
+      "avgFTAPerGame": 78.0
+    },
+    "Brent Dugas": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.094,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 30.0
+    },
+    "Brent  Simmons": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.094,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 30.0
+    },
+    "Adrian  Judie": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 36.0
+    },
+    "Jon Pierre": {
+      "foulClimate": 0.943,
+      "homeWhistleBias": 0.015,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.5,
+      "avgFTAPerGame": 35.5
+    },
+    "Johnny Wilkins": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 46.0
+    },
+    "Winston Trotter": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 46.0
+    },
+    "Raymond Tate": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": -0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Tommy Nunez": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": -0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Daryl Gelinas": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 41.0
+    },
+    "Mike O'Neill": {
+      "foulClimate": 1.151,
+      "homeWhistleBias": 0.004,
+      "totalGames": 3,
+      "avgFoulsPerGame": 39.7,
+      "avgFTAPerGame": 48.7
+    },
+    "Doug Simons": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.0,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Tom Comer": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": -0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 36.0
+    },
+    "Michael Mojica": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 24.0
+    },
+    "Mikerlange Fleury": {
+      "foulClimate": 0.769,
+      "homeWhistleBias": -0.001,
+      "totalGames": 4,
+      "avgFoulsPerGame": 26.5,
+      "avgFTAPerGame": 27.8
+    },
+    "Greg Gerritsen": {
+      "foulClimate": 1.001,
+      "homeWhistleBias": 0.029,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 40.0
+    },
+    "Travis Caswell": {
+      "foulClimate": 1.001,
+      "homeWhistleBias": 0.029,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 40.0
+    },
+    "Darren Budahn": {
+      "foulClimate": 1.001,
+      "homeWhistleBias": 0.029,
+      "totalGames": 2,
+      "avgFoulsPerGame": 34.5,
+      "avgFTAPerGame": 40.0
+    },
+    "Ryan Corbett": {
+      "foulClimate": 0.91,
+      "homeWhistleBias": 0.006,
+      "totalGames": 3,
+      "avgFoulsPerGame": 31.3,
+      "avgFTAPerGame": 33.0
+    },
+    "Tim Kelly": {
+      "foulClimate": 1.035,
+      "homeWhistleBias": -0.035,
+      "totalGames": 3,
+      "avgFoulsPerGame": 35.7,
+      "avgFTAPerGame": 42.0
+    },
+    "Phil Sallustio Jr.": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 19.0
+    },
+    "Robert Riley Jr.": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.012,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 24.0
+    },
+    "Jason Stallworth": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 19.0
+    },
+    "Chris Devlin": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.006,
+      "totalGames": 2,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Josh Burton": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.006,
+      "totalGames": 2,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Mamadou Ba": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 41.0
+    },
+    "Tyler Sandmann": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.009,
+      "totalGames": 4,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 32.0
+    },
+    "Christopher Brown": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 38.0
+    },
+    "David Powell": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": -0.006,
+      "totalGames": 2,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 45.0
+    },
+    "Jawaan Williams": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": -0.009,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 42.5
+    },
+    "Quentin Jackson": {
+      "foulClimate": 0.885,
+      "homeWhistleBias": 0.035,
+      "totalGames": 2,
+      "avgFoulsPerGame": 30.5,
+      "avgFTAPerGame": 34.0
+    },
+    "Sean Campbell": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.056,
+      "totalGames": 2,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 43.5
+    },
+    "Devorn Kinsey": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Rodrick Dixon": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 50.0
+    },
+    "Mike Thornton": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 50.0
+    },
+    "Michael Kolen": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 46.0
+    },
+    "Byron Rosier": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 46.0
+    },
+    "Carl Luciano": {
+      "foulClimate": 0.861,
+      "homeWhistleBias": 0.031,
+      "totalGames": 3,
+      "avgFoulsPerGame": 29.7,
+      "avgFTAPerGame": 29.3
+    },
+    "Josh Anderson": {
+      "foulClimate": 0.832,
+      "homeWhistleBias": 0.014,
+      "totalGames": 3,
+      "avgFoulsPerGame": 28.7,
+      "avgFTAPerGame": 32.3
+    },
+    "Derek Schulte": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": -0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Anthony Thomas": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": -0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Larry Johnson": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Cleveland Rogers": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Chelsea Schweers": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Michael McCloskey": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": -0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 22.0
+    },
+    "Brandon Cruz": {
+      "foulClimate": 0.849,
+      "homeWhistleBias": -0.006,
+      "totalGames": 4,
+      "avgFoulsPerGame": 29.2,
+      "avgFTAPerGame": 28.5
+    },
+    "Stephen Sherrill": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 36.0
+    },
+    "Garrett Jones": {
+      "foulClimate": 1.016,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 35.0,
+      "avgFTAPerGame": 36.0
+    },
+    "Nick Atwood": {
+      "foulClimate": 1.132,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 39.0,
+      "avgFTAPerGame": 43.0
+    },
+    "Kael Saloy": {
+      "foulClimate": 1.161,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 40.0,
+      "avgFTAPerGame": 52.0
+    },
+    "Trent  Dews": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 46.0
+    },
+    "Geoff Vejsicky": {
+      "foulClimate": 1.239,
+      "homeWhistleBias": 0.0,
+      "totalGames": 3,
+      "avgFoulsPerGame": 42.7,
+      "avgFTAPerGame": 52.7
+    },
+    "Mike Terry": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 24.0
+    },
+    "Kyle Bottoms": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.003,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 28.5
+    },
+    "Patrick  Harwood": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 34.0
+    },
+    "JP Primm": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.035,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 40.0
+    },
+    "Michael Husted": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 29.0
+    },
+    "Kindric Link": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 29.0
+    },
+    "Byron Evans": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 48.0
+    },
+    "Nick Nadeau": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.029,
+      "totalGames": 2,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 30.0
+    },
+    "Andrew Casas": {
+      "foulClimate": 0.943,
+      "homeWhistleBias": 0.038,
+      "totalGames": 2,
+      "avgFoulsPerGame": 32.5,
+      "avgFTAPerGame": 39.5
+    },
+    "Felix Fuerte": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 31.0
+    },
+    "Jeremy Trussell": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": 0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Michael Stramiello": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Chris Koopman": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 50.0
+    },
+    "Steve Devine": {
+      "foulClimate": 1.103,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 38.0,
+      "avgFTAPerGame": 49.0
+    },
+    "Connor Mooney": {
+      "foulClimate": 0.939,
+      "homeWhistleBias": 0.018,
+      "totalGames": 3,
+      "avgFoulsPerGame": 32.3,
+      "avgFTAPerGame": 34.3
+    },
+    "Darrin White": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": 0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 36.0
+    },
+    "K.C. Ely": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": -0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 50.0,
+      "avgFTAPerGame": 73.0
+    },
+    "Layne Barney": {
+      "foulClimate": 1.161,
+      "homeWhistleBias": -0.041,
+      "totalGames": 3,
+      "avgFoulsPerGame": 40.0,
+      "avgFTAPerGame": 51.7
+    },
+    "Jason Albanza": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Gordon Bentley": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": -0.021,
+      "totalGames": 2,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 37.5
+    },
+    "Kevin Raher": {
+      "foulClimate": 1.234,
+      "homeWhistleBias": 0.012,
+      "totalGames": 2,
+      "avgFoulsPerGame": 42.5,
+      "avgFTAPerGame": 52.0
+    },
+    "Bill Vinovich": {
+      "foulClimate": 1.248,
+      "homeWhistleBias": -0.006,
+      "totalGames": 3,
+      "avgFoulsPerGame": 43.0,
+      "avgFTAPerGame": 51.0
+    },
+    "Ben Cartmell": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 34.0
+    },
+    "Brian Shore": {
+      "foulClimate": 0.958,
+      "homeWhistleBias": 0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 33.0,
+      "avgFTAPerGame": 39.0
+    },
+    "Mike  Pearson": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 45.0
+    },
+    "Jon Riggsbee": {
+      "foulClimate": 1.248,
+      "homeWhistleBias": 0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 43.0,
+      "avgFTAPerGame": 55.0
+    },
+    "John Kendricks": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 35.0
+    },
+    "John Gleich": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.053,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Tim Conner": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 33.0
+    },
+    "John Washo": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Jermaine  Rogers": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Kellen Milliner": {
+      "foulClimate": 0.755,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 26.0,
+      "avgFTAPerGame": 26.0
+    },
+    "Nathan Bemis": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 44.0
+    },
+    "Shane Staggs": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": 0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 34.0
+    },
+    "Sean West": {
+      "foulClimate": 0.987,
+      "homeWhistleBias": -0.041,
+      "totalGames": 1,
+      "avgFoulsPerGame": 34.0,
+      "avgFTAPerGame": 35.0
+    },
+    "Alex Manuel": {
+      "foulClimate": 1.277,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 44.0,
+      "avgFTAPerGame": 62.0
+    },
+    "Sean Lineberger": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 42.0
+    },
+    "J.W. Lucas": {
+      "foulClimate": 0.871,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 30.0,
+      "avgFTAPerGame": 38.0
+    },
+    "Michael Brode": {
+      "foulClimate": 1.248,
+      "homeWhistleBias": -0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 43.0,
+      "avgFTAPerGame": 57.0
+    },
+    "Steve Ruppenthal": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 23.0
+    },
+    "Tom Deenan": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 23.0
+    },
+    "Ben Syroka": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": -0.012,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Chris King": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 27.0
+    },
+    "Nathan Quick": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 44.0
+    },
+    "Daniel Clark": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.059,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 44.0
+    },
+    "Nelson Santiago": {
+      "foulClimate": 1.248,
+      "homeWhistleBias": 0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 43.0,
+      "avgFTAPerGame": 61.0
+    },
+    "Ryan Wechsler": {
+      "foulClimate": 1.248,
+      "homeWhistleBias": 0.018,
+      "totalGames": 1,
+      "avgFoulsPerGame": 43.0,
+      "avgFTAPerGame": 61.0
+    },
+    "Leon Wilson": {
+      "foulClimate": 1.045,
+      "homeWhistleBias": 0.088,
+      "totalGames": 1,
+      "avgFoulsPerGame": 36.0,
+      "avgFTAPerGame": 49.0
+    },
+    "Marcus Gossard": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Tim Fitzgerald": {
+      "foulClimate": 0.842,
+      "homeWhistleBias": 0.047,
+      "totalGames": 1,
+      "avgFoulsPerGame": 29.0,
+      "avgFTAPerGame": 28.0
+    },
+    "Bob Franklin": {
+      "foulClimate": 0.9,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 31.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Jake Kuhlman": {
+      "foulClimate": 1.074,
+      "homeWhistleBias": 0.035,
+      "totalGames": 1,
+      "avgFoulsPerGame": 37.0,
+      "avgFTAPerGame": 56.0
+    },
+    "Chris Duprey": {
+      "foulClimate": 0.784,
+      "homeWhistleBias": 0.088,
+      "totalGames": 1,
+      "avgFoulsPerGame": 27.0,
+      "avgFTAPerGame": 27.0
+    },
+    "Earnie Pheal": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.088,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 33.0
+    },
+    "Wilson Holland": {
+      "foulClimate": 1.161,
+      "homeWhistleBias": -0.029,
+      "totalGames": 1,
+      "avgFoulsPerGame": 40.0,
+      "avgFTAPerGame": 49.0
+    },
+    "Jon Campbell": {
+      "foulClimate": 1.3,
+      "homeWhistleBias": 0.018,
+      "totalGames": 2,
+      "avgFoulsPerGame": 46.0,
+      "avgFTAPerGame": 55.0
+    },
+    "Bret Wegenke": {
+      "foulClimate": 0.929,
+      "homeWhistleBias": 0.023,
+      "totalGames": 1,
+      "avgFoulsPerGame": 32.0,
+      "avgFTAPerGame": 42.0
+    },
+    "Michael Griffith": {
+      "foulClimate": 0.75,
+      "homeWhistleBias": 0.07,
+      "totalGames": 1,
+      "avgFoulsPerGame": 22.0,
+      "avgFTAPerGame": 16.0
+    },
+    "Jeb Hardness": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 53.0
+    },
+    "Mike Paulu": {
+      "foulClimate": 0.813,
+      "homeWhistleBias": 0.006,
+      "totalGames": 1,
+      "avgFoulsPerGame": 28.0,
+      "avgFTAPerGame": 25.0
+    },
+    "Tim Cormer": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 45.0
+    },
+    "Michael Reese": {
+      "foulClimate": 1.219,
+      "homeWhistleBias": -0.05,
+      "totalGames": 1,
+      "avgFoulsPerGame": 42.0,
+      "avgFTAPerGame": 45.0
+    },
+    "Mark Potter": {
+      "foulClimate": 1.19,
+      "homeWhistleBias": 0.1,
+      "totalGames": 1,
+      "avgFoulsPerGame": 41.0,
+      "avgFTAPerGame": 42.0
     }
   },
   "defaults": {
