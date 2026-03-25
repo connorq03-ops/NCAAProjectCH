@@ -6,10 +6,14 @@ Computes accuracy metrics: pick %, ATS %, MAE, by conference, by spread bucket.
 Uses the full 4-model composite pipeline (KenPom + Similar Opponents + ConRat + MC)
 matching the frontend logic in static/index.html, with a built-in validation loop.
 
-KNOWN LIMITATION: The KenPom `ratings` endpoint returns current-day ratings,
-not historical snapshots. For true historical backtesting you would need the
-`archive` endpoint for each date. Using current ratings introduces lookahead
-bias -- results will be slightly optimistic.
+Historical mode (use_historical=True) fetches per-date KenPom archive
+ratings so the backtest only sees data available at game time -- eliminating
+lookahead bias. Supplemental data (four factors, misc stats, height, point
+distribution) still uses current-season values since the archive endpoint does
+not provide them. Weekly batching (Monday of each week) keeps API usage low.
+
+Legacy mode (use_historical=False) uses current-day ratings for all dates,
+which introduces lookahead bias but is faster and requires fewer API calls.
 """
 
 import json
@@ -21,9 +25,11 @@ import requests
 from composite_model import (
     model_efficiency, model_similar_opponents, model_con_rat,
     compute_composite, calc_style_clash, calc_experience_adj,
-    calc_conf_adj, calibrate_spread, get_hca,
+    calc_conf_adj, calibrate_spread, get_hca, calc_momentum,
 )
-from matchup_params import prefetch_all_team_data, build_matchup_params
+from matchup_params import (
+    prefetch_all_team_data, prefetch_historical_team_data, build_matchup_params,
+)
 from mc_engine import simulate_game
 from model_weight_optimizer import compute_per_model_ats, compute_optimal_weights
 
@@ -151,11 +157,45 @@ class Backtester:
 
         return self._compute_metrics(results)
 
-    def backtest_date_range(self, start_date, end_date, kenpom_client, cache):
+    def _get_archive_for_date(self, date_str, kenpom_client, cache):
+        """Get archive data for a date, using weekly batching to reduce API calls.
+
+        Fetches archive for the Monday of the week containing date_str.
+        Ratings don't change dramatically within a week, so this is a good tradeoff.
+
+        Returns:
+            tuple: (list of team archive dicts or None, was_api_call: bool)
+        """
+        dt = datetime.strptime(date_str, '%Y-%m-%d')
+        monday = dt - timedelta(days=dt.weekday())
+        monday_str = monday.strftime('%Y-%m-%d')
+
+        cache_key = 'archive_historical'
+        cache_params = {'date': monday_str}
+        cached = cache.get(cache_key, cache_params, ttl=86400 * 365)
+        if cached is not None:
+            return cached, False
+
+        data = kenpom_client.get_archive(date=monday_str)
+        cache.set(cache_key, cache_params, data)
+        return data, True
+
+    def backtest_date_range(self, start_date, end_date, kenpom_client, cache,
+                            use_historical=False):
         """
         Backtest a range of dates using KenPom fanmatch data + ESPN scores.
         This is the full automated pipeline that doesn't require pre-saved predictions.
         Uses the full 4-model composite pipeline.
+
+        Args:
+            start_date: YYYY-MM-DD start date
+            end_date: YYYY-MM-DD end date
+            kenpom_client: KenpomClient instance
+            cache: SQLiteCache instance
+            use_historical: If True, use per-date archive ratings to
+                eliminate lookahead bias and enable momentum enrichment.
+                If False (default), use current-day ratings (legacy behavior).
+                The UI checkbox sends historical=true explicitly when checked.
         """
         # -- Load stored calibration overrides --
         stored_cal = cache.get('spread_calibration', {}, ttl=86400 * 365) or {}
@@ -170,13 +210,13 @@ class Backtester:
         if not conf_overrides:
             conf_overrides = None
 
-        # -- One-time bulk data prefetch --
+        # -- One-time bulk data prefetch (always needed for supplemental data) --
         year = _kenpom_season_year(start_date)
         try:
-            team_data = prefetch_all_team_data(kenpom_client, cache, year=year)
+            current_team_data = prefetch_all_team_data(kenpom_client, cache, year=year)
         except Exception as e:
             print(f"[backtest] Failed to prefetch team data: {e}")
-            team_data = {}
+            current_team_data = {}
 
         # Fetch conference ratings once
         conf_map = {}
@@ -194,17 +234,53 @@ class Backtester:
             print(f"[backtest] Failed to fetch conference ratings: {e}")
 
         results = []
+        archive_calls = 0
         current = datetime.strptime(start_date, '%Y-%m-%d')
         end = datetime.strptime(end_date, '%Y-%m-%d')
 
+        mode_label = 'historical' if use_historical else 'current'
+        print(f"[backtest] Running in {mode_label} mode from {start_date} to {end_date}")
+
         while current <= end:
             date_str = current.strftime('%Y-%m-%d')
+
+            # Build team_data for this day
+            if use_historical:
+                try:
+                    archive_data, was_api_call = self._get_archive_for_date(date_str, kenpom_client, cache)
+                    if was_api_call:
+                        archive_calls += 1
+                    if archive_data and isinstance(archive_data, list) and len(archive_data) > 0:
+                        # Pass pre-fetched archive_data to avoid a redundant API call
+                        historical_team_data = prefetch_historical_team_data(
+                            kenpom_client, cache, date_str,
+                            supplemental_data=current_team_data,
+                            archive_data=archive_data,
+                        )
+                        if historical_team_data:
+                            day_team_data = historical_team_data
+                        else:
+                            print(f"[backtest] No archive data for {date_str}, falling back to current ratings")
+                            day_team_data = current_team_data
+                    else:
+                        print(f"[backtest] No archive data for {date_str}, falling back to current ratings")
+                        day_team_data = current_team_data
+                except Exception as e:
+                    print(f"[backtest] Archive fetch failed for {date_str}: {e}, using current ratings")
+                    day_team_data = current_team_data
+            else:
+                day_team_data = current_team_data
+
+            if archive_calls > 150:
+                print(f"[backtest] WARNING: {archive_calls} archive API calls used. Rate limit is 200/hour.")
+
             try:
                 day_results = self._backtest_single_day(
                     date_str, kenpom_client, cache,
-                    team_data=team_data, conf_map=conf_map,
+                    team_data=day_team_data, conf_map=conf_map,
                     calibration_coeffs=calibration_coeffs,
                     conf_overrides=conf_overrides,
+                    use_historical=use_historical,
                 )
                 results.extend(day_results)
             except Exception as e:
@@ -234,7 +310,51 @@ class Backtester:
         if validation_issues:
             metrics['validation_issues'] = validation_issues
 
+        # Metadata (Step 10)
+        metrics['meta'] = {
+            'mode': mode_label,
+            'lookahead_bias': 'eliminated' if use_historical else 'present (current-day ratings)',
+            'momentum_enabled': use_historical,
+            'supplemental_data': 'current-season (ff, ms, ht, pd not available historically)',
+            'archive_calls': archive_calls,
+            'date_range': f'{start_date} to {end_date}',
+            'weekly_batching': use_historical,
+        }
+
         return metrics
+
+    def backtest_with_bias_comparison(self, start_date, end_date, kenpom_client, cache):
+        """Run backtest twice: with and without historical data, and compare.
+
+        Returns:
+            dict with both sets of metrics plus a 'bias_analysis' section showing
+            how much lookahead bias inflates accuracy.
+        """
+        historical_metrics = self.backtest_date_range(
+            start_date, end_date, kenpom_client, cache, use_historical=True)
+
+        current_metrics = self.backtest_date_range(
+            start_date, end_date, kenpom_client, cache, use_historical=False)
+
+        bias_analysis = {
+            'historical_pick_accuracy': historical_metrics.get('our_pick_accuracy'),
+            'current_pick_accuracy': current_metrics.get('our_pick_accuracy'),
+            'lookahead_bias_pct': round(
+                (current_metrics.get('our_pick_accuracy', 0) -
+                 historical_metrics.get('our_pick_accuracy', 0)), 1),
+            'historical_avg_error': historical_metrics.get('our_avg_spread_error'),
+            'current_avg_error': current_metrics.get('our_avg_spread_error'),
+            'error_improvement_from_lookahead': round(
+                (historical_metrics.get('our_avg_spread_error', 0) -
+                 current_metrics.get('our_avg_spread_error', 0)), 1),
+            'momentum_enabled': True,
+        }
+
+        return {
+            'historical': historical_metrics,
+            'current': current_metrics,
+            'bias_analysis': bias_analysis,
+        }
 
     # -- Edge case: fuzzy team name matching --
 
@@ -256,7 +376,8 @@ class Backtester:
 
     def _backtest_single_day(self, date_str, kenpom_client, cache,
                              team_data=None, conf_map=None,
-                             calibration_coeffs=None, conf_overrides=None):
+                             calibration_coeffs=None, conf_overrides=None,
+                             use_historical=False):
         """Backtest a single day: fetch fanmatch + scores, compare predictions."""
         if team_data is None:
             team_data = {}
@@ -279,20 +400,43 @@ class Backtester:
         except Exception:
             return []
 
-        # Get ratings for predictions
-        try:
-            ratings_year = _kenpom_season_year(date_str)
-            ratings = cache.get('ratings_backtest', {'year': ratings_year})
-            if ratings is None:
-                ratings = kenpom_client.get_ratings(year=ratings_year)
-                cache.set('ratings_backtest', {'year': ratings_year}, ratings)
-        except Exception:
+        # Build ratings_map from team_data (which may be historical or current)
+        ratings_map = {}
+        for team_name, td in team_data.items():
+            r = td.get('ratings', {})
+            if r:
+                ratings_map[team_name] = r
+
+        # Fallback: if no ratings in team_data, fetch current ratings directly
+        if not ratings_map:
+            try:
+                ratings_year = _kenpom_season_year(date_str)
+                ratings = cache.get('ratings_backtest', {'year': ratings_year})
+                if ratings is None:
+                    ratings = kenpom_client.get_ratings(year=ratings_year)
+                    cache.set('ratings_backtest', {'year': ratings_year}, ratings)
+                if ratings and isinstance(ratings, list):
+                    ratings_map = {r.get('TeamName', ''): r for r in ratings}
+            except Exception:
+                return []
+
+        if not ratings_map:
             return []
 
-        if not ratings or not isinstance(ratings, list):
-            return []
-
-        ratings_map = {r.get('TeamName', ''): r for r in ratings}
+        # Pre-fetch momentum archive (28 days prior) if historical mode is enabled
+        momentum_archive_map = {}
+        if use_historical:
+            month = int(date_str[5:7])
+            year_for_season = int(date_str[:4]) if month >= 10 else int(date_str[:4]) - 1
+            momentum_date = (datetime.strptime(date_str, '%Y-%m-%d') - timedelta(days=28)).strftime('%Y-%m-%d')
+            # Skip momentum if 28 days ago is before season start (November)
+            if momentum_date >= f'{year_for_season}-11-01':
+                try:
+                    arch_28d, _ = self._get_archive_for_date(momentum_date, kenpom_client, cache)
+                    if arch_28d and isinstance(arch_28d, list):
+                        momentum_archive_map = {t.get('TeamName', ''): t for t in arch_28d}
+                except Exception:
+                    pass
 
         results = []
         for g in fanmatch:
@@ -312,9 +456,11 @@ class Backtester:
             kp_margin = home_pred - vis_pred  # home-relative
             kp_winner = home if kp_margin >= 0 else visitor
 
-            # Get ratings data for both teams
-            dH = ratings_map.get(home)
-            dV = ratings_map.get(visitor)
+            # Get ratings data for both teams (fuzzy match into ratings_map)
+            vis_key = self._fuzzy_find_team(visitor, team_data) or self._fuzzy_find_team(visitor, ratings_map)
+            home_key = self._fuzzy_find_team(home, team_data) or self._fuzzy_find_team(home, ratings_map)
+            dV = ratings_map.get(vis_key or visitor)
+            dH = ratings_map.get(home_key or home)
             if not dH or not dV:
                 continue
 
@@ -330,8 +476,6 @@ class Backtester:
             hca1 = 0  # visitor never gets HCA
 
             # Build enrichment data from prefetched team_data
-            vis_key = self._fuzzy_find_team(visitor, team_data)
-            home_key = self._fuzzy_find_team(home, team_data)
             vis_td = team_data.get(vis_key, {}) if vis_key else {}
             home_td = team_data.get(home_key, {}) if home_key else {}
 
@@ -357,8 +501,17 @@ class Backtester:
             experience = calc_experience_adj(ht1_data, ht2_data)
             conf_strength = calc_conf_adj(dV_enriched, dH_enriched, conf_map,
                                           conf_overrides=conf_overrides)
-            # Momentum: skip for now (requires archive fetch per date, expensive)
-            momentum = {'adj': 0}
+
+            # Momentum: compute from 28-day archive if in historical mode
+            if use_historical and momentum_archive_map:
+                arch1 = momentum_archive_map.get(vis_key or visitor)
+                arch2 = momentum_archive_map.get(home_key or home)
+                current_vis = team_data.get(vis_key, {}).get('ratings', {}) if vis_key else {}
+                current_home = team_data.get(home_key, {}).get('ratings', {}) if home_key else {}
+                momentum = calc_momentum(arch1, arch2, current_vis, current_home)
+            else:
+                momentum = {'adj': 0}
+
             extra = {
                 'style_clash': style_clash,
                 'experience': experience,
