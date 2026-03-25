@@ -206,6 +206,13 @@ class Backtester:
                 'moderate': stored_cal.get('moderate_coeff', 0.85),
                 'logMult': stored_cal.get('log_multiplier', 3.5),
             }
+        stored_total_cal = cache.get('total_calibration', {}, ttl=86400 * 365) or {}
+        total_calibration_coeffs = None
+        if stored_total_cal.get('center') is not None:
+            total_calibration_coeffs = {
+                'center': stored_total_cal['center'],
+                'compression': stored_total_cal.get('compression', 0.90),
+            }
         conf_overrides = cache.get('conf_adjustments', {}, ttl=86400 * 365) or {}
         if not conf_overrides:
             conf_overrides = None
@@ -281,6 +288,7 @@ class Backtester:
                     calibration_coeffs=calibration_coeffs,
                     conf_overrides=conf_overrides,
                     use_historical=use_historical,
+                    total_calibration_coeffs=total_calibration_coeffs,
                 )
                 results.extend(day_results)
             except Exception as e:
@@ -292,7 +300,8 @@ class Backtester:
 
         metrics = self._compute_metrics(results,
                                          calibration_coeffs=calibration_coeffs,
-                                         conf_overrides=conf_overrides)
+                                         conf_overrides=conf_overrides,
+                                         total_calibration_coeffs=total_calibration_coeffs)
 
         # Dynamic weight optimization (Part A)
         per_model_ats = compute_per_model_ats(results)
@@ -377,7 +386,8 @@ class Backtester:
     def _backtest_single_day(self, date_str, kenpom_client, cache,
                              team_data=None, conf_map=None,
                              calibration_coeffs=None, conf_overrides=None,
-                             use_historical=False):
+                             use_historical=False,
+                             total_calibration_coeffs=None):
         """Backtest a single day: fetch fanmatch + scores, compare predictions."""
         if team_data is None:
             team_data = {}
@@ -545,7 +555,8 @@ class Backtester:
 
             # Composite
             composite = compute_composite(eff, sim, cr, mc, dV_enriched, dH_enriched,
-                                          calibration_coeffs=calibration_coeffs)
+                                          calibration_coeffs=calibration_coeffs,
+                                          total_calibration_coeffs=total_calibration_coeffs)
             our_margin = composite['margin']  # visitor-relative (positive = visitor favored)
             our_winner = visitor if our_margin >= 0 else home
 
@@ -704,7 +715,7 @@ class Backtester:
         return None
 
 
-    def _compute_metrics(self, results, calibration_coeffs=None, conf_overrides=None):
+    def _compute_metrics(self, results, calibration_coeffs=None, conf_overrides=None, total_calibration_coeffs=None):
         """Compute accuracy metrics from backtest results, including composite vs simple comparison."""
         if not results:
             return {'total_games': 0, 'results': []}
@@ -1068,7 +1079,7 @@ class Backtester:
             'total_bias': total_bias,
             'ou_by_edge': ou_edge_stats,
             'sub_model_total_accuracy': sub_model_total_accuracy,
-            'total_calibration_recommendations': self._compute_total_calibration_recommendations(results),
+            'total_calibration_recommendations': self._compute_total_calibration_recommendations(results, total_coeffs=total_calibration_coeffs),
             'results': results,
         }
 
