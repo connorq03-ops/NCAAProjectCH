@@ -227,6 +227,67 @@ def prefetch_all_team_data(client, cache, year=2026):
     return team_data
 
 
+def prefetch_historical_team_data(client, cache, date_str, supplemental_data=None):
+    """Fetch historical KenPom ratings for a specific date, merged with supplemental data.
+
+    The archive endpoint returns core ratings (AdjEM, AdjOE, AdjDE, AdjTempo, etc.)
+    for the specified date. Supplemental data (ff, ms, ht, pd, stars, coach) is not
+    available historically, so we use current-season values passed in via supplemental_data.
+
+    Args:
+        client: KenpomClient instance
+        cache: SQLiteCache instance
+        date_str: YYYY-MM-DD date string
+        supplemental_data: dict from prefetch_all_team_data() for ff/ms/ht/pd/stars/coach
+
+    Returns:
+        dict: {TeamName: {ratings, ff, ht, ms, pd, stars, coach}} with historical ratings
+    """
+    if supplemental_data is None:
+        supplemental_data = {}
+
+    # Fetch archive data with long TTL (historical data never changes)
+    cache_key = 'archive_historical'
+    cache_params = {'date': date_str}
+    cached = cache.get(cache_key, cache_params, ttl=86400 * 365)
+    if cached is not None:
+        archive_data = cached
+    else:
+        archive_data = client.get_archive(date=date_str)
+        cache.set(cache_key, cache_params, archive_data)
+
+    if not archive_data or not isinstance(archive_data, list):
+        return None
+
+    # Index archive by TeamName
+    archive_map = {}
+    for item in archive_data:
+        team_name = item.get('TeamName', '')
+        if team_name:
+            archive_map[team_name] = item
+
+    # Build team_data with historical ratings + supplemental data
+    team_data = {}
+    for team_name, arch_entry in archive_map.items():
+        supp = supplemental_data.get(team_name, {})
+        team_data[team_name] = {
+            "ratings": arch_entry,
+            "ff": supp.get("ff", {}),
+            "ht": supp.get("ht", {}),
+            "ms": supp.get("ms", {}),
+            "pd": supp.get("pd", {}),
+            "stars": supp.get("stars", []),
+            "coach": supp.get("coach"),
+        }
+
+    # Include teams that are in supplemental but not in archive (use their supplemental ratings)
+    for team_name, supp in supplemental_data.items():
+        if team_name not in team_data:
+            team_data[team_name] = supp
+
+    return team_data
+
+
 # ─── Main Parameter Builder ──────────────────────────────────────────────────
 
 def build_matchup_params(team1_name, team2_name, team_data,

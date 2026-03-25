@@ -122,10 +122,31 @@ curl 'http://localhost:5001/api/backtest?start=2025-03-01&end=2025-03-05'
 ```
 Expected pick accuracy: ~65-72%, spread error: ~8-12 pts.
 
+## Historical Backtest Mode
+
+The backtester supports two modes controlled by `use_historical` (default `True`):
+
+- **Historical mode** (`use_historical=True`): Fetches per-date KenPom archive ratings so the backtest only uses data available at game time, eliminating lookahead bias. Momentum enrichment is also enabled (compares current date ratings to 28 days prior). Weekly batching (Monday of each week) keeps API calls low.
+- **Legacy mode** (`use_historical=False`): Uses current-day ratings for all dates (faster but has lookahead bias).
+
+### API Endpoints
+```bash
+# Historical backtest (default)
+curl 'http://localhost:5001/api/backtest?start=2025-03-01&end=2025-03-05&historical=true'
+
+# Legacy backtest (current-day ratings)
+curl 'http://localhost:5001/api/backtest?start=2025-03-01&end=2025-03-05'
+
+# Dedicated historical endpoint with optional bias comparison
+curl 'http://localhost:5001/api/backtest/historical?start=2025-03-01&end=2025-03-05'
+curl 'http://localhost:5001/api/backtest/historical?start=2025-03-01&end=2025-03-05&compare=true'
+```
+
+The `compare=true` flag runs both modes and returns a `bias_analysis` section quantifying how much lookahead bias inflates accuracy.
+
 ## Known Limitations
-- The backtester uses current-day KenPom ratings, not historical snapshots (lookahead bias).
-- Momentum enrichment is hardcoded to 0 (requires expensive per-date archive fetches).
 - MC simulation uses 200 sims per game for speed.
+- Supplemental data (four factors, misc stats, height, point distribution) uses current-season values since the archive endpoint does not provide them.
 - Port 5001 may be in use from previous runs — use `pkill -f 'python3 app.py'` to clear it.
 - Without a real `KENPOM_API_KEY`, the main ratings page shows a 401 error but all calibration/self-test endpoints still work.
 - The `.cache.db` file should be deleted (`rm .cache.db`) when testing with a clean state.

@@ -870,13 +870,35 @@ def update_conf_adjustments():
 
 @app.route('/api/backtest', methods=['GET'])
 def run_backtest():
-    """Run backtest over a date range. Params: start, end (YYYY-MM-DD)."""
+    """Run backtest over a date range. Params: start, end (YYYY-MM-DD), historical (optional)."""
     start = request.args.get('start')
     end = request.args.get('end')
+    historical = request.args.get('historical', '').lower() == 'true'
     if not start or not end:
         return jsonify({'error': 'start and end date parameters required (YYYY-MM-DD)'}), 400
     try:
-        data = backtester.backtest_date_range(start, end, client, api_cache)
+        data = backtester.backtest_date_range(start, end, client, api_cache,
+                                               use_historical=historical)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/backtest/historical', methods=['GET'])
+def run_historical_backtest():
+    """Run backtest with historical KenPom ratings (no lookahead bias).
+    Params: start, end (YYYY-MM-DD), compare (optional, 'true' to run both modes)."""
+    start = request.args.get('start')
+    end = request.args.get('end')
+    compare = request.args.get('compare', '').lower() == 'true'
+    if not start or not end:
+        return jsonify({'error': 'start and end date parameters required'}), 400
+    try:
+        if compare:
+            data = backtester.backtest_with_bias_comparison(start, end, client, api_cache)
+        else:
+            data = backtester.backtest_date_range(start, end, client, api_cache,
+                                                   use_historical=True)
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -235,6 +235,11 @@
                             <i class="fas fa-database mr-1"></i>Backtest Saved Picks
                         </button>
                     </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <input type="checkbox" id="backtest-historical" checked
+                               class="rounded bg-gray-800 border-gray-700">
+                        <label for="backtest-historical" class="text-gray-400 text-xs">Use historical ratings (eliminates lookahead bias)</label>
+                    </div>
                     <p class="text-xs text-gray-500 mt-2">Uses KenPom fanmatch + ESPN scores. Each day may take a few seconds.</p>
                 </div>
                 <div id="backtest-results"></div>
@@ -4161,13 +4166,15 @@
         async function runBacktest() {
             const start = document.getElementById('backtest-start').value;
             const end = document.getElementById('backtest-end').value;
+            const historical = document.getElementById('backtest-historical').checked;
             if (!start || !end) { alert('Please select start and end dates'); return; }
             const container = document.getElementById('backtest-results');
             const btn = document.getElementById('backtest-run-btn');
             btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Running...';
-            container.innerHTML = '<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-purple-400"></i><p class="text-sm text-gray-400 mt-2">Backtesting games... This may take a minute.</p></div>';
+            const modeLabel = historical ? 'historical ratings (no lookahead bias)' : 'current ratings';
+            container.innerHTML = `<div class="text-center py-8"><i class="fas fa-spinner fa-spin text-2xl text-purple-400"></i><p class="text-sm text-gray-400 mt-2">Backtesting with ${modeLabel}... This may take a minute.</p></div>`;
             try {
-                const resp = await fetch(`${API_BASE}/backtest?start=${start}&end=${end}`);
+                const resp = await fetch(`${API_BASE}/backtest?start=${start}&end=${end}&historical=${historical}`);
                 const data = await resp.json();
                 if (data.error) { container.innerHTML = `<div class="text-center text-red-400 py-8">${data.error}</div>`; return; }
                 renderBacktestResults(data);
@@ -4194,6 +4201,24 @@
         function renderBacktestResults(data) {
             const container = document.getElementById('backtest-results');
             const hasKP = data.kp_pick_accuracy !== null && data.kp_pick_accuracy !== undefined;
+
+            // Metadata banner (historical vs current mode)
+            let metaHTML = '';
+            if (data.meta) {
+                const m = data.meta;
+                const modeColor = m.mode === 'historical' ? 'text-green-400' : 'text-yellow-400';
+                const modeIcon = m.mode === 'historical' ? 'fa-history' : 'fa-clock';
+                const biasLabel = m.mode === 'historical' ? 'Lookahead bias eliminated' : 'Lookahead bias present';
+                metaHTML = `<div class="bg-gray-800/40 rounded-xl p-3 border border-gray-700 mb-4">
+                    <div class="flex items-center gap-3 flex-wrap text-xs">
+                        <span class="${modeColor} font-bold"><i class="fas ${modeIcon} mr-1"></i>${m.mode.toUpperCase()} MODE</span>
+                        <span class="text-gray-400">${biasLabel}</span>
+                        ${m.momentum_enabled ? '<span class="text-cyan-400"><i class="fas fa-chart-line mr-1"></i>Momentum enabled</span>' : ''}
+                        <span class="text-gray-500">${m.date_range}</span>
+                        ${m.archive_calls > 0 ? `<span class="text-gray-500">Archive calls: ${m.archive_calls}</span>` : ''}
+                    </div>
+                </div>`;
+            }
 
             let bucketHTML = '';
             if (data.by_spread_bucket) {
@@ -4404,6 +4429,8 @@
 
             container.innerHTML = `
                 <div class="space-y-4">
+                    <!-- Mode Metadata -->
+                    ${metaHTML}
                     <!-- Summary Cards -->
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div class="bg-gradient-to-br from-purple-900/40 to-gray-800 rounded-xl p-4 border border-purple-500/30 text-center">
