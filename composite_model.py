@@ -507,7 +507,8 @@ def model_con_rat(t1, t2, hca1, hca2, extra=None):
 def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
                       weight_overrides=None, context=None,
                       total_calibration_coeffs=None,
-                      total_situational_overrides=None):
+                      total_situational_overrides=None,
+                      total_weight_overrides=None):
     """Blend 4 model outputs with dynamic weights, apply spread calibration.
 
     Args:
@@ -520,6 +521,10 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
                  (neutral_site, conf_tournament, ncaa_tournament, early_season).
         total_calibration_coeffs: Optional dict with keys 'center', 'compression'
                                   passed through to calibrate_total().
+        total_weight_overrides: Optional dict {'efficiency': float, 'similar': float,
+                                'conrat': float, 'mc': float} to override weights
+                                used for total (score/tempo) blending. Falls back to
+                                spread weights when not provided.
     """
 
     # Dynamic weights based on data quality
@@ -560,6 +565,18 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
     w_cr /= w_total
     w_mc /= w_total
 
+    # Total prediction weights (may differ from spread weights)
+    if total_weight_overrides:
+        tw_eff = total_weight_overrides.get('efficiency', w_eff)
+        tw_sim = total_weight_overrides.get('similar', w_sim)
+        tw_cr = total_weight_overrides.get('conrat', w_cr)
+        tw_mc = total_weight_overrides.get('mc', w_mc)
+        # Normalize
+        tw_total = tw_eff + tw_sim + tw_cr + tw_mc
+        tw_eff /= tw_total; tw_sim /= tw_total; tw_cr /= tw_total; tw_mc /= tw_total
+    else:
+        tw_eff, tw_sim, tw_cr, tw_mc = w_eff, w_sim, w_cr, w_mc
+
     raw_composite_margin = (eff['margin'] * w_eff + sim['margin'] * w_sim
                             + cr['margin'] * w_cr + mc['margin'] * w_mc)
     composite_margin = calibrate_spread(raw_composite_margin, coeffs=calibration_coeffs)
@@ -568,10 +585,10 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
     if context:
         composite_margin = apply_situational_adjustment(composite_margin, context)
 
-    raw_t1_score = (eff['t1_score'] * w_eff + sim['t1_score'] * w_sim
-                    + cr['t1_score'] * w_cr + mc['t1_score'] * w_mc)
-    raw_t2_score = (eff['t2_score'] * w_eff + sim['t2_score'] * w_sim
-                    + cr['t2_score'] * w_cr + mc['t2_score'] * w_mc)
+    raw_t1_score = (eff['t1_score'] * tw_eff + sim['t1_score'] * tw_sim
+                    + cr['t1_score'] * tw_cr + mc['t1_score'] * tw_mc)
+    raw_t2_score = (eff['t2_score'] * tw_eff + sim['t2_score'] * tw_sim
+                    + cr['t2_score'] * tw_cr + mc['t2_score'] * tw_mc)
     raw_total = raw_t1_score + raw_t2_score
     # Apply total calibration to the midpoint (independent of spread calibration)
     calibrated_total = calibrate_total(raw_total, coeffs=total_calibration_coeffs)
@@ -582,6 +599,8 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
     composite_t1_score = score_mid + composite_margin / 2
     composite_t2_score = score_mid - composite_margin / 2
 
+    # Tempo feeds into SD which converts spread-weighted margin to win prob,
+    # so it must use spread weights (w_*) to stay consistent with composite_margin.
     composite_avg_tempo = (eff['tempo'] * w_eff + sim['tempo'] * w_sim
                            + cr['tempo'] * w_cr + mc['tempo'] * w_mc)
     composite_sd = 11.0 * math.sqrt(composite_avg_tempo / 67)
@@ -611,6 +630,12 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
             'similar': round(w_sim, 4),
             'conrat': round(w_cr, 4),
             'mc': round(w_mc, 4),
+        },
+        'total_weights': {
+            'efficiency': round(tw_eff, 4),
+            'similar': round(tw_sim, 4),
+            'conrat': round(tw_cr, 4),
+            'mc': round(tw_mc, 4),
         },
     }
 

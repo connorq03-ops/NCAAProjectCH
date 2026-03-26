@@ -373,7 +373,20 @@
 
         // Dynamic model weights (Part A)
         let DYNAMIC_WEIGHTS = null;
+        let TOTAL_WEIGHTS = null;  // Separate weights for total prediction
         let KP_BLEND_RATIO = null;
+        async function loadTotalWeights() {
+            try {
+                const resp = await fetch(`${API_BASE}/total-weights`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.weights && data.source !== 'default') {
+                        TOTAL_WEIGHTS = data.weights;
+                        console.log('[total-weights] Loaded total weights:', TOTAL_WEIGHTS);
+                    }
+                }
+            } catch (e) { /* use defaults */ }
+        }
         async function loadDynamicWeights() {
             try {
                 const resp = await fetch(`${API_BASE}/model-weights`);
@@ -399,6 +412,7 @@
             } catch (e) { /* use default */ }
         }
         loadDynamicWeights();
+        loadTotalWeights();
         loadKpBlendRatio();
         let currentTeamId = null;
         let currentTeamName = null;
@@ -1772,8 +1786,16 @@
             if (gameContext.early_season) {
                 compositeMargin *= 0.95;
             }
-            const rawT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
-            const rawT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
+            // Total prediction weights (may differ from spread weights)
+            let twEff = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.efficiency : wEff;
+            let twSim = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.similar : wSim;
+            let twCR = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.conrat : wCR;
+            let twMC = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.mc : wMC;
+            const twTotal = twEff + twSim + twCR + twMC;
+            twEff /= twTotal; twSim /= twTotal; twCR /= twTotal; twMC /= twTotal;
+
+            const rawT1Score = eff.t1Score * twEff + sim.t1Score * twSim + cr.t1Score * twCR + mc.t1Score * twMC;
+            const rawT2Score = eff.t2Score * twEff + sim.t2Score * twSim + cr.t2Score * twCR + mc.t2Score * twMC;
             const rawTotal = rawT1Score + rawT2Score;
             let calibratedTotal = calibrateTotal(rawTotal);
             // Situational total dampening (mirrors spread dampening above)
@@ -1791,6 +1813,8 @@
             const compositeT1Score = calibratedMid + compositeMargin / 2;
             const compositeT2Score = calibratedMid - compositeMargin / 2;
             // Derive win prob from calibrated margin
+            // Tempo feeds into SD for win-prob conversion of spread-weighted margin,
+            // so use spread weights (wEff etc.) to stay consistent with compositeMargin.
             const compositeAvgTempo = eff.tempo * wEff + sim.tempo * wSim + cr.tempo * wCR + mc.tempo * wMC;
             const compositeSD = 11.0 * Math.sqrt(compositeAvgTempo / 67);
             const compositeT1Win = gaussianCDF(compositeMargin / compositeSD);
@@ -3658,9 +3682,16 @@
                     rwEff /= rwTotal; rwSim /= rwTotal; rwCR /= rwTotal; rwMC /= rwTotal;
                     ourMargin = calibrateSpread(eff.margin * rwEff + sim.margin * rwSim + cr.margin * rwCR + mc.margin * rwMC);
                     ourPredWinner = ourMargin >= 0 ? visitor : home;
-                    // Compute predicted total from sub-model scores
-                    const rawT1 = eff.t1Score * rwEff + sim.t1Score * rwSim + cr.t1Score * rwCR + mc.t1Score * rwMC;
-                    const rawT2 = eff.t2Score * rwEff + sim.t2Score * rwSim + cr.t2Score * rwCR + mc.t2Score * rwMC;
+                    // Total prediction weights (may differ from spread weights)
+                    let rtwEff = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.efficiency : rwEff;
+                    let rtwSim = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.similar : rwSim;
+                    let rtwCR = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.conrat : rwCR;
+                    let rtwMC = TOTAL_WEIGHTS ? TOTAL_WEIGHTS.mc : rwMC;
+                    const rtwTotal = rtwEff + rtwSim + rtwCR + rtwMC;
+                    rtwEff /= rtwTotal; rtwSim /= rtwTotal; rtwCR /= rtwTotal; rtwMC /= rtwTotal;
+                    // Compute predicted total from sub-model scores using total weights
+                    const rawT1 = eff.t1Score * rtwEff + sim.t1Score * rtwSim + cr.t1Score * rtwCR + mc.t1Score * rtwMC;
+                    const rawT2 = eff.t2Score * rtwEff + sim.t2Score * rtwSim + cr.t2Score * rtwCR + mc.t2Score * rtwMC;
                     ourPredTotal = calibrateTotal(rawT1 + rawT2);
 
                     // Situational dampening (mirrors matchup predictor lines 1757-1774)
@@ -4716,6 +4747,50 @@
                 window._lastTotalCalibRecs = tr;
             }
 
+            // Total weight recommendations
+            let totalWeightHTML = '';
+            if (data.total_weight_recommendations && data.total_weight_recommendations.recommended_weights) {
+                const twr = data.total_weight_recommendations;
+                const cur = twr.current_weights;
+                const rec = twr.recommended_weights;
+                const errs = twr.sub_model_errors || {};
+                const models = ['efficiency', 'similar', 'conrat', 'mc'];
+                const modelLabels = {'efficiency': 'KenPom', 'similar': 'SOS/Similar', 'conrat': 'ConRat', 'mc': 'Monte Carlo'};
+                const twrRows = models.map(m => {
+                    const curW = cur[m] || 0;
+                    const recW = rec[m] || 0;
+                    const err = errs[m] ? (errs[m].avg_total_error_reg || errs[m].avg_total_error) : '-';
+                    const games = errs[m] ? errs[m].games : '-';
+                    const changed = Math.abs(recW - curW) > 0.005;
+                    return `<tr class="border-t border-gray-700">
+                        <td class="px-3 py-2 text-sm">${modelLabels[m]}</td>
+                        <td class="px-3 py-2 text-center text-sm">${(curW * 100).toFixed(0)}%</td>
+                        <td class="px-3 py-2 text-center text-sm font-bold ${changed ? 'text-emerald-400' : 'text-gray-400'}">${(recW * 100).toFixed(0)}%</td>
+                        <td class="px-3 py-2 text-center text-sm">${err}</td>
+                        <td class="px-3 py-2 text-center text-sm">${games}</td>
+                    </tr>`;
+                }).join('');
+                totalWeightHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-emerald-500/30">
+                    <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-weight-hanging mr-1 text-emerald-400"></i>Total Weight Recommendations</h4>
+                    <p class="text-xs text-gray-400 mb-3">Weights for total (O/U) prediction, inversely proportional to each model's total prediction error. Lower error = higher weight.</p>
+                    <table class="w-full text-xs"><thead class="bg-gray-700"><tr>
+                        <th class="px-3 py-1 text-left">Model</th><th class="px-3 py-1 text-center">Current</th>
+                        <th class="px-3 py-1 text-center">Recommended</th><th class="px-3 py-1 text-center">Avg Total Error</th>
+                        <th class="px-3 py-1 text-center">Games</th>
+                    </tr></thead><tbody>${twrRows}</tbody></table>
+                    <p class="text-xs text-gray-400 mt-2">Min games: ${twr.min_games} | Confidence: <span class="${twr.confidence === 'high' ? 'text-green-400' : 'text-yellow-400'}">${twr.confidence}</span></p>
+                    <div class="flex gap-2 mt-3">
+                        <button onclick="applyTotalWeightRecommendations()" class="px-4 py-2 rounded-lg text-xs font-medium ${twr.confidence === 'high' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'} transition-colors">
+                            <i class="fas fa-check mr-1"></i>Apply Total Weights
+                        </button>
+                        <button onclick="resetTotalWeights()" class="px-4 py-2 rounded-lg text-xs font-medium bg-gray-700 hover:bg-gray-600 text-gray-400 transition-colors">
+                            <i class="fas fa-undo mr-1"></i>Reset to Defaults
+                        </button>
+                    </div>
+                </div>`;
+                window._lastTotalWeightRecs = twr;
+            }
+
             let dailyHTML = '';
             if (data.by_date && data.by_date.length > 0) {
                 dailyHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-gray-700">
@@ -4793,6 +4868,9 @@
 
                     <!-- Total Calibration Recommendations -->
                     ${totalCalibHTML}
+
+                    <!-- Total Weight Recommendations -->
+                    ${totalWeightHTML}
 
                     <!-- Daily -->
                     ${dailyHTML}
@@ -4890,6 +4968,48 @@
                 if (resp.ok) {
                     TOTAL_COEFFS = { center: 140, compression: 0.90 };
                     alert('Total calibration reset to defaults.');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        // Apply total weight recommendations from backtest
+        async function applyTotalWeightRecommendations() {
+            const recs = window._lastTotalWeightRecs;
+            if (!recs || !recs.recommended_weights) { alert('No total weight recommendations available'); return; }
+            try {
+                const resp = await fetch(`${API_BASE}/total-weights`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        weights: recs.recommended_weights,
+                        source: 'backtester',
+                        per_model_stats: recs.sub_model_errors || {},
+                        timestamp: new Date().toISOString(),
+                    }),
+                });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    TOTAL_WEIGHTS = data.weights;
+                    const summary = Object.entries(data.weights).map(([m, w]) => `${m}: ${(w * 100).toFixed(0)}%`).join(', ');
+                    alert(`Total weights updated!\n${summary}\n\nRe-run the backtest to verify improvement in ou_reg_pct.`);
+                } else {
+                    alert('Failed to update total weights');
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function resetTotalWeights() {
+            if (!confirm('Reset total weights to defaults (same as spread weights)?')) return;
+            try {
+                const resp = await fetch(`${API_BASE}/total-weights`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        weights: {efficiency: 0.10, similar: 0.10, conrat: 0.20, mc: 0.60},
+                        source: 'default',
+                    }),
+                });
+                if (resp.ok) {
+                    TOTAL_WEIGHTS = null;
+                    alert('Total weights reset to defaults (same as spread weights).');
                 }
             } catch (e) { alert('Error: ' + e.message); }
         }
