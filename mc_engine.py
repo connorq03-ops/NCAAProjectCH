@@ -969,6 +969,10 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
     total_t2_ft_att = 0
     t1_early_bonus_games = 0
     t2_early_bonus_games = 0
+
+    # OT tracking accumulators
+    ot_sims = 0
+    total_ot_points = 0
     # Plan 07: Tempo
     t1_pull = p.get("t1_preferred_tempo") or p.get("game_tempo_ctr", 67.5)
     t2_pull = p.get("t2_preferred_tempo") or p.get("game_tempo_ctr", 67.5)
@@ -1158,6 +1162,7 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
         # Overtime Resolution
         ot_periods = 0
         MAX_OT = 4
+        reg_s1, reg_s2 = s1, s2  # snapshot regulation scores before OT
         while abs(s1 - s2) <= 2 and ot_periods < MAX_OT:
             ot_periods += 1
             t1_last_poss = (ot_periods % 2 == 1)
@@ -1188,6 +1193,11 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
 
             t1_mom = 1 if ot1["points"] > ot2["points"] else (-1 if ot1["points"] < ot2["points"] else 0)
             t2_mom = -t1_mom
+
+        # Accumulate OT stats
+        if ot_periods > 0:
+            ot_sims += 1
+            total_ot_points += (s1 + s2) - (reg_s1 + reg_s2)
 
         # Score rounding and final tie-break
         s1 = round(s1)
@@ -1241,6 +1251,8 @@ def simulate_game(p: dict, num_sims: int = 500) -> dict:
         "close_games": close_games,
         "upsets": upsets,
         "num_sims": num_sims,
+        "ot_rate": ot_sims / num_sims,
+        "avg_ot_points": total_ot_points / ot_sims if ot_sims > 0 else 0,
         "ref_stats": {
             "foul_climate": ref_climate,
             "t1_avg_fouls_drawn": total_t1_def_fouls / num_sims,
