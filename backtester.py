@@ -216,6 +216,9 @@ class Backtester:
         conf_overrides = cache.get('conf_adjustments', {}, ttl=86400 * 365) or {}
         if not conf_overrides:
             conf_overrides = None
+        stored_total_wt = cache.get('total_model_weights', {}, ttl=86400 * 365) or {}
+        total_weight_overrides = (stored_total_wt.get('weights')
+                                  if stored_total_wt.get('source') != 'default' else None)
 
         # -- One-time bulk data prefetch (always needed for supplemental data) --
         year = _kenpom_season_year(start_date)
@@ -556,7 +559,8 @@ class Backtester:
             # Composite
             composite = compute_composite(eff, sim, cr, mc, dV_enriched, dH_enriched,
                                           calibration_coeffs=calibration_coeffs,
-                                          total_calibration_coeffs=total_calibration_coeffs)
+                                          total_calibration_coeffs=total_calibration_coeffs,
+                                          total_weight_overrides=total_weight_overrides)
             our_margin = composite['margin']  # visitor-relative (positive = visitor favored)
             our_winner = visitor if our_margin >= 0 else home
 
@@ -1270,12 +1274,20 @@ class Backtester:
         inv_sum = sum(inv.values())
         recommended = {name: round(inv[name] / inv_sum, 4) for name in model_names}
 
-        # Enforce minimum weight of 0.05 per model, then re-normalize
-        for name in model_names:
-            if recommended[name] < 0.05:
-                recommended[name] = 0.05
-        rec_sum = sum(recommended.values())
-        recommended = {name: round(recommended[name] / rec_sum, 4) for name in model_names}
+        # Enforce minimum weight of 0.05 per model, then re-normalize.
+        # Must iterate: clamp -> normalize -> re-check until stable,
+        # because normalizing can push clamped values back below floor.
+        floor = 0.05
+        for _ in range(10):  # converges in 1-2 iterations
+            clamped = False
+            for name in model_names:
+                if recommended[name] < floor:
+                    recommended[name] = floor
+                    clamped = True
+            rec_sum = sum(recommended.values())
+            recommended = {name: round(recommended[name] / rec_sum, 4) for name in model_names}
+            if not clamped:
+                break
 
         return {
             'current_weights': current_weights,
