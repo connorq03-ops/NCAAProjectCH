@@ -292,6 +292,7 @@ class Backtester:
                     conf_overrides=conf_overrides,
                     use_historical=use_historical,
                     total_calibration_coeffs=total_calibration_coeffs,
+                    total_weight_overrides=total_weight_overrides,
                 )
                 results.extend(day_results)
             except Exception as e:
@@ -390,7 +391,8 @@ class Backtester:
                              team_data=None, conf_map=None,
                              calibration_coeffs=None, conf_overrides=None,
                              use_historical=False,
-                             total_calibration_coeffs=None):
+                             total_calibration_coeffs=None,
+                             total_weight_overrides=None):
         """Backtest a single day: fetch fanmatch + scores, compare predictions."""
         if team_data is None:
             team_data = {}
