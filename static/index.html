@@ -1775,7 +1775,18 @@
             const rawT1Score = eff.t1Score * wEff + sim.t1Score * wSim + cr.t1Score * wCR + mc.t1Score * wMC;
             const rawT2Score = eff.t2Score * wEff + sim.t2Score * wSim + cr.t2Score * wCR + mc.t2Score * wMC;
             const rawTotal = rawT1Score + rawT2Score;
-            const calibratedTotal = calibrateTotal(rawTotal);
+            let calibratedTotal = calibrateTotal(rawTotal);
+            // Situational total dampening (mirrors spread dampening above)
+            if (gameContext.ncaa_tournament) {
+                calibratedTotal *= 0.97;
+            } else if (gameContext.conf_tournament) {
+                calibratedTotal *= 0.975;
+            } else if (gameContext.neutral_site) {
+                calibratedTotal *= 0.98;
+            }
+            if (gameContext.early_season) {
+                calibratedTotal *= 0.98;
+            }
             const calibratedMid = calibratedTotal / 2;
             const compositeT1Score = calibratedMid + compositeMargin / 2;
             const compositeT2Score = calibratedMid - compositeMargin / 2;
@@ -3662,11 +3673,14 @@
                     // Note: NCAA tournament toggle not available in Recap tab, skip that check
                     if (isConfTourney) {
                         ourMargin *= 0.88;
+                        ourPredTotal *= 0.975;
                     } else if (isNeutral) {
                         ourMargin *= 0.90;
+                        ourPredTotal *= 0.98;
                     }
                     if (isEarlySeason) {
                         ourMargin *= 0.95;
+                        ourPredTotal *= 0.98;
                     }
                     ourPredWinner = ourMargin >= 0 ? visitor : home;
                 }
