@@ -1813,7 +1813,9 @@
             const compositeT1Score = calibratedMid + compositeMargin / 2;
             const compositeT2Score = calibratedMid - compositeMargin / 2;
             // Derive win prob from calibrated margin
-            const compositeAvgTempo = eff.tempo * twEff + sim.tempo * twSim + cr.tempo * twCR + mc.tempo * twMC;
+            // Tempo feeds into SD for win-prob conversion of spread-weighted margin,
+            // so use spread weights (wEff etc.) to stay consistent with compositeMargin.
+            const compositeAvgTempo = eff.tempo * wEff + sim.tempo * wSim + cr.tempo * wCR + mc.tempo * wMC;
             const compositeSD = 11.0 * Math.sqrt(compositeAvgTempo / 67);
             const compositeT1Win = gaussianCDF(compositeMargin / compositeSD);
 

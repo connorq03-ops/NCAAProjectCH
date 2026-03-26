@@ -599,8 +599,10 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
     composite_t1_score = score_mid + composite_margin / 2
     composite_t2_score = score_mid - composite_margin / 2
 
-    composite_avg_tempo = (eff['tempo'] * tw_eff + sim['tempo'] * tw_sim
-                           + cr['tempo'] * tw_cr + mc['tempo'] * tw_mc)
+    # Tempo feeds into SD which converts spread-weighted margin to win prob,
+    # so it must use spread weights (w_*) to stay consistent with composite_margin.
+    composite_avg_tempo = (eff['tempo'] * w_eff + sim['tempo'] * w_sim
+                           + cr['tempo'] * w_cr + mc['tempo'] * w_mc)
     composite_sd = 11.0 * math.sqrt(composite_avg_tempo / 67)
     composite_t1_win = gaussian_cdf(composite_margin / composite_sd)
 
