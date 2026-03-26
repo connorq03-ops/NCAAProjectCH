@@ -648,7 +648,9 @@ class Backtester:
                     # Signed total error: positive = we predicted higher total than actual
                     pred_result['total_signed_error'] = round(pred_result['predicted_total'] - pred_result['actual_total'], 1)
 
-                    # Flag possible overtime games (total > 170 is unusual for regulation)
+                    # Flag possible overtime games (total > 170 is unusual for regulation).
+                    # NOTE: This is an approximate heuristic. If ESPN score data ever
+                    # exposes an OT indicator field, prefer that over this threshold.
                     pred_result['is_overtime'] = pred_result['actual_total'] > 170
                 else:
                     pred_result['ou_edge'] = None
@@ -985,6 +987,25 @@ class Backtester:
         avg_total_error = round(sum(total_errors) / len(total_errors), 1) if total_errors else None
         mean_total_signed_error = round(sum(total_signed_errors) / len(total_signed_errors), 2) if total_signed_errors else None
 
+        # ── OT-excluded O/U metrics (regulation-only signal) ──
+        ou_results_reg = [r for r in ou_results if not r.get('is_overtime', False)]
+        ou_reg_hits = sum(1 for r in ou_results_reg if r['ou_result'] == 'hit')
+        ou_reg_misses = sum(1 for r in ou_results_reg if r['ou_result'] == 'miss')
+        ou_reg_total = ou_reg_hits + ou_reg_misses
+        ou_reg_pct = round(ou_reg_hits / ou_reg_total * 100, 1) if ou_reg_total > 0 else None
+
+        # High-conviction OT-excluded O/U (edge >= 3 pts)
+        ou_reg_hc = [r for r in ou_results_reg if (r.get('ou_edge') or 0) >= 3]
+        ou_reg_hc_hits = sum(1 for r in ou_reg_hc if r['ou_result'] == 'hit')
+        ou_reg_hc_misses = sum(1 for r in ou_reg_hc if r['ou_result'] == 'miss')
+        ou_reg_hc_total = ou_reg_hc_hits + ou_reg_hc_misses
+        ou_reg_hc_pct = round(ou_reg_hc_hits / ou_reg_hc_total * 100, 1) if ou_reg_hc_total > 0 else None
+
+        # OT-excluded total prediction error
+        total_errors_reg = [abs(r['predicted_total'] - r['actual_total']) for r in results
+                            if r.get('predicted_total') and r.get('actual_total') and not r.get('is_overtime', False)]
+        avg_total_error_reg = round(sum(total_errors_reg) / len(total_errors_reg), 1) if total_errors_reg else None
+
         # O/U by edge bucket
         ou_edge_buckets = {'0-2': [], '2-4': [], '4-6': [], '6+': []}
         for r in ou_results:
@@ -1005,6 +1026,31 @@ class Backtester:
                 m = sum(1 for g in games if g['ou_result'] == 'miss')
                 t = h + m
                 ou_edge_stats[bname] = {
+                    'games': t,
+                    'hit_pct': round(h / t * 100, 1) if t > 0 else None,
+                    'record': f"{h}-{m}",
+                }
+
+        # OT-excluded O/U by edge bucket
+        ou_reg_edge_buckets = {'0-2': [], '2-4': [], '4-6': [], '6+': []}
+        for r in ou_results_reg:
+            edge = r.get('ou_edge') or 0
+            if edge < 2:
+                ou_reg_edge_buckets['0-2'].append(r)
+            elif edge < 4:
+                ou_reg_edge_buckets['2-4'].append(r)
+            elif edge < 6:
+                ou_reg_edge_buckets['4-6'].append(r)
+            else:
+                ou_reg_edge_buckets['6+'].append(r)
+
+        ou_reg_edge_stats = {}
+        for bname, games in ou_reg_edge_buckets.items():
+            if games:
+                h = sum(1 for g in games if g['ou_result'] == 'hit')
+                m = sum(1 for g in games if g['ou_result'] == 'miss')
+                t = h + m
+                ou_reg_edge_stats[bname] = {
                     'games': t,
                     'hit_pct': round(h / t * 100, 1) if t > 0 else None,
                     'record': f"{h}-{m}",
@@ -1078,6 +1124,14 @@ class Backtester:
             'mean_total_signed_error': mean_total_signed_error,
             'total_bias': total_bias,
             'ou_by_edge': ou_edge_stats,
+            # OT-excluded O/U metrics (regulation-only signal)
+            'ou_reg_pct': ou_reg_pct,
+            'ou_reg_record': f"{ou_reg_hits}-{ou_reg_misses}" if ou_reg_total > 0 else None,
+            'ou_reg_hc_pct': ou_reg_hc_pct,
+            'ou_reg_hc_record': f"{ou_reg_hc_hits}-{ou_reg_hc_misses}" if ou_reg_hc_total > 0 else None,
+            'avg_total_error_reg': avg_total_error_reg,
+            'ou_overtime_games': len(ou_results) - len(ou_results_reg),
+            'ou_by_edge_reg': ou_reg_edge_stats,
             'sub_model_total_accuracy': sub_model_total_accuracy,
             'total_calibration_recommendations': self._compute_total_calibration_recommendations(results, total_coeffs=total_calibration_coeffs),
             'results': results,

@@ -4604,6 +4604,33 @@
                             <p class="text-xs text-gray-500">${data.sub_model_total_accuracy ? Object.entries(data.sub_model_total_accuracy).sort((a,b) => a[1].avg_total_error - b[1].avg_total_error)[0]?.[1]?.avg_total_error + ' avg err' : ''}</p>
                         </div>
                     </div>
+                    ${data.ou_reg_record ? `
+                    <div class="mt-3 border-t border-gray-700 pt-3">
+                        <h5 class="text-xs font-bold text-gray-300 mb-2"><i class="fas fa-filter mr-1 text-cyan-400"></i>Regulation Only (${data.ou_overtime_games || 0} OT games excluded)</h5>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div class="bg-gray-800 rounded-lg p-3 text-center">
+                                <p class="text-xs text-gray-400">O/U (reg only)</p>
+                                <p class="text-xl font-bold ${data.ou_reg_pct >= 55 ? 'text-cyan-400' : data.ou_reg_pct >= 45 ? 'text-yellow-400' : 'text-red-400'}">${data.ou_reg_pct || '-'}%</p>
+                                <p class="text-xs text-gray-500">${data.ou_reg_record}</p>
+                            </div>
+                            <div class="bg-gray-800 rounded-lg p-3 text-center">
+                                <p class="text-xs text-gray-400">HC (reg only)</p>
+                                <p class="text-xl font-bold ${(data.ou_reg_hc_pct || 0) >= 55 ? 'text-cyan-400' : (data.ou_reg_hc_pct || 0) >= 45 ? 'text-yellow-400' : data.ou_reg_hc_pct ? 'text-red-400' : 'text-gray-500'}">${data.ou_reg_hc_pct || '-'}%</p>
+                                <p class="text-xs text-gray-500">${data.ou_reg_hc_record || '-'}</p>
+                            </div>
+                            <div class="bg-gray-800 rounded-lg p-3 text-center">
+                                <p class="text-xs text-gray-400">Avg Error (reg)</p>
+                                <p class="text-xl font-bold ${(data.avg_total_error_reg || 99) <= 14 ? 'text-green-400' : (data.avg_total_error_reg || 99) <= 18 ? 'text-yellow-400' : 'text-red-400'}">${data.avg_total_error_reg || '-'}</p>
+                                <p class="text-xs text-gray-500">points off actual</p>
+                            </div>
+                            <div class="bg-gray-800 rounded-lg p-3 text-center">
+                                <p class="text-xs text-gray-400">OT Games</p>
+                                <p class="text-xl font-bold text-orange-400">${data.ou_overtime_games || 0}</p>
+                                <p class="text-xs text-gray-500">excluded from reg metrics</p>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>`;
             }
 
@@ -4617,9 +4644,25 @@
                         <p class="text-xs text-gray-500">${b.record} (${b.games} bets)</p>
                     </div>
                 `).join('');
+                let ouRegBucketsHTML = '';
+                if (data.ou_by_edge_reg && Object.keys(data.ou_by_edge_reg).length > 0) {
+                    const ouRegBuckets = Object.entries(data.ou_by_edge_reg).map(([name, b]) => `
+                        <div class="bg-gray-800 rounded-lg p-3 text-center">
+                            <p class="text-xs text-gray-400">${name} pts</p>
+                            <p class="text-lg font-bold ${b.hit_pct >= 55 ? 'text-cyan-400' : b.hit_pct >= 45 ? 'text-yellow-400' : 'text-red-400'}">${b.hit_pct}%</p>
+                            <p class="text-xs text-gray-500">${b.record} (${b.games} bets)</p>
+                        </div>
+                    `).join('');
+                    ouRegBucketsHTML = `
+                    <div class="mt-3 border-t border-gray-700 pt-3">
+                        <h5 class="text-xs font-bold text-gray-300 mb-2"><i class="fas fa-filter mr-1 text-cyan-400"></i>Regulation Only Edge Buckets</h5>
+                        <div class="grid grid-cols-4 gap-2">${ouRegBuckets}</div>
+                    </div>`;
+                }
                 ouEdgeBucketHTML = `<div class="bg-gray-800/40 rounded-xl p-4 border border-violet-500/30">
                     <h4 class="text-sm font-bold text-white mb-3"><i class="fas fa-chart-bar mr-1 text-violet-400"></i>O/U Hit Rate by Edge Bucket</h4>
                     <div class="grid grid-cols-4 gap-2">${ouBuckets}</div>
+                    ${ouRegBucketsHTML}
                 </div>`;
             }
 
