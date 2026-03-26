@@ -1292,6 +1292,52 @@ def update_model_weights():
     return jsonify(data)
 
 
+# ── Total Prediction Weights (separate from spread weights) ──
+
+@app.route('/api/total-weights', methods=['GET'])
+def get_total_weights():
+    """Get current total-prediction weight overrides."""
+    cached = api_cache.get('total_model_weights', {}, ttl=86400 * 365)
+    return jsonify(cached or {
+        'weights': {'efficiency': 0.10, 'similar': 0.10, 'conrat': 0.20, 'mc': 0.60},
+        'source': 'default',
+        'last_updated': None,
+    })
+
+
+@app.route('/api/total-weights', methods=['POST'])
+def update_total_weights():
+    """Update total-prediction weight overrides from backtester recommendations."""
+    body = request.get_json(force=True)
+    weights = body.get('weights', {})
+    # Validate: all 4 models present, sum to ~1.0, each >= 0.05
+    required = {'efficiency', 'similar', 'conrat', 'mc'}
+    if not required.issubset(weights.keys()):
+        return jsonify({'error': 'Missing model weights'}), 400
+    total = sum(weights.values())
+    if abs(total - 1.0) > 0.01:
+        return jsonify({'error': f'Weights sum to {total}, not 1.0'}), 400
+    if any(v < 0.05 for v in weights.values()):
+        return jsonify({'error': 'All weights must be >= 0.05'}), 400
+
+    data = {
+        'weights': weights,
+        'source': body.get('source', 'backtester'),
+        'per_model_stats': body.get('per_model_stats', {}),
+        'last_updated': body.get('timestamp', datetime.now().isoformat()),
+    }
+    k = api_cache._key('total_model_weights', {})
+    conn = sqlite3.connect(api_cache.db_path)
+    try:
+        conn.execute(
+            'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+            (k, json.dumps(data, default=str), time.time(), 86400 * 365))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify(data)
+
+
 # ── KenPom Blend Ratio (Part B) ──
 
 @app.route('/api/kp-blend-ratio', methods=['GET'])

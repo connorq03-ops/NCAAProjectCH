@@ -1134,6 +1134,7 @@ class Backtester:
             'ou_by_edge_reg': ou_reg_edge_stats,
             'sub_model_total_accuracy': sub_model_total_accuracy,
             'total_calibration_recommendations': self._compute_total_calibration_recommendations(results, total_coeffs=total_calibration_coeffs),
+            'total_weight_recommendations': self._compute_total_weight_recommendations(sub_model_total_accuracy),
             'results': results,
         }
 
@@ -1236,6 +1237,52 @@ class Backtester:
             'mean_total_signed_error': round(mean_error, 2),
             'sample_size': len(total_signed_errors),
             'confidence': 'high' if len(total_signed_errors) >= 100 else 'low',
+        }
+
+    def _compute_total_weight_recommendations(self, sub_model_total_accuracy):
+        """Compute recommended total-prediction weights from sub-model total errors.
+
+        Weights are inversely proportional to each model's average total error:
+        lower error = higher weight.  Uses OT-excluded errors (avg_total_error_reg)
+        when available, falling back to standard avg_total_error.
+        """
+        current_weights = {'efficiency': 0.10, 'similar': 0.10, 'conrat': 0.20, 'mc': 0.60}
+        model_names = ['efficiency', 'similar', 'conrat', 'mc']
+
+        if not sub_model_total_accuracy:
+            return {}
+
+        errors = {}
+        min_games = float('inf')
+        for name in model_names:
+            entry = sub_model_total_accuracy.get(name)
+            if not entry or entry.get('games', 0) < 10:
+                return {}  # not enough data for any model
+            # Prefer OT-excluded error if available
+            err = entry.get('avg_total_error_reg') or entry.get('avg_total_error')
+            if err is None or err <= 0:
+                return {}
+            errors[name] = err
+            min_games = min(min_games, entry['games'])
+
+        # Inverse-error weighting: lower error -> higher weight
+        inv = {name: 1.0 / err for name, err in errors.items()}
+        inv_sum = sum(inv.values())
+        recommended = {name: round(inv[name] / inv_sum, 4) for name in model_names}
+
+        # Enforce minimum weight of 0.05 per model, then re-normalize
+        for name in model_names:
+            if recommended[name] < 0.05:
+                recommended[name] = 0.05
+        rec_sum = sum(recommended.values())
+        recommended = {name: round(recommended[name] / rec_sum, 4) for name in model_names}
+
+        return {
+            'current_weights': current_weights,
+            'recommended_weights': recommended,
+            'sub_model_errors': sub_model_total_accuracy,
+            'confidence': 'high' if min_games >= 50 else 'low',
+            'min_games': min_games,
         }
 
     def _compute_conf_recommendations(self, by_conference, conf_overrides=None):
