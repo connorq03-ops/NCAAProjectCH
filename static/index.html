@@ -4757,7 +4757,7 @@
                 const twrRows = models.map(m => {
                     const curW = cur[m] || 0;
                     const recW = rec[m] || 0;
-                    const err = errs[m] ? errs[m].avg_total_error : '-';
+                    const err = errs[m] ? (errs[m].avg_total_error_reg || errs[m].avg_total_error) : '-';
                     const games = errs[m] ? errs[m].games : '-';
                     const changed = Math.abs(recW - curW) > 0.005;
                     return `<tr class="border-t border-gray-700">

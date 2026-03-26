@@ -1314,6 +1314,10 @@ def update_total_weights():
     required = {'efficiency', 'similar', 'conrat', 'mc'}
     if not required.issubset(weights.keys()):
         return jsonify({'error': 'Missing model weights'}), 400
+    try:
+        weights = {k: float(v) for k, v in weights.items()}
+    except (TypeError, ValueError):
+        return jsonify({'error': 'All weights must be numeric'}), 400
     total = sum(weights.values())
     if abs(total - 1.0) > 0.01:
         return jsonify({'error': f'Weights sum to {total}, not 1.0'}), 400
