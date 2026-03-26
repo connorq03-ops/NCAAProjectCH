@@ -506,7 +506,8 @@ def model_con_rat(t1, t2, hca1, hca2, extra=None):
 
 def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
                       weight_overrides=None, context=None,
-                      total_calibration_coeffs=None):
+                      total_calibration_coeffs=None,
+                      total_situational_overrides=None):
     """Blend 4 model outputs with dynamic weights, apply spread calibration.
 
     Args:
@@ -574,6 +575,9 @@ def compute_composite(eff, sim, cr, mc, t1, t2, calibration_coeffs=None,
     raw_total = raw_t1_score + raw_t2_score
     # Apply total calibration to the midpoint (independent of spread calibration)
     calibrated_total = calibrate_total(raw_total, coeffs=total_calibration_coeffs)
+    if context:
+        calibrated_total = apply_situational_total_adjustment(
+            calibrated_total, context, overrides=total_situational_overrides)
     score_mid = calibrated_total / 2
     composite_t1_score = score_mid + composite_margin / 2
     composite_t2_score = score_mid - composite_margin / 2
@@ -620,6 +624,13 @@ SITUATIONAL_DEFAULTS = {
     'early_season_dampening': 0.95,       # Reduce margin by 5% for early season
 }
 
+TOTAL_SITUATIONAL_DEFAULTS = {
+    'neutral_site_total_factor': 0.98,       # Totals ~3 pts lower at neutral sites
+    'conf_tournament_total_factor': 0.975,   # Totals ~3-4 pts lower in conf tournaments
+    'ncaa_tournament_total_factor': 0.97,    # Totals ~4-5 pts lower in NCAA tournament
+    'early_season_total_factor': 0.98,       # Totals ~3 pts lower early season (teams not gelled)
+}
+
 
 def apply_situational_adjustment(margin, context, overrides=None):
     """Apply situational dampening to a predicted margin.
@@ -649,6 +660,38 @@ def apply_situational_adjustment(margin, context, overrides=None):
 
     if context.get('early_season'):
         adjusted *= factors['early_season_dampening']
+
+    return adjusted
+
+
+def apply_situational_total_adjustment(total, context, overrides=None):
+    """Apply situational dampening to a predicted total.
+
+    Args:
+        total: Calibrated predicted total
+        context: dict with boolean flags (neutral_site, conf_tournament, etc.)
+        overrides: Optional dict of custom total dampening factors
+
+    Returns:
+        Adjusted total
+    """
+    factors = dict(TOTAL_SITUATIONAL_DEFAULTS)
+    if overrides:
+        factors.update(overrides)
+
+    adjusted = total
+
+    # Apply dampening factors (multiplicative)
+    # Most specific context wins (NCAA > conf tournament > neutral)
+    if context.get('ncaa_tournament'):
+        adjusted *= factors['ncaa_tournament_total_factor']
+    elif context.get('conf_tournament'):
+        adjusted *= factors['conf_tournament_total_factor']
+    elif context.get('neutral_site'):
+        adjusted *= factors['neutral_site_total_factor']
+
+    if context.get('early_season'):
+        adjusted *= factors['early_season_total_factor']
 
     return adjusted
 
