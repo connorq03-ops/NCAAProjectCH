@@ -146,7 +146,7 @@ def calc_golf_rat(player_dict):
     if sg_ott > 0.3 and acc_dev > 3:
         balance_bonus = clamp(sg_ott * acc_dev * 0.01, 0, 0.5)
     elif sg_ott < -0.3 and acc_dev < -3:
-        balance_bonus = clamp(sg_ott * acc_dev * 0.005, -0.3, 0)  # both bad = penalty
+        balance_bonus = clamp(-(sg_ott * acc_dev * 0.005), -0.3, 0)  # both bad = penalty
     else:
         balance_bonus = 0.0
 
