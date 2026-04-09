@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PGA Tour Golf Analytics Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: linear-gradient(135deg, #0a1628 0%, #112240 50%, #0a1628 100%); }
+        .tab-active { border-bottom: 3px solid #2d6a4f; color: #40916c; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px rgba(45,106,79,0.15); }
+        .clickable-row:hover { background: rgba(45, 106, 79, 0.1); cursor: pointer; }
+        .clickable-row { transition: all 0.15s ease; }
+        .modal { display: none; }
+        .modal.active { display: flex; }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { color: #40916c; }
+        .sort-asc::after { content: ' ▲'; font-size: 0.7em; }
+        .sort-desc::after { content: ' ▼'; font-size: 0.7em; }
+        .glass-card { background: rgba(17, 34, 64, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+        .btn-glow:hover { box-shadow: 0 0 20px rgba(45,106,79,0.5); }
+        table thead { background: linear-gradient(135deg, #1b3a4b, #112240); }
+        table tbody tr:nth-child(even) { background: rgba(27, 58, 75, 0.3); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
+        .progress-bar { transition: width 0.5s ease; }
+        .form-hot { color: #40916c; }
+        .form-improving { color: #52b788; }
+        .form-stable { color: #95d5b2; }
+        .form-declining { color: #e76f51; }
+        .form-cold { color: #e63946; }
+        .tier-elite { background: linear-gradient(135deg, #ffd700, #ff8c00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .tier-star { color: #c0c0c0; }
+        .tier-key { color: #cd7f32; }
+        .value-pick { background: rgba(45, 106, 79, 0.2); border-left: 3px solid #40916c; }
+        .slider-green::-webkit-slider-thumb { background: #2d6a4f; }
+        .slider-green::-webkit-slider-runnable-track { background: #1b3a4b; }
+        input[type="range"] { -webkit-appearance: none; height: 6px; background: #1b3a4b; border-radius: 3px; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: #2d6a4f; border-radius: 50%; cursor: pointer; }
+        .sg-bar-positive { background: linear-gradient(90deg, #2d6a4f, #40916c); }
+        .sg-bar-negative { background: linear-gradient(90deg, #e63946, #e76f51); }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <div class="container mx-auto px-4 py-6 max-w-7xl">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <div class="inline-block mb-2">
+                <div class="w-16 h-16 mx-auto bg-gradient-to-br from-green-600 to-green-800 rounded-2xl flex items-center justify-center shadow-lg shadow-green-500/30 mb-3">
+                    <i class="fas fa-golf-ball text-3xl text-white"></i>
+                </div>
+            </div>
+            <h1 class="text-4xl font-bold bg-gradient-to-r from-green-400 via-green-500 to-emerald-600 bg-clip-text text-transparent mb-2">
+                PGA Tour Analytics
+            </h1>
+            <p class="text-gray-400 text-sm">Powered by DataGolf API &bull; Click any player for detailed stats</p>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex justify-center mb-6 border-b border-gray-700 flex-wrap gap-1">
+            <button onclick="switchTab('rankings')" id="tab-rankings" class="px-3 py-2 text-sm font-medium tab-active transition-all">
+                <i class="fas fa-list-ol mr-1"></i>Rankings
+            </button>
+            <button onclick="switchTab('strokes')" id="tab-strokes" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-chart-bar mr-1"></i>Strokes Gained
+            </button>
+            <button onclick="switchTab('course')" id="tab-course" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-flag mr-1"></i>Course Analysis
+            </button>
+            <button onclick="switchTab('simulator')" id="tab-simulator" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-play-circle mr-1"></i>Simulator
+            </button>
+            <button onclick="switchTab('matchup')" id="tab-matchup" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-exchange-alt mr-1"></i>Matchup
+            </button>
+            <button onclick="switchTab('form')" id="tab-form" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-fire mr-1"></i>Form Tracker
+            </button>
+            <button onclick="switchTab('odds')" id="tab-odds" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-dollar-sign mr-1"></i>Odds
+            </button>
+            <button onclick="switchTab('predictions')" id="tab-predictions" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-bullseye mr-1"></i>Predictions
+            </button>
+            <button onclick="switchTab('settings')" id="tab-settings" class="px-3 py-2 text-sm font-medium text-gray-400 hover:text-white transition-all">
+                <i class="fas fa-cog mr-1"></i>Settings
+            </button>
+        </nav>
+
+        <!-- Content Sections -->
+
+        <!-- Tab 1: Rankings -->
+        <section id="section-rankings" class="tab-section">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <div class="flex flex-wrap gap-3 items-center justify-between">
+                    <h3 class="text-sm font-bold"><i class="fas fa-list-ol mr-1 text-green-400"></i>Player Rankings</h3>
+                    <div class="flex gap-2 items-center">
+                        <input type="text" id="rankings-search" placeholder="Search players..."
+                            class="px-3 py-1.5 bg-gray-800 rounded border border-gray-700 focus:border-green-500 focus:outline-none text-sm w-48"
+                            oninput="filterRankings()">
+                        <select id="rankings-tier-filter" class="px-3 py-1.5 bg-gray-800 rounded border border-gray-700 text-sm" onchange="filterRankings()">
+                            <option value="">All Tiers</option>
+                            <option value="elite">Elite</option>
+                            <option value="star">Star</option>
+                            <option value="key">Key</option>
+                            <option value="solid">Solid</option>
+                            <option value="rising">Rising</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div id="rankings-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Tab 2: Strokes Gained -->
+        <section id="section-strokes" class="tab-section hidden">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <h3 class="text-sm font-bold"><i class="fas fa-chart-bar mr-1 text-green-400"></i>Strokes Gained Breakdown</h3>
+                <p class="text-gray-400 text-xs mt-1">Visual SG split breakdown for top players</p>
+            </div>
+            <div id="strokes-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Tab 3: Course Analysis -->
+        <section id="section-course" class="tab-section hidden">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <div class="flex flex-wrap gap-3 items-center">
+                    <h3 class="text-sm font-bold"><i class="fas fa-flag mr-1 text-green-400"></i>Course Analysis</h3>
+                    <select id="course-selector" class="px-3 py-1.5 bg-gray-800 rounded border border-gray-700 text-sm" onchange="loadCourseData()">
+                        <option value="">Select a course...</option>
+                    </select>
+                </div>
+            </div>
+            <div id="course-profile" class="hidden mb-4"></div>
+            <div id="course-weather" class="hidden mb-4"></div>
+            <div id="course-fit-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Tab 4: Tournament Simulator -->
+        <section id="section-simulator" class="tab-section hidden">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <h3 class="text-sm font-bold mb-3"><i class="fas fa-play-circle mr-1 text-green-400"></i>Tournament Simulator</h3>
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div>
+                        <label class="block text-gray-400 text-xs mb-1">Course</label>
+                        <select id="sim-course" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 text-sm">
+                            <option value="augusta_national">Augusta National</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs mb-1">Simulations</label>
+                        <input type="range" id="sim-count" min="100" max="10000" value="1000" step="100"
+                            class="w-32" oninput="document.getElementById('sim-count-label').textContent=this.value">
+                        <span id="sim-count-label" class="text-xs text-gray-400 ml-1">1000</span>
+                    </div>
+                    <button onclick="startSimulation()" id="sim-start-btn" class="bg-green-700 hover:bg-green-600 px-4 py-2 rounded font-medium text-sm transition-all btn-glow">
+                        <i class="fas fa-play mr-1"></i>Run Simulation
+                    </button>
+                </div>
+            </div>
+            <div id="sim-progress" class="hidden glass-card p-4 rounded-xl mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span id="sim-status-text" class="text-sm text-gray-300">Initializing...</span>
+                    <span id="sim-progress-pct" class="text-sm text-green-400 font-mono">0%</span>
+                </div>
+                <div class="w-full bg-gray-700 rounded-full h-3">
+                    <div id="sim-progress-bar" class="bg-green-600 h-3 rounded-full progress-bar" style="width: 0%"></div>
+                </div>
+                <p id="sim-elapsed" class="text-xs text-gray-500 mt-1"></p>
+            </div>
+            <div id="sim-results" class="hidden"></div>
+        </section>
+
+        <!-- Tab 5: Matchup Predictor -->
+        <section id="section-matchup" class="tab-section hidden">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <h3 class="text-sm font-bold mb-3"><i class="fas fa-exchange-alt mr-1 text-green-400"></i>Head-to-Head Matchup Predictor</h3>
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div>
+                        <label class="block text-gray-400 text-xs mb-1">Player 1</label>
+                        <input type="text" id="matchup-p1" placeholder="e.g. Scottie Scheffler"
+                            class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-green-500 focus:outline-none text-sm w-48">
+                    </div>
+                    <div class="text-gray-500 font-bold">vs</div>
+                    <div>
+                        <label class="block text-gray-400 text-xs mb-1">Player 2</label>
+                        <input type="text" id="matchup-p2" placeholder="e.g. Rory McIlroy"
+                            class="px-3 py-2 bg-gray-800 rounded border border-gray-700 focus:border-green-500 focus:outline-none text-sm w-48">
+                    </div>
+                    <div>
+                        <label class="block text-gray-400 text-xs mb-1">Course</label>
+                        <select id="matchup-course" class="px-3 py-2 bg-gray-800 rounded border border-gray-700 text-sm">
+                            <option value="augusta_national">Augusta National</option>
+                        </select>
+                    </div>
+                    <button onclick="runMatchup()" class="bg-green-700 hover:bg-green-600 px-4 py-2 rounded font-medium text-sm transition-all btn-glow">
+                        <i class="fas fa-bolt mr-1"></i>Compare
+                    </button>
+                </div>
+            </div>
+            <div id="matchup-results"></div>
+        </section>
+
+        <!-- Tab 6: Form Tracker -->
+        <section id="section-form" class="tab-section hidden">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <h3 class="text-sm font-bold"><i class="fas fa-fire mr-1 text-green-400"></i>Player Form Tracker</h3>
+                <p class="text-gray-400 text-xs mt-1">Recent form metrics for top 50 players</p>
+            </div>
+            <div id="form-results" class="overflow-x-auto"></div>
+        </section>
+
+        <!-- Tab 7: Odds Comparison -->
+        <section id="section-odds" class="tab-section hidden">
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <div class="flex flex-wrap gap-3 items-center">
+                    <h3 class="text-sm font-bold"><i class="fas fa-dollar-sign mr-1 text-green-400"></i>Odds Comparison</h3>
+                    <select id="odds-market" class="px-3 py-1.5 bg-gray-800 rounded border border-gray-700 text-sm" onchange="loadOdds()">
+                        <option value="win">Win</option>
+                        <option value="top5">Top 5</option>
+                        <option value="top10">Top 10</option>
+                        <option value="top20">Top 20</option>
+                        <option value="mc">Make Cut</option>
+                    </select>
+                </div>
+            </div>
+            <div id="odds-results" class="overflow-x-auto"></div>
+            <div class="mt-4">
+                <h4 class="text-sm font-bold mb-2"><i class="fas fa-handshake mr-1 text-green-400"></i>Matchup Odds</h4>
+                <div id="matchup-odds-results" class="overflow-x-auto"></div>
+            </div>
+        </section>
+
+        <!-- Tab 8: Predictions -->
+        <section id="section-predictions" class="tab-section hidden">
+            <div id="predictions-accuracy" class="mb-4"></div>
+            <div class="glass-card p-4 rounded-xl mb-4">
+                <h3 class="text-sm font-bold"><i class="fas fa-bullseye mr-1 text-green-400"></i>Saved Predictions</h3>
+            </div>
+            <div id="predictions-results"></div>
+        </section>
+
+        <!-- Tab 9: Settings -->
+        <section id="section-settings" class="tab-section hidden">
+            <div class="max-w-3xl mx-auto">
+                <div class="glass-card p-6 rounded-xl mb-4">
+                    <h3 class="text-sm font-bold mb-4"><i class="fas fa-sliders-h mr-1 text-green-400"></i>Model Weights</h3>
+                    <p class="text-gray-400 text-xs mb-4">Adjust composite model weights (must sum to 1.0)</p>
+                    <div class="space-y-3">
+                        <div class="flex items-center gap-3">
+                            <label class="text-sm w-32">SG Efficiency</label>
+                            <input type="range" id="w-sg" min="0.05" max="0.70" step="0.01" value="0.25"
+                                class="flex-1" oninput="updateWeightDisplay()">
+                            <span id="w-sg-val" class="text-sm font-mono w-12 text-right">0.25</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <label class="text-sm w-32">Course Fit</label>
+                            <input type="range" id="w-cf" min="0.05" max="0.70" step="0.01" value="0.25"
+                                class="flex-1" oninput="updateWeightDisplay()">
+                            <span id="w-cf-val" class="text-sm font-mono w-12 text-right">0.25</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <label class="text-sm w-32">GolfRat</label>
+                            <input type="range" id="w-gr" min="0.05" max="0.70" step="0.01" value="0.25"
+                                class="flex-1" oninput="updateWeightDisplay()">
+                            <span id="w-gr-val" class="text-sm font-mono w-12 text-right">0.25</span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <label class="text-sm w-32">MC Simulation</label>
+                            <input type="range" id="w-mc" min="0.05" max="0.70" step="0.01" value="0.25"
+                                class="flex-1" oninput="updateWeightDisplay()">
+                            <span id="w-mc-val" class="text-sm font-mono w-12 text-right">0.25</span>
+                        </div>
+                        <div class="flex items-center justify-between pt-2 border-t border-gray-700">
+                            <span id="weight-sum" class="text-sm font-mono">Sum: 1.00</span>
+                            <button onclick="saveWeights()" class="bg-green-700 hover:bg-green-600 px-4 py-1.5 rounded text-sm transition-all">
+                                <i class="fas fa-save mr-1"></i>Save Weights
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="glass-card p-6 rounded-xl mb-4">
+                    <h3 class="text-sm font-bold mb-4"><i class="fas fa-crosshairs mr-1 text-green-400"></i>Calibration</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-gray-400 text-xs mb-1">Center (finish position)</label>
+                            <input type="number" id="cal-center" value="35.0" step="0.5" min="10" max="60"
+                                class="w-full px-3 py-2 bg-gray-800 rounded border border-gray-700 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-gray-400 text-xs mb-1">Compression</label>
+                            <input type="number" id="cal-compression" value="0.85" step="0.01" min="0.5" max="1.0"
+                                class="w-full px-3 py-2 bg-gray-800 rounded border border-gray-700 text-sm">
+                        </div>
+                    </div>
+                    <button onclick="saveCalibration()" class="mt-3 bg-green-700 hover:bg-green-600 px-4 py-1.5 rounded text-sm transition-all">
+                        <i class="fas fa-save mr-1"></i>Save Calibration
+                    </button>
+                </div>
+
+                <div class="glass-card p-6 rounded-xl mb-4">
+                    <h3 class="text-sm font-bold mb-4"><i class="fas fa-database mr-1 text-green-400"></i>Cache Statistics</h3>
+                    <div id="cache-stats">Loading...</div>
+                </div>
+
+                <div class="glass-card p-6 rounded-xl">
+                    <h3 class="text-sm font-bold mb-4"><i class="fas fa-users mr-1 text-green-400"></i>Elite Players Database</h3>
+                    <div id="elite-players-list" class="overflow-x-auto"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Player Detail Modal -->
+        <div id="player-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70">
+            <div class="bg-gray-800 rounded-xl max-w-2xl w-full mx-4 max-h-[85vh] overflow-y-auto border border-gray-700">
+                <div class="flex justify-between items-center p-4 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
+                    <h3 id="modal-player-name" class="text-lg font-bold"></h3>
+                    <button onclick="closePlayerModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+                </div>
+                <div id="modal-player-body" class="p-4"></div>
+            </div>
+        </div>
+
+        <!-- Result Entry Modal -->
+        <div id="result-modal" class="modal fixed inset-0 z-50 items-center justify-center bg-black/70">
+            <div class="bg-gray-800 rounded-xl max-w-md w-full mx-4 border border-gray-700">
+                <div class="flex justify-between items-center p-4 border-b border-gray-700">
+                    <h3 class="text-lg font-bold">Enter Tournament Result</h3>
+                    <button onclick="closeResultModal()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+                </div>
+                <div class="p-4">
+                    <input type="hidden" id="result-pred-id">
+                    <div class="mb-3">
+                        <label class="block text-gray-400 text-xs mb-1">Actual Finish Position</label>
+                        <input type="number" id="result-finish" min="1" max="200"
+                            class="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 text-sm">
+                    </div>
+                    <div class="mb-4">
+                        <label class="flex items-center gap-2">
+                            <input type="checkbox" id="result-made-cut" checked class="rounded">
+                            <span class="text-sm">Made the cut</span>
+                        </label>
+                    </div>
+                    <button onclick="submitResult()" class="w-full bg-green-700 hover:bg-green-600 py-2 rounded font-medium text-sm">
+                        Save Result
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Web Worker for client-side MC -->
+    <script>
+    let mcWorker = null;
+    try {
+        mcWorker = new Worker('/static/golf-mc-worker.js');
+    } catch(e) {
+        console.warn('MC Worker not available:', e);
+    }
+
+    // ── State ──
+    const API = '/api/golf';
+    let currentTab = 'rankings';
+    let rankingsData = [];
+    let coursesData = [];
+    let simPollInterval = null;
+
+    // ── Tab Switching ──
+    function switchTab(tab) {
+        document.querySelectorAll('.tab-section').forEach(s => s.classList.add('hidden'));
+        document.querySelectorAll('nav button').forEach(b => { b.classList.remove('tab-active'); b.classList.add('text-gray-400'); });
+        document.getElementById('section-' + tab).classList.remove('hidden');
+        const btn = document.getElementById('tab-' + tab);
+        btn.classList.add('tab-active');
+        btn.classList.remove('text-gray-400');
+        currentTab = tab;
+        loadTabData(tab);
+    }
+
+    function loadTabData(tab) {
+        switch(tab) {
+            case 'rankings': loadRankings(); break;
+            case 'strokes': loadStrokesGained(); break;
+            case 'course': loadCourses(); break;
+            case 'simulator': loadSimCourses(); break;
+            case 'matchup': loadMatchupCourses(); break;
+            case 'form': loadFormTracker(); break;
+            case 'odds': loadOdds(); break;
+            case 'predictions': loadPredictions(); break;
+            case 'settings': loadSettings(); break;
+        }
+    }
+
+    // ── Utility ──
+    async function apiFetch(path) {
+        const resp = await fetch(API + path);
+        return resp.json();
+    }
+
+    function showLoading(el) {
+        el.innerHTML = '<div class="text-center py-8 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>';
+    }
+
+    function showError(el, msg) {
+        el.innerHTML = `<div class="text-center py-8 text-red-400"><i class="fas fa-exclamation-triangle mr-2"></i>${msg}</div>`;
+    }
+
+    function sgColor(val) {
+        if (val > 0.5) return 'text-green-400';
+        if (val > 0) return 'text-green-300';
+        if (val > -0.5) return 'text-red-300';
+        return 'text-red-400';
+    }
+
+    function sgBar(val, maxWidth) {
+        const pct = Math.min(Math.abs(val) / 2 * 100, 100);
+        const cls = val >= 0 ? 'sg-bar-positive' : 'sg-bar-negative';
+        return `<div class="flex items-center gap-1">
+            <span class="text-xs font-mono w-12 text-right ${sgColor(val)}">${val >= 0 ? '+' : ''}${val.toFixed(2)}</span>
+            <div class="h-3 ${cls} rounded" style="width: ${pct * maxWidth / 100}px"></div>
+        </div>`;
+    }
+
+    function formLabelClass(label) {
+        const map = { hot: 'form-hot', improving: 'form-improving', stable: 'form-stable', declining: 'form-declining', cold: 'form-cold' };
+        return map[label] || 'text-gray-400';
+    }
+
+    function tierBadge(tier) {
+        if (!tier) return '';
+        const colors = { elite: 'bg-yellow-600', star: 'bg-gray-500', key: 'bg-amber-700', solid: 'bg-blue-700', rising: 'bg-purple-700' };
+        return `<span class="px-1.5 py-0.5 rounded text-xs ${colors[tier] || 'bg-gray-600'}">${tier}</span>`;
+    }
+
+    // ── Tab 1: Rankings ──
+    async function loadRankings() {
+        const el = document.getElementById('rankings-results');
+        showLoading(el);
+        try {
+            const data = await apiFetch('/rankings');
+            const list = data.rankings || data || [];
+            rankingsData = Array.isArray(list) ? list : [];
+            renderRankings(rankingsData);
+        } catch(e) { showError(el, 'Failed to load rankings: ' + e.message); }
+    }
+
+    function renderRankings(data) {
+        const el = document.getElementById('rankings-results');
+        if (!data.length) { el.innerHTML = '<p class="text-gray-400 text-center py-4">No ranking data available</p>'; return; }
+        let html = `<table class="w-full text-sm"><thead><tr>
+            <th class="px-3 py-2 text-left sortable" onclick="sortRankings('rank')">Rank</th>
+            <th class="px-3 py-2 text-left sortable" onclick="sortRankings('player_name')">Player</th>
+            <th class="px-3 py-2 text-right sortable" onclick="sortRankings('dg_skill_estimate')">SG:Total</th>
+            <th class="px-3 py-2 text-right">SG:OTT</th>
+            <th class="px-3 py-2 text-right">SG:APP</th>
+            <th class="px-3 py-2 text-right">SG:ARG</th>
+            <th class="px-3 py-2 text-right">SG:Putt</th>
+            <th class="px-3 py-2 text-right sortable" onclick="sortRankings('owgr_rank')">OWGR</th>
+            <th class="px-3 py-2 text-center">Tier</th>
+        </tr></thead><tbody>`;
+        data.forEach((p, i) => {
+            const info = null; // Elite info loaded separately if needed
+            html += `<tr class="clickable-row" onclick="openPlayerModal('${(p.player_name||'').replace(/'/g,"\\'")}')">
+                <td class="px-3 py-2">${p.dg_rank || p.rank || i+1}</td>
+                <td class="px-3 py-2 font-medium">${p.player_name || ''}</td>
+                <td class="px-3 py-2 text-right font-mono ${sgColor(p.dg_skill_estimate||0)}">${(p.dg_skill_estimate||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-mono ${sgColor(p.sg_ott||0)}">${(p.sg_ott||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-mono ${sgColor(p.sg_app||0)}">${(p.sg_app||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-mono ${sgColor(p.sg_arg||0)}">${(p.sg_arg||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right font-mono ${sgColor(p.sg_putt||0)}">${(p.sg_putt||0).toFixed(2)}</td>
+                <td class="px-3 py-2 text-right">${p.owgr_rank || '-'}</td>
+                <td class="px-3 py-2 text-center">${tierBadge(p.tier)}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    }
+
+    let rankSortField = '', rankSortAsc = true;
+    function sortRankings(field) {
+        if (rankSortField === field) rankSortAsc = !rankSortAsc;
+        else { rankSortField = field; rankSortAsc = true; }
+        const sorted = [...rankingsData].sort((a, b) => {
+            let va = a[field], vb = b[field];
+            if (typeof va === 'string') return rankSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+            return rankSortAsc ? (va||0) - (vb||0) : (vb||0) - (va||0);
+        });
+        renderRankings(sorted);
+    }
+
+    function filterRankings() {
+        const search = document.getElementById('rankings-search').value.toLowerCase();
+        const tier = document.getElementById('rankings-tier-filter').value;
+        let filtered = rankingsData;
+        if (search) filtered = filtered.filter(p => (p.player_name||'').toLowerCase().includes(search));
+        if (tier) filtered = filtered.filter(p => (p.tier||'') === tier);
+        renderRankings(filtered);
+    }
+
+    // ── Tab 2: Strokes Gained ──
+    async function loadStrokesGained() {
+        const el = document.getElementById('strokes-results');
+        showLoading(el);
+        try {
+            const data = await apiFetch('/skill-decompositions');
+            const list = data.decompositions || data.players || data || [];
+            const players = Array.isArray(list) ? list.slice(0, 50) : [];
+            renderStrokesGained(players);
+        } catch(e) { showError(el, 'Failed to load strokes gained: ' + e.message); }
+    }
+
+    function renderStrokesGained(players) {
+        const el = document.getElementById('strokes-results');
+        if (!players.length) { el.innerHTML = '<p class="text-gray-400 text-center py-4">No data available</p>'; return; }
+        let html = '<div class="space-y-2">';
+        players.forEach(p => {
+            html += `<div class="glass-card p-3 rounded-lg">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium text-sm">${p.player_name || ''}</span>
+                    <span class="text-xs font-mono ${sgColor(p.sg_total||0)}">Total: ${(p.sg_total||0).toFixed(2)}</span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    <div><span class="text-xs text-gray-400">OTT</span>${sgBar(p.sg_ott||0, 80)}</div>
+                    <div><span class="text-xs text-gray-400">APP</span>${sgBar(p.sg_app||0, 80)}</div>
+                    <div><span class="text-xs text-gray-400">ARG</span>${sgBar(p.sg_arg||0, 80)}</div>
+                    <div><span class="text-xs text-gray-400">Putt</span>${sgBar(p.sg_putt||0, 80)}</div>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+        el.innerHTML = html;
+    }
+
+    // ── Tab 3: Course Analysis ──
+    async function loadCourses() {
+        const sel = document.getElementById('course-selector');
+        if (sel.options.length <= 1) {
+            try {
+                const data = await apiFetch('/courses');
+                const courses = Array.isArray(data) ? data : (data.courses || []);
+                coursesData = courses;
+                courses.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id || c.course_id || '';
+                    opt.textContent = c.name || c.id || '';
+                    sel.appendChild(opt);
+                });
+            } catch(e) { console.error('Failed to load courses:', e); }
+        }
+    }
+
+    async function loadCourseData() {
+        const courseId = document.getElementById('course-selector').value;
+        if (!courseId) return;
+
+        const profileEl = document.getElementById('course-profile');
+        const weatherEl = document.getElementById('course-weather');
+        const fitEl = document.getElementById('course-fit-results');
+
+        profileEl.classList.remove('hidden');
+        showLoading(profileEl);
+
+        try {
+            const course = await apiFetch('/course/' + courseId);
+            profileEl.innerHTML = `<div class="glass-card p-4 rounded-xl">
+                <h4 class="font-bold text-lg mb-2">${course.name || courseId}</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div><span class="text-gray-400">Par:</span> ${course.par || '-'}</div>
+                    <div><span class="text-gray-400">Yardage:</span> ${course.yardage || '-'}</div>
+                    <div><span class="text-gray-400">Location:</span> ${course.location || '-'}</div>
+                    <div><span class="text-gray-400">Style:</span> ${(course.style_tags||[]).join(', ') || '-'}</div>
+                </div>
+                ${course.sg_weights ? `<div class="mt-3">
+                    <span class="text-gray-400 text-xs">SG Weights:</span>
+                    <div class="flex gap-2 mt-1">
+                        <span class="px-2 py-0.5 bg-blue-900/50 rounded text-xs">OTT: ${course.sg_weights.sg_ott||0}</span>
+                        <span class="px-2 py-0.5 bg-blue-900/50 rounded text-xs">APP: ${course.sg_weights.sg_app||0}</span>
+                        <span class="px-2 py-0.5 bg-blue-900/50 rounded text-xs">ARG: ${course.sg_weights.sg_arg||0}</span>
+                        <span class="px-2 py-0.5 bg-blue-900/50 rounded text-xs">Putt: ${course.sg_weights.sg_putt||0}</span>
+                    </div>
+                </div>` : ''}
+            </div>`;
+        } catch(e) { showError(profileEl, 'Failed to load course profile'); }
+
+        // Weather
+        weatherEl.classList.remove('hidden');
+        try {
+            const weather = await apiFetch('/weather/' + courseId);
+            if (weather.impacts && weather.impacts.length) {
+                let wHtml = '<div class="glass-card p-4 rounded-xl"><h4 class="font-bold text-sm mb-2"><i class="fas fa-cloud-sun mr-1"></i>Weather Forecast</h4>';
+                wHtml += '<div class="grid grid-cols-4 gap-2">';
+                weather.impacts.forEach(imp => {
+                    wHtml += `<div class="text-center p-2 bg-gray-800/50 rounded">
+                        <div class="text-xs text-gray-400">Rd ${imp.round}</div>
+                        <div class="text-sm">${imp.description || 'Clear'}</div>
+                        <div class="text-xs font-mono ${imp.combined_adj > 0.2 ? 'text-red-400' : 'text-green-400'}">Impact: ${imp.combined_adj > 0 ? '+' : ''}${imp.combined_adj.toFixed(2)}</div>
+                    </div>`;
+                });
+                wHtml += '</div></div>';
+                weatherEl.innerHTML = wHtml;
+            } else {
+                weatherEl.innerHTML = '<div class="glass-card p-4 rounded-xl text-gray-400 text-sm">Weather data not available</div>';
+            }
+        } catch(e) { weatherEl.innerHTML = ''; }
+
+        // Course fit
+        showLoading(fitEl);
+        try {
+            const fit = await apiFetch('/course-fit/' + courseId);
+            const players = fit.players || [];
+            let html = `<table class="w-full text-sm"><thead><tr>
+                <th class="px-3 py-2 text-left">#</th>
+                <th class="px-3 py-2 text-left">Player</th>
+                <th class="px-3 py-2 text-right">Total Fit</th>
+                <th class="px-3 py-2 text-right">Base Fit</th>
+                <th class="px-3 py-2 text-right">History</th>
+                <th class="px-3 py-2 text-right">Length</th>
+                <th class="px-3 py-2 text-right">Weather</th>
+                <th class="px-3 py-2 text-right">SG:Total</th>
+            </tr></thead><tbody>`;
+            players.forEach((p, i) => {
+                html += `<tr class="clickable-row" onclick="openPlayerModal('${(p.player_name||'').replace(/'/g,"\\'")}')">
+                    <td class="px-3 py-2">${i+1}</td>
+                    <td class="px-3 py-2 font-medium">${p.player_name||''}</td>
+                    <td class="px-3 py-2 text-right font-mono ${sgColor(p.total_fit||0)}">${(p.total_fit||0).toFixed(2)}</td>
+                    <td class="px-3 py-2 text-right font-mono">${(p.base_fit||0).toFixed(2)}</td>
+                    <td class="px-3 py-2 text-right font-mono">${(p.history_adj||0).toFixed(2)}</td>
+                    <td class="px-3 py-2 text-right font-mono">${(p.length_adj||0).toFixed(2)}</td>
+                    <td class="px-3 py-2 text-right font-mono">${(p.weather_adj||0).toFixed(2)}</td>
+                    <td class="px-3 py-2 text-right font-mono ${sgColor(p.sg_total||0)}">${(p.sg_total||0).toFixed(2)}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            fitEl.innerHTML = html;
+        } catch(e) { showError(fitEl, 'Failed to load course fit data'); }
+    }
+
+    // ── Tab 4: Tournament Simulator ──
+    async function loadSimCourses() {
+        const sel = document.getElementById('sim-course');
+        if (sel.options.length <= 1) {
+            try {
+                const data = await apiFetch('/courses');
+                const courses = Array.isArray(data) ? data : (data.courses || []);
+                sel.innerHTML = '';
+                courses.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id || c.course_id || '';
+                    opt.textContent = c.name || c.id || '';
+                    sel.appendChild(opt);
+                });
+            } catch(e) {}
+        }
+    }
+
+    async function startSimulation() {
+        const courseId = document.getElementById('sim-course').value;
+        const numTournaments = parseInt(document.getElementById('sim-count').value);
+        const btn = document.getElementById('sim-start-btn');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Starting...';
+
+        document.getElementById('sim-progress').classList.remove('hidden');
+        document.getElementById('sim-results').classList.add('hidden');
+
+        try {
+            await fetch(API + '/simulate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ course_id: courseId, num_tournaments: numTournaments })
+            });
+            pollSimulation();
+        } catch(e) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-play mr-1"></i>Run Simulation';
+            showError(document.getElementById('sim-results'), 'Failed to start simulation');
+        }
+    }
+
+    function pollSimulation() {
+        if (simPollInterval) clearInterval(simPollInterval);
+        simPollInterval = setInterval(async () => {
+            try {
+                const status = await apiFetch('/simulate/status');
+                document.getElementById('sim-status-text').textContent = status.message || status.status;
+                document.getElementById('sim-progress-pct').textContent = Math.round(status.progress) + '%';
+                document.getElementById('sim-progress-bar').style.width = status.progress + '%';
+                if (status.elapsed_seconds) {
+                    document.getElementById('sim-elapsed').textContent = `Elapsed: ${status.elapsed_seconds}s`;
+                }
+                if (status.status === 'complete' || status.status === 'error') {
+                    clearInterval(simPollInterval);
+                    simPollInterval = null;
+                    const btn = document.getElementById('sim-start-btn');
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-play mr-1"></i>Run Simulation';
+                    if (status.status === 'complete') loadSimResults();
+                    else showError(document.getElementById('sim-results'), status.error || 'Simulation failed');
+                }
+            } catch(e) {}
+        }, 2000);
+    }
+
+    async function loadSimResults() {
+        const el = document.getElementById('sim-results');
+        el.classList.remove('hidden');
+        showLoading(el);
+        try {
+            const data = await apiFetch('/results');
+            if (data.error) { showError(el, data.error); return; }
+            const probs = data.player_probs || {};
+            const players = Object.entries(probs).map(([name, d]) => ({player_name: name, ...d}));
+            players.sort((a, b) => (b.win_pct||0) - (a.win_pct||0));
+
+            let html = '<div class="glass-card p-4 rounded-xl mb-4"><h4 class="font-bold text-sm mb-2">Simulation Results</h4>';
+            if (data.meta) {
+                html += `<div class="text-xs text-gray-400">
+                    ${data.meta.num_tournaments || ''} tournaments simulated &bull;
+                    ${data.meta.num_players || Object.keys(probs).length} players
+                </div>`;
+            }
+            html += '</div>';
+
+            // Winner board
+            html += '<div class="glass-card p-4 rounded-xl mb-4"><h4 class="font-bold text-sm mb-2"><i class="fas fa-trophy mr-1 text-yellow-500"></i>Winner Board (Top 20)</h4>';
+            html += `<table class="w-full text-sm"><thead><tr>
+                <th class="px-2 py-1 text-left">#</th>
+                <th class="px-2 py-1 text-left">Player</th>
+                <th class="px-2 py-1 text-right">Win%</th>
+                <th class="px-2 py-1 text-right">Top5%</th>
+                <th class="px-2 py-1 text-right">Top10%</th>
+                <th class="px-2 py-1 text-right">Top20%</th>
+                <th class="px-2 py-1 text-right">Cut%</th>
+            </tr></thead><tbody>`;
+            players.slice(0, 20).forEach((p, i) => {
+                html += `<tr class="clickable-row">
+                    <td class="px-2 py-1">${i+1}</td>
+                    <td class="px-2 py-1 font-medium">${p.player_name}</td>
+                    <td class="px-2 py-1 text-right font-mono text-green-400">${(p.win_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.top5_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.top10_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.top20_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.make_cut_pct||p.cut_pct||0).toFixed(1)}%</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+
+            // Cut danger list
+            const cutDanger = players.filter(p => (p.make_cut_pct||p.cut_pct||100) < 60);
+            if (cutDanger.length) {
+                html += '<div class="glass-card p-4 rounded-xl mb-4"><h4 class="font-bold text-sm mb-2 text-red-400"><i class="fas fa-exclamation-triangle mr-1"></i>Cut Danger (<60% make cut)</h4>';
+                html += '<div class="flex flex-wrap gap-2">';
+                cutDanger.forEach(p => {
+                    html += `<span class="px-2 py-1 bg-red-900/30 rounded text-xs">${p.player_name} (${(p.make_cut_pct||p.cut_pct||0).toFixed(0)}%)</span>`;
+                });
+                html += '</div></div>';
+            }
+
+            el.innerHTML = html;
+        } catch(e) { showError(el, 'Failed to load results: ' + e.message); }
+    }
+
+    // ── Tab 5: Matchup Predictor ──
+    async function loadMatchupCourses() {
+        const sel = document.getElementById('matchup-course');
+        if (sel.options.length <= 1) {
+            try {
+                const data = await apiFetch('/courses');
+                const courses = Array.isArray(data) ? data : (data.courses || []);
+                sel.innerHTML = '';
+                courses.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id || c.course_id || '';
+                    opt.textContent = c.name || c.id || '';
+                    sel.appendChild(opt);
+                });
+            } catch(e) {}
+        }
+    }
+
+    async function runMatchup() {
+        const p1 = document.getElementById('matchup-p1').value.trim();
+        const p2 = document.getElementById('matchup-p2').value.trim();
+        const courseId = document.getElementById('matchup-course').value;
+        const el = document.getElementById('matchup-results');
+        if (!p1 || !p2) { showError(el, 'Enter both player names'); return; }
+        showLoading(el);
+        try {
+            const data = await apiFetch(`/matchup?p1=${encodeURIComponent(p1)}&p2=${encodeURIComponent(p2)}&course_id=${courseId}`);
+            if (data.error) { showError(el, data.error); return; }
+            const m = data.matchup || {};
+            let html = `<div class="glass-card p-6 rounded-xl">
+                <div class="grid grid-cols-3 gap-4 text-center mb-6">
+                    <div>
+                        <div class="text-2xl font-bold text-green-400">${(m.p1_win_pct||0).toFixed(1)}%</div>
+                        <div class="text-sm font-medium">${data.p1}</div>
+                    </div>
+                    <div>
+                        <div class="text-lg text-gray-400 mt-2">vs</div>
+                        <div class="text-xs text-gray-500">${m.num_sims||1000} sims</div>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-bold text-blue-400">${(m.p2_win_pct||0).toFixed(1)}%</div>
+                        <div class="text-sm font-medium">${data.p2}</div>
+                    </div>
+                </div>`;
+            // SG comparison
+            if (data.p1_stats && data.p2_stats) {
+                const cats = [['SG:OTT','sg_ott'],['SG:APP','sg_app'],['SG:ARG','sg_arg'],['SG:Putt','sg_putt'],['SG:Total','sg_total']];
+                html += '<div class="space-y-2">';
+                cats.forEach(([label, key]) => {
+                    const v1 = data.p1_stats[key]||0, v2 = data.p2_stats[key]||0;
+                    html += `<div class="flex items-center gap-2 text-sm">
+                        <span class="w-20 text-right font-mono ${sgColor(v1)}">${v1.toFixed(2)}</span>
+                        <span class="text-gray-400 w-16 text-center text-xs">${label}</span>
+                        <span class="w-20 font-mono ${sgColor(v2)}">${v2.toFixed(2)}</span>
+                    </div>`;
+                });
+                html += '</div>';
+            }
+            html += `<div class="mt-4 text-center">
+                <button onclick="savePredictionFromMatchup('${data.p1.replace(/'/g,"\\'")}','${data.p2.replace(/'/g,"\\'")}','${courseId}',${JSON.stringify(m).replace(/"/g,'&quot;')})"
+                    class="bg-green-700 hover:bg-green-600 px-4 py-1.5 rounded text-sm">
+                    <i class="fas fa-save mr-1"></i>Save Prediction
+                </button>
+            </div>`;
+            html += '</div>';
+            el.innerHTML = html;
+        } catch(e) { showError(el, 'Matchup failed: ' + e.message); }
+    }
+
+    // ── Tab 6: Form Tracker ──
+    async function loadFormTracker() {
+        const el = document.getElementById('form-results');
+        showLoading(el);
+        try {
+            const data = await apiFetch('/form');
+            const entries = Object.entries(data).map(([name, d]) => ({player_name: name, ...d, ...(d.form_metrics||{})}));
+            let html = `<table class="w-full text-sm"><thead><tr>
+                <th class="px-2 py-2 text-left">Player</th>
+                <th class="px-2 py-2 text-right">Last 4 Avg</th>
+                <th class="px-2 py-2 text-right">Last 8 Avg</th>
+                <th class="px-2 py-2 text-right">SG Trend</th>
+                <th class="px-2 py-2 text-center">Form</th>
+                <th class="px-2 py-2 text-right">Cuts (8)</th>
+                <th class="px-2 py-2 text-right">Top 10s (8)</th>
+                <th class="px-2 py-2 text-right">Consistency</th>
+            </tr></thead><tbody>`;
+            entries.forEach(p => {
+                const label = p.trend_label || p.form_label || 'stable';
+                html += `<tr class="clickable-row" onclick="openPlayerModal('${(p.player_name||'').replace(/'/g,"\\'")}')">
+                    <td class="px-2 py-2 font-medium">${p.player_name}</td>
+                    <td class="px-2 py-2 text-right font-mono">${(p.last_4_avg_finish||0).toFixed(1)}</td>
+                    <td class="px-2 py-2 text-right font-mono">${(p.last_8_avg_finish||0).toFixed(1)}</td>
+                    <td class="px-2 py-2 text-right font-mono ${(p.trend||0) > 0 ? 'text-green-400' : (p.trend||0) < 0 ? 'text-red-400' : ''}">${(p.trend||0).toFixed(3)}</td>
+                    <td class="px-2 py-2 text-center"><span class="${formLabelClass(label)} font-medium text-xs uppercase">${label}</span></td>
+                    <td class="px-2 py-2 text-right">${p.cuts_made_last_8 || 0}/8</td>
+                    <td class="px-2 py-2 text-right">${p.top10s_last_8 || 0}</td>
+                    <td class="px-2 py-2 text-right font-mono">${(p.consistency||0).toFixed(2)}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        } catch(e) { showError(el, 'Failed to load form data: ' + e.message); }
+    }
+
+    // ── Tab 7: Odds ──
+    async function loadOdds() {
+        const market = document.getElementById('odds-market').value;
+        const el = document.getElementById('odds-results');
+        showLoading(el);
+        try {
+            const data = await apiFetch('/odds/outrights?market=' + market);
+            const odds = data.odds || data || [];
+            if (!Array.isArray(odds) || !odds.length) {
+                el.innerHTML = '<p class="text-gray-400 text-center py-4">No odds data available</p>';
+                return;
+            }
+            let html = `<table class="w-full text-sm"><thead><tr>
+                <th class="px-3 py-2 text-left">Player</th>
+                <th class="px-3 py-2 text-right">Odds</th>
+                <th class="px-3 py-2 text-right">Implied Prob</th>
+                <th class="px-3 py-2 text-right">DG Prob</th>
+            </tr></thead><tbody>`;
+            odds.forEach(o => {
+                const implied = o.implied_prob || (o.odds ? (o.odds > 0 ? 100/(o.odds+100) : -o.odds/(-o.odds+100)) : 0);
+                const dgProb = o.dg_prob || o.baseline_history_fit || 0;
+                const isValue = dgProb > implied * 1.15;
+                html += `<tr class="${isValue ? 'value-pick' : 'clickable-row'}">
+                    <td class="px-3 py-2 font-medium">${o.player_name || ''}</td>
+                    <td class="px-3 py-2 text-right font-mono">${o.odds || o.american_odds || '-'}</td>
+                    <td class="px-3 py-2 text-right font-mono">${(implied*100).toFixed(1)}%</td>
+                    <td class="px-3 py-2 text-right font-mono ${isValue ? 'text-green-400 font-bold' : ''}">${(dgProb*100).toFixed(1)}%</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        } catch(e) { showError(el, 'Failed to load odds: ' + e.message); }
+
+        // Matchup odds
+        const mEl = document.getElementById('matchup-odds-results');
+        try {
+            const mData = await apiFetch('/odds/matchups');
+            const matchups = mData.matchups || mData || [];
+            if (Array.isArray(matchups) && matchups.length) {
+                let mHtml = `<table class="w-full text-sm"><thead><tr>
+                    <th class="px-3 py-2 text-left">Player 1</th>
+                    <th class="px-3 py-2 text-left">Player 2</th>
+                    <th class="px-3 py-2 text-right">P1 Odds</th>
+                    <th class="px-3 py-2 text-right">P2 Odds</th>
+                </tr></thead><tbody>`;
+                matchups.forEach(m => {
+                    mHtml += `<tr class="clickable-row">
+                        <td class="px-3 py-2">${m.player_1 || m.p1 || ''}</td>
+                        <td class="px-3 py-2">${m.player_2 || m.p2 || ''}</td>
+                        <td class="px-3 py-2 text-right font-mono">${m.p1_odds || '-'}</td>
+                        <td class="px-3 py-2 text-right font-mono">${m.p2_odds || '-'}</td>
+                    </tr>`;
+                });
+                mHtml += '</tbody></table>';
+                mEl.innerHTML = mHtml;
+            } else {
+                mEl.innerHTML = '<p class="text-gray-400 text-center py-4 text-sm">No matchup odds available</p>';
+            }
+        } catch(e) { mEl.innerHTML = ''; }
+    }
+
+    // ── Tab 8: Predictions ──
+    async function loadPredictions() {
+        // Accuracy dashboard
+        const accEl = document.getElementById('predictions-accuracy');
+        try {
+            const acc = await apiFetch('/predictions/accuracy');
+            accEl.innerHTML = `<div class="glass-card p-4 rounded-xl">
+                <h4 class="font-bold text-sm mb-2"><i class="fas fa-chart-pie mr-1 text-green-400"></i>Prediction Accuracy</h4>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 text-center text-sm">
+                    <div><div class="text-lg font-bold">${acc.total_predictions || 0}</div><div class="text-gray-400 text-xs">Total</div></div>
+                    <div><div class="text-lg font-bold">${acc.avg_finish_error != null ? acc.avg_finish_error.toFixed(1) : '-'}</div><div class="text-gray-400 text-xs">Avg Finish Error</div></div>
+                    <div><div class="text-lg font-bold">${acc.top10_accuracy != null ? acc.top10_accuracy + '%' : '-'}</div><div class="text-gray-400 text-xs">Top 10 Accuracy</div></div>
+                    <div><div class="text-lg font-bold">${acc.cut_accuracy != null ? acc.cut_accuracy + '%' : '-'}</div><div class="text-gray-400 text-xs">Cut Accuracy</div></div>
+                    <div><div class="text-lg font-bold">${acc.winner_accuracy != null ? acc.winner_accuracy + '%' : '-'}</div><div class="text-gray-400 text-xs">Winner Accuracy</div></div>
+                </div>
+            </div>`;
+        } catch(e) { accEl.innerHTML = ''; }
+
+        // Predictions list
+        const el = document.getElementById('predictions-results');
+        showLoading(el);
+        try {
+            const preds = await apiFetch('/predictions');
+            if (!preds.length) { el.innerHTML = '<p class="text-gray-400 text-center py-4">No predictions saved yet</p>'; return; }
+            let html = `<table class="w-full text-sm"><thead><tr>
+                <th class="px-2 py-2 text-left">Tournament</th>
+                <th class="px-2 py-2 text-left">Player</th>
+                <th class="px-2 py-2 text-right">Pred Finish</th>
+                <th class="px-2 py-2 text-center">Top 10?</th>
+                <th class="px-2 py-2 text-center">Winner?</th>
+                <th class="px-2 py-2 text-right">Actual</th>
+                <th class="px-2 py-2 text-right">Error</th>
+                <th class="px-2 py-2 text-center">Actions</th>
+            </tr></thead><tbody>`;
+            preds.forEach(p => {
+                const hasResult = p.result_entered;
+                html += `<tr>
+                    <td class="px-2 py-2">${p.tournament || '-'}</td>
+                    <td class="px-2 py-2 font-medium">${p.player || '-'}</td>
+                    <td class="px-2 py-2 text-right font-mono">${p.predicted_finish || '-'}</td>
+                    <td class="px-2 py-2 text-center">${p.predicted_top10 ? '<i class="fas fa-check text-green-400"></i>' : '-'}</td>
+                    <td class="px-2 py-2 text-center">${p.predicted_winner ? '<i class="fas fa-check text-green-400"></i>' : '-'}</td>
+                    <td class="px-2 py-2 text-right font-mono">${hasResult ? p.actual_finish : '-'}</td>
+                    <td class="px-2 py-2 text-right font-mono ${hasResult && p.finish_error != null ? (p.finish_error <= 5 ? 'text-green-400' : 'text-red-400') : ''}">${hasResult && p.finish_error != null ? p.finish_error : '-'}</td>
+                    <td class="px-2 py-2 text-center">
+                        ${!hasResult ? `<button onclick="openResultModal('${p.id}')" class="text-xs bg-blue-700 hover:bg-blue-600 px-2 py-0.5 rounded">Enter Result</button>` : '<i class="fas fa-check-circle text-green-600 text-xs"></i>'}
+                        <button onclick="deletePrediction('${p.id}')" class="text-xs text-red-400 hover:text-red-300 ml-1"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            el.innerHTML = html;
+        } catch(e) { showError(el, 'Failed to load predictions: ' + e.message); }
+    }
+
+    function openResultModal(predId) {
+        document.getElementById('result-pred-id').value = predId;
+        document.getElementById('result-finish').value = '';
+        document.getElementById('result-made-cut').checked = true;
+        document.getElementById('result-modal').classList.add('active');
+    }
+
+    function closeResultModal() {
+        document.getElementById('result-modal').classList.remove('active');
+    }
+
+    async function submitResult() {
+        const predId = document.getElementById('result-pred-id').value;
+        const finish = document.getElementById('result-finish').value;
+        const madeCut = document.getElementById('result-made-cut').checked;
+        if (!finish) return;
+        try {
+            await fetch(API + '/predictions/' + predId + '/result', {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ actual_finish: parseInt(finish), actual_made_cut: madeCut })
+            });
+            closeResultModal();
+            loadPredictions();
+        } catch(e) { alert('Failed to save result'); }
+    }
+
+    async function deletePrediction(predId) {
+        if (!confirm('Delete this prediction?')) return;
+        try {
+            await fetch(API + '/predictions/' + predId, { method: 'DELETE' });
+            loadPredictions();
+        } catch(e) { alert('Failed to delete'); }
+    }
+
+    function savePredictionFromMatchup(p1, p2, courseId, matchup) {
+        // Quick save from matchup tab
+        const pred = {
+            tournament: 'Matchup: ' + p1 + ' vs ' + p2,
+            player: p1,
+            course_id: courseId,
+            predicted_finish: null,
+            predicted_top10: null,
+            predicted_winner: (matchup.p1_win_pct||0) > 50,
+            predicted_make_cut: true,
+            win_probability: matchup.p1_win_pct,
+        };
+        fetch(API + '/predictions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(pred)
+        }).then(() => alert('Prediction saved!')).catch(() => alert('Failed to save'));
+    }
+
+    // ── Tab 9: Settings ──
+    async function loadSettings() {
+        // Load weights
+        try {
+            const w = await apiFetch('/model-weights');
+            const weights = w.weights || {};
+            if (weights.sg_efficiency) document.getElementById('w-sg').value = weights.sg_efficiency;
+            if (weights.course_fit) document.getElementById('w-cf').value = weights.course_fit;
+            if (weights.golf_rat) document.getElementById('w-gr').value = weights.golf_rat;
+            if (weights.mc) document.getElementById('w-mc').value = weights.mc;
+            updateWeightDisplay();
+        } catch(e) {}
+
+        // Load calibration
+        try {
+            const cal = await apiFetch('/calibration');
+            document.getElementById('cal-center').value = cal.center || 35.0;
+            document.getElementById('cal-compression').value = cal.compression || 0.85;
+        } catch(e) {}
+
+        // Cache stats
+        try {
+            const stats = await apiFetch('/cache-stats');
+            document.getElementById('cache-stats').innerHTML = `
+                <div class="grid grid-cols-3 gap-3 text-center text-sm">
+                    <div><div class="text-lg font-bold">${stats.total_entries||0}</div><div class="text-gray-400 text-xs">Total Entries</div></div>
+                    <div><div class="text-lg font-bold">${stats.valid_entries||0}</div><div class="text-gray-400 text-xs">Valid</div></div>
+                    <div><div class="text-lg font-bold">${Object.keys(stats.rate_limits||{}).length}</div><div class="text-gray-400 text-xs">APIs Tracked</div></div>
+                </div>
+                ${Object.entries(stats.rate_limits||{}).map(([api, rl]) => `
+                    <div class="mt-2 text-xs text-gray-400">${api}: ${rl.calls} calls, ${rl.remaining} remaining, resets in ${rl.resets_in}s</div>
+                `).join('')}`;
+        } catch(e) { document.getElementById('cache-stats').innerHTML = '<p class="text-gray-400 text-sm">Failed to load cache stats</p>'; }
+
+        // Elite players
+        try {
+            const players = await apiFetch('/elite-players');
+            const entries = Object.entries(players);
+            let html = `<table class="w-full text-sm"><thead><tr>
+                <th class="px-2 py-1 text-left">Player</th>
+                <th class="px-2 py-1 text-center">Tier</th>
+                <th class="px-2 py-1 text-right">Impact</th>
+                <th class="px-2 py-1 text-left">Strengths</th>
+            </tr></thead><tbody>`;
+            entries.forEach(([name, info]) => {
+                html += `<tr class="clickable-row">
+                    <td class="px-2 py-1 font-medium">${name}</td>
+                    <td class="px-2 py-1 text-center">${tierBadge(info.tier)}</td>
+                    <td class="px-2 py-1 text-right">${info.impact||'-'}</td>
+                    <td class="px-2 py-1 text-xs text-gray-400">${(info.strengths||[]).join(', ')}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('elite-players-list').innerHTML = html;
+        } catch(e) {}
+    }
+
+    function updateWeightDisplay() {
+        const sg = parseFloat(document.getElementById('w-sg').value);
+        const cf = parseFloat(document.getElementById('w-cf').value);
+        const gr = parseFloat(document.getElementById('w-gr').value);
+        const mc = parseFloat(document.getElementById('w-mc').value);
+        document.getElementById('w-sg-val').textContent = sg.toFixed(2);
+        document.getElementById('w-cf-val').textContent = cf.toFixed(2);
+        document.getElementById('w-gr-val').textContent = gr.toFixed(2);
+        document.getElementById('w-mc-val').textContent = mc.toFixed(2);
+        const sum = sg + cf + gr + mc;
+        document.getElementById('weight-sum').textContent = 'Sum: ' + sum.toFixed(2);
+        document.getElementById('weight-sum').className = Math.abs(sum - 1.0) < 0.02 ? 'text-sm font-mono text-green-400' : 'text-sm font-mono text-red-400';
+    }
+
+    async function saveWeights() {
+        const weights = {
+            sg_efficiency: parseFloat(document.getElementById('w-sg').value),
+            course_fit: parseFloat(document.getElementById('w-cf').value),
+            golf_rat: parseFloat(document.getElementById('w-gr').value),
+            mc: parseFloat(document.getElementById('w-mc').value),
+        };
+        try {
+            const resp = await fetch(API + '/model-weights', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ weights })
+            });
+            const data = await resp.json();
+            if (data.error) alert(data.error);
+            else alert('Weights saved!');
+        } catch(e) { alert('Failed to save weights'); }
+    }
+
+    async function saveCalibration() {
+        const center = parseFloat(document.getElementById('cal-center').value);
+        const compression = parseFloat(document.getElementById('cal-compression').value);
+        try {
+            const resp = await fetch(API + '/calibration', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ center, compression })
+            });
+            const data = await resp.json();
+            if (data.error) alert(data.error);
+            else alert('Calibration saved!');
+        } catch(e) { alert('Failed to save calibration'); }
+    }
+
+    // ── Player Modal ──
+    async function openPlayerModal(name) {
+        document.getElementById('modal-player-name').textContent = name;
+        document.getElementById('modal-player-body').innerHTML = '<div class="text-center py-4 text-gray-400"><i class="fas fa-spinner fa-spin mr-2"></i>Loading...</div>';
+        document.getElementById('player-modal').classList.add('active');
+        try {
+            const data = await apiFetch('/player/' + encodeURIComponent(name));
+            let html = '';
+            // Rankings info
+            if (data.rankings) {
+                const r = data.rankings;
+                html += `<div class="mb-4">
+                    <h4 class="font-bold text-sm mb-2">Rankings</h4>
+                    <div class="grid grid-cols-3 gap-2 text-sm text-center">
+                        <div class="bg-gray-700/50 p-2 rounded"><div class="text-lg font-bold">${r.dg_rank||'-'}</div><div class="text-xs text-gray-400">DG Rank</div></div>
+                        <div class="bg-gray-700/50 p-2 rounded"><div class="text-lg font-bold ${sgColor(r.dg_skill_estimate||0)}">${(r.dg_skill_estimate||0).toFixed(2)}</div><div class="text-xs text-gray-400">SG:Total</div></div>
+                        <div class="bg-gray-700/50 p-2 rounded"><div class="text-lg font-bold">${r.owgr_rank||'-'}</div><div class="text-xs text-gray-400">OWGR</div></div>
+                    </div>
+                </div>`;
+            }
+            // Elite info
+            if (data.elite_info) {
+                const e = data.elite_info;
+                html += `<div class="mb-4">
+                    <h4 class="font-bold text-sm mb-2">Profile</h4>
+                    <div class="text-sm space-y-1">
+                        <div>Tier: ${tierBadge(e.tier)}</div>
+                        <div>Strengths: ${(e.strengths||[]).join(', ') || '-'}</div>
+                        <div>Weaknesses: ${(e.weaknesses||[]).join(', ') || '-'}</div>
+                        ${e.majors_won ? `<div>Majors: ${e.majors_won}</div>` : ''}
+                        ${e.career_wins ? `<div>Career Wins: ${e.career_wins}</div>` : ''}
+                    </div>
+                </div>`;
+            }
+            // Form
+            if (data.form && data.form.form_metrics) {
+                const f = data.form.form_metrics;
+                html += `<div class="mb-4">
+                    <h4 class="font-bold text-sm mb-2">Form</h4>
+                    <div class="grid grid-cols-3 gap-2 text-sm text-center">
+                        <div class="bg-gray-700/50 p-2 rounded"><div class="font-mono">${(f.last_4_avg_finish||0).toFixed(1)}</div><div class="text-xs text-gray-400">Last 4 Avg</div></div>
+                        <div class="bg-gray-700/50 p-2 rounded"><div class="font-mono">${(f.last_8_avg_finish||0).toFixed(1)}</div><div class="text-xs text-gray-400">Last 8 Avg</div></div>
+                        <div class="bg-gray-700/50 p-2 rounded"><div class="${formLabelClass(f.trend_label)} font-bold uppercase">${f.trend_label||'stable'}</div><div class="text-xs text-gray-400">Form</div></div>
+                    </div>
+                </div>`;
+            }
+            // WD Status
+            if (data.wd_status && data.wd_status.status !== 'active') {
+                html += `<div class="mb-4 p-3 bg-red-900/30 rounded-lg border border-red-800">
+                    <h4 class="font-bold text-sm mb-1 text-red-400"><i class="fas fa-exclamation-triangle mr-1"></i>Health Status</h4>
+                    <div class="text-sm">Status: <span class="font-bold">${data.wd_status.status}</span></div>
+                    <div class="text-xs text-gray-400">${data.wd_status.details || ''}</div>
+                </div>`;
+            }
+            document.getElementById('modal-player-body').innerHTML = html || '<p class="text-gray-400">No detailed data available</p>';
+        } catch(e) {
+            document.getElementById('modal-player-body').innerHTML = `<p class="text-red-400">Error loading player data: ${e.message}</p>`;
+        }
+    }
+
+    function closePlayerModal() {
+        document.getElementById('player-modal').classList.remove('active');
+    }
+
+    // Close modals on escape
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') {
+            closePlayerModal();
+            closeResultModal();
+        }
+    });
+
+    // ── Init ──
+    loadRankings();
+    </script>
+</body>
+</html>
