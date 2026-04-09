@@ -158,7 +158,7 @@ class GolfBacktester:
         results = []
         for p in completed:
             actual_finish = p.get('actual_finish', 0) or 0
-            predicted_finish = p.get('predicted_finish', 0) or 0
+            predicted_finish = p.get('predicted_finish') or None
             actual_made_cut = p.get('actual_made_cut', True)
 
             results.append({
@@ -166,9 +166,9 @@ class GolfBacktester:
                 'tournament_name': p.get('tournament', ''),
                 'course_id': p.get('course_id', ''),
                 'player_name': p.get('player', ''),
-                'predicted_finish': predicted_finish,
+                'predicted_finish': predicted_finish if predicted_finish is not None else 35.0,
                 'actual_finish': actual_finish,
-                'finish_error': abs(predicted_finish - actual_finish),
+                'finish_error': abs(predicted_finish - actual_finish) if predicted_finish is not None else None,
                 'predicted_win_pct': p.get('win_probability', 0.0) or 0.0,
                 'actual_won': actual_finish == 1,
                 'predicted_top5_pct': p.get('predicted_top5_pct', 0.0) or 0.0,
