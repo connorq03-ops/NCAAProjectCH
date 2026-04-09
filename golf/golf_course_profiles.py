@@ -613,6 +613,8 @@ def get_courses_by_archetype(archetype: str) -> list:
 def get_course_by_tournament(tournament_name: str) -> Optional[dict]:
     """Fuzzy match tournament name to course."""
     query = tournament_name.lower().strip()
+    if not query:
+        return None
     # Exact match first
     for course in COURSES.values():
         if course["tournament_name"].lower() == query:
