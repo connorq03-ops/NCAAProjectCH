@@ -738,22 +738,22 @@
                 html += `<tr class="clickable-row">
                     <td class="px-2 py-1">${i+1}</td>
                     <td class="px-2 py-1 font-medium">${p.player_name}</td>
-                    <td class="px-2 py-1 text-right font-mono text-green-400">${((p.win_pct||0)*100).toFixed(1)}%</td>
-                    <td class="px-2 py-1 text-right font-mono">${((p.top5_pct||0)*100).toFixed(1)}%</td>
-                    <td class="px-2 py-1 text-right font-mono">${((p.top10_pct||0)*100).toFixed(1)}%</td>
-                    <td class="px-2 py-1 text-right font-mono">${((p.top20_pct||0)*100).toFixed(1)}%</td>
-                    <td class="px-2 py-1 text-right font-mono">${((p.make_cut_pct||p.cut_pct||0)*100).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono text-green-400">${(p.win_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.top5_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.top10_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.top20_pct||0).toFixed(1)}%</td>
+                    <td class="px-2 py-1 text-right font-mono">${(p.make_cut_pct||p.cut_pct||0).toFixed(1)}%</td>
                 </tr>`;
             });
             html += '</tbody></table></div>';
 
             // Cut danger list
-            const cutDanger = players.filter(p => (p.make_cut_pct||p.cut_pct||1) < 0.6);
+            const cutDanger = players.filter(p => (p.make_cut_pct||p.cut_pct||100) < 60);
             if (cutDanger.length) {
                 html += '<div class="glass-card p-4 rounded-xl mb-4"><h4 class="font-bold text-sm mb-2 text-red-400"><i class="fas fa-exclamation-triangle mr-1"></i>Cut Danger (<60% make cut)</h4>';
                 html += '<div class="flex flex-wrap gap-2">';
                 cutDanger.forEach(p => {
-                    html += `<span class="px-2 py-1 bg-red-900/30 rounded text-xs">${p.player_name} (${((p.make_cut_pct||p.cut_pct||0)*100).toFixed(0)}%)</span>`;
+                    html += `<span class="px-2 py-1 bg-red-900/30 rounded text-xs">${p.player_name} (${(p.make_cut_pct||p.cut_pct||0).toFixed(0)}%)</span>`;
                 });
                 html += '</div></div>';
             }
@@ -794,7 +794,7 @@
             let html = `<div class="glass-card p-6 rounded-xl">
                 <div class="grid grid-cols-3 gap-4 text-center mb-6">
                     <div>
-                        <div class="text-2xl font-bold text-green-400">${((m.p1_win_pct||0)*100).toFixed(1)}%</div>
+                        <div class="text-2xl font-bold text-green-400">${(m.p1_win_pct||0).toFixed(1)}%</div>
                         <div class="text-sm font-medium">${data.p1}</div>
                     </div>
                     <div>
@@ -802,7 +802,7 @@
                         <div class="text-xs text-gray-500">${m.num_sims||1000} sims</div>
                     </div>
                     <div>
-                        <div class="text-2xl font-bold text-blue-400">${((m.p2_win_pct||0)*100).toFixed(1)}%</div>
+                        <div class="text-2xl font-bold text-blue-400">${(m.p2_win_pct||0).toFixed(1)}%</div>
                         <div class="text-sm font-medium">${data.p2}</div>
                     </div>
                 </div>`;
@@ -1025,7 +1025,7 @@
             course_id: courseId,
             predicted_finish: null,
             predicted_top10: null,
-            predicted_winner: (matchup.p1_win_pct||0) > 0.5,
+            predicted_winner: (matchup.p1_win_pct||0) > 50,
             predicted_make_cut: true,
             win_probability: matchup.p1_win_pct,
         };
