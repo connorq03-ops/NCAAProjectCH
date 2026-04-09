@@ -425,8 +425,10 @@ def test_7_course_fit(client):
                 'sg_arg': get_field(p, 'sg_arg', SKILL_FIELDS, 0.0),
                 'sg_putt': get_field(p, 'sg_putt', SKILL_FIELDS, 0.0),
                 'sg_total': get_field(p, 'sg_total', SKILL_FIELDS, 0.0),
-                'driving_distance': get_field(p, 'driving_distance', SKILL_FIELDS, 295.0),
-                'driving_accuracy': get_field(p, 'driving_accuracy', SKILL_FIELDS, 60.0),
+                # DataGolf returns driving stats as relative values (delta from
+                # tour avg). Convert to absolute for calc_full_course_fit().
+                'driving_distance': 295.0 + get_field(p, 'driving_distance', SKILL_FIELDS, 0.0),
+                'driving_accuracy': 60.0 + get_field(p, 'driving_accuracy', SKILL_FIELDS, 0.0),
                 'scrambling_pct': 58.0,
             }
             fit = calc_full_course_fit(stats, course)
