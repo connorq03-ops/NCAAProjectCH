@@ -676,18 +676,18 @@ def calc_course_fit_score(player_sg: dict, course_profile: dict) -> float:
     best_cat = max(player_vals, key=player_vals.get)
     worst_cat = min(player_vals, key=player_vals.get)
 
-    # Step 3: Find course's highest-weighted category
-    top_course_cat = max(weights, key=weights.get)
-    top_weight = weights[top_course_cat]
+    # Step 3: Find course's highest-weighted categories (handle ties)
+    max_weight = max(weights.values()) if weights else 0.25
+    top_cats = {k for k, v in weights.items() if v == max_weight}
 
-    # Step 4: Elite bonus — player's best matches course's most important
+    # Step 4: Elite bonus — player's best matches any top course category
     elite_bonus = 0.0
-    if best_cat == top_course_cat and player_vals[best_cat] > 0:
-        elite_bonus = min(player_vals[best_cat] * top_weight * 0.15, 0.3)
+    if best_cat in top_cats and player_vals[best_cat] > 0:
+        elite_bonus = min(player_vals[best_cat] * max_weight * 0.15, 0.3)
 
-    # Step 5: Weakness penalty — player's worst is course's most important
+    # Step 5: Weakness penalty — player's worst is any top course category
     weakness_penalty = 0.0
-    if worst_cat == top_course_cat and player_vals[worst_cat] < 0:
-        weakness_penalty = min(abs(player_vals[worst_cat]) * top_weight * 0.10, 0.2)
+    if worst_cat in top_cats and player_vals[worst_cat] < 0:
+        weakness_penalty = min(abs(player_vals[worst_cat]) * max_weight * 0.10, 0.2)
 
     return base_weighted_sg + elite_bonus - weakness_penalty
