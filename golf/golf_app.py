@@ -161,7 +161,7 @@ except ValueError:
     print("[golf-app] ANTHROPIC_API_KEY not set — WD features disabled")
 
 form_tracker = FormTracker(client=dg_client)
-golf_backtester = GolfBacktester()
+golf_backtester = GolfBacktester(predictions_file=GOLF_PREDICTIONS_FILE)
 
 
 # ── Cached Call Helper (mirror app.py lines 172-181) ──
@@ -1207,8 +1207,12 @@ def trigger_dynamic_weights():
         return jsonify({'error': 'No backtest results available. Run a backtest first.'}), 400
 
     try:
-        # Get raw player results
-        raw_results = bt_results.get('results', [])
+        # Get raw player results — handle both standard and bias comparison structures
+        if 'bias_analysis' in bt_results:
+            # Bias comparison: extract from historical sub-results
+            raw_results = bt_results.get('historical', {}).get('results', [])
+        else:
+            raw_results = bt_results.get('results', [])
         if not raw_results:
             return jsonify({'error': 'Backtest has no player-level results'}), 400
 
@@ -1220,13 +1224,14 @@ def trigger_dynamic_weights():
         current_w = cached_weights.get('weights', dict(GOLF_BASE_WEIGHTS)) if cached_weights else dict(GOLF_BASE_WEIGHTS)
         rollback_info = should_rollback(per_model_acc, current_w)
 
-        # Validate
+        # Check rollback before validation — rollback substitutes base weights
+        if rollback_info.get('should_rollback'):
+            optimal = dict(GOLF_BASE_WEIGHTS)
+
+        # Validate final weights
         is_valid, errors = validate_weights(optimal)
         if not is_valid:
             return jsonify({'error': 'Computed weights are invalid', 'validation_errors': errors}), 400
-
-        if rollback_info.get('should_rollback'):
-            optimal = dict(GOLF_BASE_WEIGHTS)
 
         # Store in cache
         data = {
