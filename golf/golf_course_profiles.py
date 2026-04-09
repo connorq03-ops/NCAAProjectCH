@@ -644,12 +644,12 @@ def calc_course_fit_score(player_sg: dict, course_profile: dict) -> float:
 
     # Step 4: Elite bonus — player's best matches course's most important
     elite_bonus = 0.0
-    if best_cat == top_course_cat:
-        elite_bonus = min(abs(player_vals[best_cat]) * top_weight * 0.15, 0.3)
+    if best_cat == top_course_cat and player_vals[best_cat] > 0:
+        elite_bonus = min(player_vals[best_cat] * top_weight * 0.15, 0.3)
 
     # Step 5: Weakness penalty — player's worst is course's most important
     weakness_penalty = 0.0
-    if worst_cat == top_course_cat:
+    if worst_cat == top_course_cat and player_vals[worst_cat] < 0:
         weakness_penalty = min(abs(player_vals[worst_cat]) * top_weight * 0.10, 0.2)
 
     return base_weighted_sg + elite_bonus - weakness_penalty
