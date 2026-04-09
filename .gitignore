@@ -26,3 +26,4 @@ Thumbs.db
 # Project specific
 *.log
 .injury_cache/
+golf/.api_response_cache/

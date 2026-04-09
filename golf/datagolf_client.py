@@ -25,9 +25,10 @@ class DataGolfClient:
             api_key: The API key for authentication. If not provided, will try to load from environment.
             base_url: The base URL for the DataGolf API.
         """
-        # Load golf-specific .env (scoped to golf/ directory)
+        # Load golf-specific .env (scoped to golf/ directory), then root .env as fallback
         _golf_env_path = os.path.join(os.path.dirname(__file__), '.env')
         load_dotenv(_golf_env_path)
+        load_dotenv()  # also try root .env as fallback
         self.api_key = api_key or os.getenv('DATAGOLF_API_KEY')
         self.base_url = base_url
         self.session = requests.Session()
@@ -86,18 +87,22 @@ class DataGolfClient:
         """
         Retrieve detailed strokes gained skill breakdowns per player.
 
+        Actual endpoint: preds/skill-ratings (preds/skill-decompositions returns 404).
+        Response: { "players": [ { "player_name", "sg_ott", "sg_app", "sg_arg",
+                   "sg_putt", "sg_total", "driving_dist", "driving_acc", "dg_id" } ] }
+
         Args:
             tour: Tour to get data for (e.g., 'pga', 'euro', 'kft').
             file_format: Response format ('json' or 'csv').
 
         Returns:
-            Skill decomposition data.
+            Skill ratings data with SG splits per player.
         """
         params = {
             'tour': tour,
             'file_format': file_format
         }
-        return self._make_request('preds/skill-decompositions', params)
+        return self._make_request('preds/skill-ratings', params)
 
     def get_pre_tournament_preds(self, tour: str = 'pga', add_position: Optional[int] = None,
                                   odds_format: str = 'american', file_format: str = 'json') -> Any:
@@ -265,13 +270,17 @@ class DataGolfClient:
         }
         return self._make_request('betting-tools/outrights', params)
 
-    def get_matchup_odds(self, tour: str = 'pga', odds_format: str = 'american',
-                         file_format: str = 'json') -> Any:
+    def get_matchup_odds(self, tour: str = 'pga', market: str = 'tournament_matchups',
+                         odds_format: str = 'american', file_format: str = 'json') -> Any:
         """
         Retrieve head-to-head matchup odds.
 
+        Response: { "match_list": [ { "p1_player_name", "p2_player_name",
+                   "p1_dg_id", "p2_dg_id", "odds": {...}, "ties": ... } ] }
+
         Args:
             tour: Tour to get data for (e.g., 'pga', 'euro', 'kft').
+            market: Market type ('tournament_matchups' or 'round_matchups').
             odds_format: Odds format ('american' or 'decimal').
             file_format: Response format ('json' or 'csv').
 
@@ -280,6 +289,7 @@ class DataGolfClient:
         """
         params = {
             'tour': tour,
+            'market': market,
             'odds_format': odds_format,
             'file_format': file_format
         }
@@ -289,11 +299,30 @@ class DataGolfClient:
         """
         Retrieve general tour info and current event details.
 
+        Note: This endpoint may not be available on all API tiers.
+        Falls back to field-updates metadata if the endpoint 404s.
+
         Args:
             tour: Tour to get data for (e.g., 'pga', 'euro', 'kft').
 
         Returns:
-            General tour information.
+            General tour information, or field-updates metadata as fallback.
         """
-        params = {'tour': tour}
-        return self._make_request('general/info', params)
+        try:
+            params = {'tour': tour}
+            return self._make_request('general/info', params)
+        except Exception:
+            # Fallback: extract general info from field-updates response
+            field_data = self.get_field_updates(tour=tour)
+            if isinstance(field_data, dict):
+                return {
+                    'tour': field_data.get('tour', tour),
+                    'event_name': field_data.get('event_name'),
+                    'event_id': field_data.get('event_id'),
+                    'course_name': field_data.get('course_name'),
+                    'current_round': field_data.get('current_round'),
+                    'date_start': field_data.get('date_start'),
+                    'date_end': field_data.get('date_end'),
+                    'last_updated': field_data.get('last_updated'),
+                }
+            return {}
