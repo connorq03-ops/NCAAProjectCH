@@ -287,9 +287,9 @@ def american_odds_to_probability(odds_str):
 def archive_value_to_probability(val):
     """Convert archive prediction value to probability (0-1 scale).
 
-    The archive endpoint returns values that appear to be implied probabilities
-    already but with different scaling. Values like 12.18 for win mean ~12.18%
-    implying they are x100 of the actual probability.
+    The archive endpoint returns ALL values as percentages on a 0-100 scale.
+    For example, 12.18 means 12.18% win probability, and 0.3 means 0.3%.
+    We always divide by 100 to convert to a 0-1 probability.
 
     Args:
         val: value from archive response (can be float or None)
@@ -303,7 +303,6 @@ def archive_value_to_probability(val):
         v = float(val)
     except (ValueError, TypeError):
         return 0.0
-    # Archive values > 1 are percentages (e.g., 12.18 = 12.18%)
-    if v > 1.0:
-        return v / 100.0
-    return v
+    # Archive values are always percentages (0-100 scale), so always divide by 100.
+    # e.g., 12.18 -> 0.1218 (12.18%), 0.3 -> 0.003 (0.3%)
+    return v / 100.0
