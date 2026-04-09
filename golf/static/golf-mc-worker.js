@@ -176,7 +176,8 @@ function simRound(playerParams, holes, roundNumber, roundConfig) {
     let effectiveWeather = weatherAdj * (1.0 - weatherResilience * 0.5);
 
     if (roundConfig.weather) {
-        effectiveWeather = roundConfig.weather.combinedAdj || effectiveWeather;
+        const cAdj = roundConfig.weather.combinedAdj ?? roundConfig.weather.combined_adj;
+        effectiveWeather = cAdj ?? effectiveWeather;
     }
 
     let momentum = roundConfig.carryMomentum || 0.0;

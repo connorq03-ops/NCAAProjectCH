@@ -249,7 +249,7 @@ def _generate_synthetic_holes(course_par: int) -> List[dict]:
     """Generate synthetic 18-hole layout when per-hole data is unavailable."""
     holes = []
     # Standard distribution: 4 par-3s, 10 par-4s, 4 par-5s for par 72
-    if course_par <= 70:
+    if course_par < 72:
         pars = [3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5]
         # Adjust to hit target par
         diff = course_par - sum(pars)
@@ -259,7 +259,7 @@ def _generate_synthetic_holes(course_par: int) -> List[dict]:
                 pars[idx] = 4
                 diff += 1
             idx += 1
-    elif course_par >= 73:
+    elif course_par > 72:
         pars = [3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5]
         diff = course_par - sum(pars)
         idx = 0
