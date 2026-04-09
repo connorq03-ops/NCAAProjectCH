@@ -302,7 +302,7 @@ def calc_pressure_modifier(player_stats):
 # ═══════════════════════════════════════════════════════════════
 
 def build_player_sim_params(player_stats, course_profile, weather=None,
-                            field_strength=1.0):
+                            field_strength=0.0):
     """Build the full parameter dict for golf_mc_engine.simulate_tournament().
 
     Analogous to build_matchup_params() in matchup_params.py (lines 296-564).
