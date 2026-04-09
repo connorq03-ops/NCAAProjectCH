@@ -248,8 +248,9 @@ function simTournamentSingle(players, holes, weatherPerRound) {
 
     // Init player state
     const state = {};
-    for (const p of players) {
-        const name = p._player_name || p.playerName || ('Player_' + Math.random().toString(36).slice(2, 8));
+    for (let idx = 0; idx < players.length; idx++) {
+        const p = players[idx];
+        const name = p._player_name || p.playerName || ('Player_' + idx);
         state[name] = {
             params: p, rounds: [], totalToPar: 0, momentum: 0.0,
             madeCut: true, birdies: 0, bogeys: 0, doublesPlus: 0, eagles: 0
@@ -368,10 +369,18 @@ self.onmessage = function(e) {
     const n = numSims || 1000;
     const progressInterval = Math.max(1, Math.floor(n / 10));
 
+    // Assign stable names to unnamed players so accumulator keys match
+    // the names used inside simTournamentSingle
+    for (let pi = 0; pi < players.length; pi++) {
+        if (!players[pi]._player_name && !players[pi].playerName) {
+            players[pi].playerName = 'Player_' + pi;
+        }
+    }
+
     // Initialize accumulators
     const accum = {};
     for (const p of players) {
-        const name = p._player_name || p.playerName || ('Player_' + Math.random().toString(36).slice(2, 8));
+        const name = p._player_name || p.playerName;
         accum[name] = {
             wins: 0, top5: 0, top10: 0, top20: 0, cutsMade: 0,
             totalFinish: 0, totalScoreToPar: 0, totalBirdies: 0, totalBogeys: 0,
