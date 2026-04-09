@@ -355,7 +355,7 @@
     <script>
     let mcWorker = null;
     try {
-        mcWorker = new Worker('/golf/static/golf-mc-worker.js');
+        mcWorker = new Worker('/static/golf-mc-worker.js');
     } catch(e) {
         console.warn('MC Worker not available:', e);
     }
