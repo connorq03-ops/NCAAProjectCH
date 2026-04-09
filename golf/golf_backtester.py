@@ -177,7 +177,7 @@ class GolfBacktester:
                 'actual_top10': 1 <= actual_finish <= 10,
                 'predicted_top20_pct': p.get('predicted_top20_pct', 0.0) or 0.0,
                 'actual_top20': 1 <= actual_finish <= 20,
-                'predicted_cut_pct': p.get('predicted_make_cut', 1.0) or 1.0,
+                'predicted_cut_pct': p.get('predicted_make_cut') if p.get('predicted_make_cut') is not None else 1.0,
                 'actual_made_cut': actual_made_cut,
                 'golf_rat_score': p.get('golf_rat_score', 5.0) or 5.0,
                 'composite_weights': p.get('composite_weights', {}),
