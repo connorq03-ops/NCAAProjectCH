@@ -45,7 +45,7 @@ from golf.golf_sim_params import prefetch_all_player_data, build_player_sim_para
 from golf.golf_backtester import GolfBacktester
 from golf.golf_weight_optimizer import (
     compute_per_model_accuracy, compute_optimal_weights, should_rollback, validate_weights,
-    BASE_WEIGHTS as GOLF_BASE_WEIGHTS,
+    should_reset_weights, BASE_WEIGHTS as GOLF_BASE_WEIGHTS,
 )
 
 
@@ -1241,7 +1241,7 @@ def trigger_dynamic_weights():
         # Store in cache
         data = {
             'weights': optimal,
-            'source': 'dynamic_optimizer',
+            'source': 'rollback_to_base' if rollback_info.get('should_rollback') else 'dynamic_optimizer',
             'per_model_stats': per_model_acc,
             'rollback_info': rollback_info,
             'last_updated': datetime.now().isoformat(),
@@ -1267,6 +1267,14 @@ def get_dynamic_weights():
     """Get current dynamic weights (or base weights if none stored)."""
     cached = golf_cache.get('golf_model_weights', {}, ttl=86400 * 365)
     if cached and 'weights' in cached:
+        # Check seasonal reset — PGA Tour season starts January 1
+        if should_reset_weights(cached.get('last_updated')):
+            return jsonify({
+                'weights': dict(GOLF_BASE_WEIGHTS),
+                'source': 'seasonal_reset',
+                'last_updated': cached.get('last_updated'),
+                'reset_reason': 'Weights from previous PGA Tour season. Reset to base weights.',
+            })
         return jsonify(cached)
     return jsonify({
         'weights': dict(GOLF_BASE_WEIGHTS),
