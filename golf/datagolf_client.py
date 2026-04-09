@@ -25,7 +25,9 @@ class DataGolfClient:
             api_key: The API key for authentication. If not provided, will try to load from environment.
             base_url: The base URL for the DataGolf API.
         """
-        load_dotenv()
+        # Load golf-specific .env (scoped to golf/ directory)
+        _golf_env_path = os.path.join(os.path.dirname(__file__), '.env')
+        load_dotenv(_golf_env_path)
         self.api_key = api_key or os.getenv('DATAGOLF_API_KEY')
         self.base_url = base_url
         self.session = requests.Session()

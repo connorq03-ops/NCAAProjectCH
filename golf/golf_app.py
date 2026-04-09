@@ -140,7 +140,9 @@ class SQLiteCache:
 
 # ── Client Initialization (mirror app.py lines 155-169) ──
 
-load_dotenv()
+# Load golf-specific .env (scoped to golf/ directory)
+_golf_env_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(_golf_env_path)
 
 app = Flask(__name__, static_folder='static')
 CORS(app)
@@ -1296,4 +1298,4 @@ def golf_index():
 # ── Entry Point ──
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5002)
+    app.run(debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true', port=5002)
