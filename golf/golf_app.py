@@ -48,7 +48,7 @@ from golf.golf_weight_optimizer import (
     should_reset_weights, BASE_WEIGHTS as GOLF_BASE_WEIGHTS,
 )
 from golf.api_field_map import (
-    extract_list, get_field,
+    extract_list, get_field as map_get_field,
     RANKINGS_FIELDS, SKILL_FIELDS, FIELD_FIELDS,
     PLAYER_DECOMP_FIELDS, PRED_FIELDS,
     american_odds_to_probability,
@@ -227,7 +227,7 @@ def get_player_profile(player_name):
         player_rankings = None
         rankings_list = extract_list(rankings, 'rankings')
         for entry in rankings_list:
-            if get_field(entry, 'player_name', RANKINGS_FIELDS, '').lower() == player_name.lower():
+            if map_get_field(entry, 'player_name', RANKINGS_FIELDS, '').lower() == player_name.lower():
                 player_rankings = entry
                 break
 
@@ -334,31 +334,31 @@ def get_course_fit(course_id):
         decomp_map = {}
         decomp_list = extract_list(decomps, 'skill_ratings')
         for d in decomp_list:
-            name = get_field(d, 'player_name', SKILL_FIELDS, '')
+            name = map_get_field(d, 'player_name', SKILL_FIELDS, '')
             if name:
                 decomp_map[name] = d
 
         # Compute course fit for each player
         fit_results = []
         for entry in rankings_list[:100]:  # Top 100 ranked players
-            name = get_field(entry, 'player_name', RANKINGS_FIELDS, '')
+            name = map_get_field(entry, 'player_name', RANKINGS_FIELDS, '')
             d = decomp_map.get(name, {})
             player_stats = {
-                'sg_ott': get_field(d, 'sg_ott', SKILL_FIELDS, 0.0),
-                'sg_app': get_field(d, 'sg_app', SKILL_FIELDS, 0.0),
-                'sg_arg': get_field(d, 'sg_arg', SKILL_FIELDS, 0.0),
-                'sg_putt': get_field(d, 'sg_putt', SKILL_FIELDS, 0.0),
-                'sg_total': get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
-                'driving_distance': get_field(d, 'driving_distance', SKILL_FIELDS, 295.0),
-                'driving_accuracy': get_field(d, 'driving_accuracy', SKILL_FIELDS, 60.0),
+                'sg_ott': map_get_field(d, 'sg_ott', SKILL_FIELDS, 0.0),
+                'sg_app': map_get_field(d, 'sg_app', SKILL_FIELDS, 0.0),
+                'sg_arg': map_get_field(d, 'sg_arg', SKILL_FIELDS, 0.0),
+                'sg_putt': map_get_field(d, 'sg_putt', SKILL_FIELDS, 0.0),
+                'sg_total': map_get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
+                'driving_distance': map_get_field(d, 'driving_distance', SKILL_FIELDS, 295.0),
+                'driving_accuracy': map_get_field(d, 'driving_accuracy', SKILL_FIELDS, 60.0),
                 'scrambling_pct': 58.0,  # not available from skill-ratings endpoint
             }
             fit = calc_full_course_fit(player_stats, course)
             fit_results.append({
                 'player_name': name,
-                'owgr_rank': get_field(entry, 'owgr_rank', RANKINGS_FIELDS),
+                'owgr_rank': map_get_field(entry, 'owgr_rank', RANKINGS_FIELDS),
                 'dg_rank': entry.get('datagolf_rank'),
-                'sg_total': get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
+                'sg_total': map_get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
                 **fit,
             })
 
@@ -645,14 +645,14 @@ def get_matchup():
         rankings_map = {}
         rankings_list = extract_list(rankings, 'rankings')
         for entry in rankings_list:
-            name = get_field(entry, 'player_name', RANKINGS_FIELDS, '')
+            name = map_get_field(entry, 'player_name', RANKINGS_FIELDS, '')
             if name:
                 rankings_map[name.lower()] = entry
 
         decomp_map = {}
         decomp_list = extract_list(decomps, 'skill_ratings')
         for d in decomp_list:
-            name = get_field(d, 'player_name', SKILL_FIELDS, '')
+            name = map_get_field(d, 'player_name', SKILL_FIELDS, '')
             if name:
                 decomp_map[name.lower()] = d
 
@@ -661,15 +661,15 @@ def get_matchup():
             d = decomp_map.get(name.lower(), {})
             return {
                 '_player_name': name,
-                'sg_total': get_field(r, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
-                'sg_ott': get_field(d, 'sg_ott', SKILL_FIELDS, 0.0),
-                'sg_app': get_field(d, 'sg_app', SKILL_FIELDS, 0.0),
-                'sg_arg': get_field(d, 'sg_arg', SKILL_FIELDS, 0.0),
-                'sg_putt': get_field(d, 'sg_putt', SKILL_FIELDS, 0.0),
-                'driving_distance': get_field(d, 'driving_distance', SKILL_FIELDS, 295.0),
-                'driving_accuracy': get_field(d, 'driving_accuracy', SKILL_FIELDS, 60.0),
+                'sg_total': map_get_field(r, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
+                'sg_ott': map_get_field(d, 'sg_ott', SKILL_FIELDS, 0.0),
+                'sg_app': map_get_field(d, 'sg_app', SKILL_FIELDS, 0.0),
+                'sg_arg': map_get_field(d, 'sg_arg', SKILL_FIELDS, 0.0),
+                'sg_putt': map_get_field(d, 'sg_putt', SKILL_FIELDS, 0.0),
+                'driving_distance': map_get_field(d, 'driving_distance', SKILL_FIELDS, 295.0),
+                'driving_accuracy': map_get_field(d, 'driving_accuracy', SKILL_FIELDS, 60.0),
                 'scrambling_pct': 58.0,  # not available from skill-ratings endpoint
-                'owgr_rank': get_field(r, 'owgr_rank', RANKINGS_FIELDS, 999),
+                'owgr_rank': map_get_field(r, 'owgr_rank', RANKINGS_FIELDS, 999),
             }
 
         p1_stats = build_stats(p1)
