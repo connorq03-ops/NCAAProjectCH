@@ -495,16 +495,21 @@ def start_simulation():
         _golf_sim_state['started_at'] = None
         _golf_sim_state['completed_at'] = None
 
-    body = request.get_json(force=True, silent=True) or {}
-    course_id = body.get('course_id', 'augusta_national')
-    tournament_id = body.get('tournament_id', None)
-    num_tournaments = min(body.get('num_tournaments', 1000), 10000)
-    num_workers = body.get('num_workers', None)
-    if num_workers is not None:
-        try:
+    # Parse and validate inputs — reset to idle on any failure so the
+    # simulator doesn't get permanently stuck in 'running' state.
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        course_id = body.get('course_id', 'augusta_national')
+        tournament_id = body.get('tournament_id', None)
+        num_tournaments = min(int(body.get('num_tournaments', 1000)), 10000)
+        num_workers = body.get('num_workers', None)
+        if num_workers is not None:
             num_workers = min(max(int(num_workers), 1), os.cpu_count() or 1)
-        except (ValueError, TypeError):
-            num_workers = None
+    except (ValueError, TypeError) as e:
+        with _golf_sim_lock:
+            _golf_sim_state['status'] = 'idle'
+            _golf_sim_state['message'] = ''
+        return jsonify({'error': f'Invalid simulation parameters: {e}'}), 400
 
     # Validate course — reset to idle if invalid
     if get_course_profile(course_id) is None:
