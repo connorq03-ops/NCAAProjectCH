@@ -104,7 +104,7 @@ COURSES = {
         "historical_scoring_avg": 4.0,
         "historical_cut_line": 6,
         "historical_winning_score": -6,
-        "tournament_name": "U.S. Open",
+        "tournament_name": "U.S. Open (Pinehurst)",
         "is_major": True,
         "holes": [
             {"hole": 1,  "par": 4, "yardage": 404, "difficulty_rank": 14, "key_stat": "sg_app", "water": False, "bunkers": 4},
@@ -242,7 +242,7 @@ COURSES = {
         "historical_scoring_avg": 5.0,
         "historical_cut_line": 7,
         "historical_winning_score": -5,
-        "tournament_name": "U.S. Open",
+        "tournament_name": "U.S. Open (Oakmont)",
         "is_major": True,
         "holes": None,
     },
@@ -593,7 +593,7 @@ def get_course_by_tournament(tournament_name: str) -> Optional[dict]:
         if overlap > best_overlap:
             best_overlap = overlap
             best_match = course
-    return best_match if best_overlap >= 1 else None
+    return best_match if best_overlap >= 2 else None
 
 
 def normalize_player_name(name: str) -> str:
