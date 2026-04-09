@@ -1145,8 +1145,9 @@ def backtest_predictions():
         # Store results in _backtest_state so dynamic-weights endpoint can use them
         if not metrics.get('error'):
             with _backtest_lock:
-                _backtest_state['results'] = metrics
-                _backtest_state['status'] = 'complete'
+                if _backtest_state['status'] != 'running':
+                    _backtest_state['results'] = metrics
+                    _backtest_state['status'] = 'complete'
         return jsonify(metrics)
     except Exception as e:
         return jsonify({'error': str(e)}), 500

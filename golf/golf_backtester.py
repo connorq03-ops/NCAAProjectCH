@@ -481,7 +481,7 @@ class GolfBacktester:
 
         # 2. Fetch list of tournaments in date range
         try:
-            events = dg_client.get_event_list()
+            events = dg_client.get_historical_events()
             event_list = events if isinstance(events, list) else events.get('events', events.get('tournaments', []))
         except Exception as e:
             print(f"[backtest] Failed to get event list: {e}")
