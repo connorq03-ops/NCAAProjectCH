@@ -11,7 +11,7 @@ API docs: https://datagolf.com/api-access
 import os
 import requests
 from dotenv import load_dotenv
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any
 
 
 class DataGolfClient:
@@ -64,7 +64,7 @@ class DataGolfClient:
             response.raise_for_status()
             return response.json()
         except requests.exceptions.RequestException as e:
-            print(f"Error making request to {url}: {e}")
+            print(f"Error making request to {url}: {type(e).__name__}")
             raise
 
     def get_rankings(self, file_format: str = 'json') -> Any:
