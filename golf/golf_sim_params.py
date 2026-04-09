@@ -86,12 +86,14 @@ def prefetch_all_player_data(client, tournament_id=None):
             players[name]["sg_app"] = get_field(entry, 'sg_app', SKILL_FIELDS, 0.0)
             players[name]["sg_arg"] = get_field(entry, 'sg_arg', SKILL_FIELDS, 0.0)
             players[name]["sg_putt"] = get_field(entry, 'sg_putt', SKILL_FIELDS, 0.0)
-            players[name]["driving_distance"] = get_field(
-                entry, 'driving_distance', SKILL_FIELDS, AVG_DRIVING_DIST
-            )
-            players[name]["driving_accuracy"] = get_field(
-                entry, 'driving_accuracy', SKILL_FIELDS, AVG_DRIVING_ACC
-            )
+            # IMPORTANT: DataGolf API returns driving_dist/driving_acc as
+            # RELATIVE values (yards/pct above/below tour avg), e.g. +8.65
+            # means 8.65 yards longer than average. Convert to absolute values
+            # so downstream code (course fit) can compare against AVG_DRIVING_DIST.
+            raw_dist = get_field(entry, 'driving_distance', SKILL_FIELDS, 0.0)
+            raw_acc = get_field(entry, 'driving_accuracy', SKILL_FIELDS, 0.0)
+            players[name]["driving_distance"] = AVG_DRIVING_DIST + raw_dist
+            players[name]["driving_accuracy"] = AVG_DRIVING_ACC + raw_acc
             # These fields are not available from skill-ratings; use defaults
             players[name]["gir_pct"] = 66.0
             players[name]["scrambling_pct"] = AVG_SCRAMBLING
