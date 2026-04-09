@@ -365,7 +365,7 @@ class GolfBacktester:
             if sim_params:
                 # Generate synthetic holes for MC
                 from golf.golf_mc_engine import _generate_synthetic_holes
-                holes = _generate_synthetic_holes(course_profile)
+                holes = _generate_synthetic_holes(course_profile.get('par', 72))
                 mc_output = simulate_tournament(sim_params, holes, num_sims=100)
                 mc_results = mc_output
         except Exception as e:
@@ -500,7 +500,7 @@ class GolfBacktester:
 
         # 3. One-time bulk data prefetch
         try:
-            prefetch_all_player_data(dg_client, cache)
+            prefetch_all_player_data(dg_client)
         except Exception as e:
             print(f"[backtest] Prefetch failed (non-fatal): {e}")
 

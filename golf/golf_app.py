@@ -1113,10 +1113,6 @@ def _run_backtest_bg(start_date, end_date, use_historical, mode='standard'):
 @app.route('/api/golf/backtest', methods=['POST'])
 def run_backtest():
     """Run backtest over date range. Mirror basketball backtest endpoint."""
-    with _backtest_lock:
-        if _backtest_state['status'] == 'running':
-            return jsonify({'error': 'Backtest already running'}), 409
-
     body = request.get_json(force=True)
     start_date = body.get('start_date')
     end_date = body.get('end_date')
@@ -1126,6 +1122,8 @@ def run_backtest():
         return jsonify({'error': 'start_date and end_date are required'}), 400
 
     with _backtest_lock:
+        if _backtest_state['status'] == 'running':
+            return jsonify({'error': 'Backtest already running'}), 409
         _backtest_state['status'] = 'running'
         _backtest_state['progress'] = 0
         _backtest_state['message'] = 'Starting backtest...'
@@ -1153,10 +1151,6 @@ def backtest_predictions():
 @app.route('/api/golf/backtest/bias-comparison', methods=['POST'])
 def run_bias_comparison():
     """Run bias comparison (historical vs current data)."""
-    with _backtest_lock:
-        if _backtest_state['status'] == 'running':
-            return jsonify({'error': 'Backtest already running'}), 409
-
     body = request.get_json(force=True)
     start_date = body.get('start_date')
     end_date = body.get('end_date')
@@ -1165,6 +1159,8 @@ def run_bias_comparison():
         return jsonify({'error': 'start_date and end_date are required'}), 400
 
     with _backtest_lock:
+        if _backtest_state['status'] == 'running':
+            return jsonify({'error': 'Backtest already running'}), 409
         _backtest_state['status'] = 'running'
         _backtest_state['progress'] = 0
         _backtest_state['message'] = 'Starting bias comparison...'
