@@ -42,6 +42,11 @@ from golf.golf_form_tracker import FormTracker
 from golf.golf_wd_scraper import GolfWDAnalyzer
 from golf.golf_mc_engine import simulate_matchup
 from golf.golf_sim_params import prefetch_all_player_data, build_player_sim_params
+from golf.golf_backtester import GolfBacktester
+from golf.golf_weight_optimizer import (
+    compute_per_model_accuracy, compute_optimal_weights, should_rollback, validate_weights,
+    BASE_WEIGHTS as GOLF_BASE_WEIGHTS,
+)
 
 
 # ── Persistent SQLite Cache (copied from app.py lines 30-114) ──
@@ -156,6 +161,7 @@ except ValueError:
     print("[golf-app] ANTHROPIC_API_KEY not set — WD features disabled")
 
 form_tracker = FormTracker(client=dg_client)
+golf_backtester = GolfBacktester()
 
 
 # ── Cached Call Helper (mirror app.py lines 172-181) ──
@@ -1058,6 +1064,209 @@ def get_elite_players():
         return jsonify(ELITE_PLAYERS)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# L. Backtest Endpoints
+# ═══════════════════════════════════════════════════════════════
+
+_backtest_state = {
+    'status': 'idle',       # idle | running | complete | error
+    'progress': 0,
+    'message': '',
+    'results': None,
+    'error': None,
+}
+_backtest_lock = threading.Lock()
+
+
+def _run_backtest_bg(start_date, end_date, use_historical, mode='standard'):
+    """Background thread target for backtest execution."""
+    global _backtest_state
+    try:
+        def progress_cb(pct, msg):
+            with _backtest_lock:
+                _backtest_state['progress'] = pct
+                _backtest_state['message'] = msg
+
+        if mode == 'bias':
+            result = golf_backtester.backtest_with_bias_comparison(
+                start_date, end_date, dg_client, golf_cache,
+                progress_cb=progress_cb)
+        else:
+            result = golf_backtester.backtest_date_range(
+                start_date, end_date, dg_client, golf_cache,
+                use_historical=use_historical, progress_cb=progress_cb)
+
+        with _backtest_lock:
+            _backtest_state['status'] = 'complete'
+            _backtest_state['progress'] = 100
+            _backtest_state['message'] = 'Backtest complete'
+            _backtest_state['results'] = result
+    except Exception as e:
+        with _backtest_lock:
+            _backtest_state['status'] = 'error'
+            _backtest_state['error'] = str(e)
+            _backtest_state['message'] = f'Error: {e}'
+
+
+@app.route('/api/golf/backtest', methods=['POST'])
+def run_backtest():
+    """Run backtest over date range. Mirror basketball backtest endpoint."""
+    with _backtest_lock:
+        if _backtest_state['status'] == 'running':
+            return jsonify({'error': 'Backtest already running'}), 409
+
+    body = request.get_json(force=True)
+    start_date = body.get('start_date')
+    end_date = body.get('end_date')
+    use_historical = body.get('use_historical', False)
+
+    if not start_date or not end_date:
+        return jsonify({'error': 'start_date and end_date are required'}), 400
+
+    with _backtest_lock:
+        _backtest_state['status'] = 'running'
+        _backtest_state['progress'] = 0
+        _backtest_state['message'] = 'Starting backtest...'
+        _backtest_state['results'] = None
+        _backtest_state['error'] = None
+
+    t = threading.Thread(target=_run_backtest_bg,
+                         args=(start_date, end_date, use_historical))
+    t.daemon = True
+    t.start()
+
+    return jsonify({'status': 'started', 'message': f'Backtest started for {start_date} to {end_date}'}), 202
+
+
+@app.route('/api/golf/backtest/predictions', methods=['GET'])
+def backtest_predictions():
+    """Backtest saved predictions. Mirror basketball predictions backtest."""
+    try:
+        metrics = golf_backtester.backtest_predictions()
+        return jsonify(metrics)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/golf/backtest/bias-comparison', methods=['POST'])
+def run_bias_comparison():
+    """Run bias comparison (historical vs current data)."""
+    with _backtest_lock:
+        if _backtest_state['status'] == 'running':
+            return jsonify({'error': 'Backtest already running'}), 409
+
+    body = request.get_json(force=True)
+    start_date = body.get('start_date')
+    end_date = body.get('end_date')
+
+    if not start_date or not end_date:
+        return jsonify({'error': 'start_date and end_date are required'}), 400
+
+    with _backtest_lock:
+        _backtest_state['status'] = 'running'
+        _backtest_state['progress'] = 0
+        _backtest_state['message'] = 'Starting bias comparison...'
+        _backtest_state['results'] = None
+        _backtest_state['error'] = None
+
+    t = threading.Thread(target=_run_backtest_bg,
+                         args=(start_date, end_date, True, 'bias'))
+    t.daemon = True
+    t.start()
+
+    return jsonify({'status': 'started', 'message': f'Bias comparison started for {start_date} to {end_date}'}), 202
+
+
+@app.route('/api/golf/backtest/status', methods=['GET'])
+def backtest_status():
+    """Get current backtest status."""
+    with _backtest_lock:
+        state = dict(_backtest_state)
+    # Don't include full results in status poll (too large)
+    has_results = state.get('results') is not None
+    state_copy = {k: v for k, v in state.items() if k != 'results'}
+    state_copy['has_results'] = has_results
+    return jsonify(state_copy)
+
+
+@app.route('/api/golf/backtest/results', methods=['GET'])
+def backtest_results():
+    """Get latest backtest results."""
+    with _backtest_lock:
+        results = _backtest_state.get('results')
+    if results is None:
+        return jsonify({'error': 'No backtest results available'}), 404
+    return jsonify(results)
+
+
+@app.route('/api/golf/dynamic-weights', methods=['POST'])
+def trigger_dynamic_weights():
+    """Trigger dynamic weight optimization from latest backtest results."""
+    with _backtest_lock:
+        bt_results = _backtest_state.get('results')
+
+    if not bt_results:
+        return jsonify({'error': 'No backtest results available. Run a backtest first.'}), 400
+
+    try:
+        # Get raw player results
+        raw_results = bt_results.get('results', [])
+        if not raw_results:
+            return jsonify({'error': 'Backtest has no player-level results'}), 400
+
+        per_model_acc = compute_per_model_accuracy(raw_results)
+        optimal = compute_optimal_weights(per_model_acc)
+
+        # Check if we should rollback
+        cached_weights = golf_cache.get('golf_model_weights', {}, ttl=86400 * 365)
+        current_w = cached_weights.get('weights', dict(GOLF_BASE_WEIGHTS)) if cached_weights else dict(GOLF_BASE_WEIGHTS)
+        rollback_info = should_rollback(per_model_acc, current_w)
+
+        # Validate
+        is_valid, errors = validate_weights(optimal)
+        if not is_valid:
+            return jsonify({'error': 'Computed weights are invalid', 'validation_errors': errors}), 400
+
+        if rollback_info.get('should_rollback'):
+            optimal = dict(GOLF_BASE_WEIGHTS)
+
+        # Store in cache
+        data = {
+            'weights': optimal,
+            'source': 'dynamic_optimizer',
+            'per_model_stats': per_model_acc,
+            'rollback_info': rollback_info,
+            'last_updated': datetime.now().isoformat(),
+        }
+        import sqlite3 as _sqlite3
+        k = golf_cache._key('golf_model_weights', {})
+        conn = _sqlite3.connect(golf_cache.db_path)
+        try:
+            conn.execute(
+                'INSERT OR REPLACE INTO cache (key, data, ts, ttl) VALUES (?, ?, ?, ?)',
+                (k, json.dumps(data, default=str), time.time(), 86400 * 365))
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/golf/dynamic-weights', methods=['GET'])
+def get_dynamic_weights():
+    """Get current dynamic weights (or base weights if none stored)."""
+    cached = golf_cache.get('golf_model_weights', {}, ttl=86400 * 365)
+    if cached and 'weights' in cached:
+        return jsonify(cached)
+    return jsonify({
+        'weights': dict(GOLF_BASE_WEIGHTS),
+        'source': 'default',
+        'last_updated': None,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════
