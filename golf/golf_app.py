@@ -511,8 +511,11 @@ def start_simulation():
             _golf_sim_state['message'] = ''
         return jsonify({'error': f'Invalid simulation parameters: {e}'}), 400
 
-    # Validate course — reset to idle if invalid
-    if get_course_profile(course_id) is None:
+    try:
+        course_profile = get_course_profile(course_id)
+    except Exception:
+        course_profile = None
+    if course_profile is None:
         with _golf_sim_lock:
             _golf_sim_state['status'] = 'idle'
             _golf_sim_state['message'] = ''
