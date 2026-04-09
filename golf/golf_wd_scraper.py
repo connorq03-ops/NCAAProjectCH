@@ -9,6 +9,7 @@ NCAA basketball.
 """
 
 import os
+import re
 import json
 import hashlib
 import requests
@@ -82,14 +83,25 @@ class GolfWDFetcher:
                        'Chrome/120.0.0.0 Safari/537.36',
     }
 
-    # Keywords indicating withdrawal or injury in golf context
+    # Keywords indicating withdrawal or injury in golf context.
+    # Multi-word phrases use plain substring matching; single short words
+    # that collide with common golf terms (hip->championship, rib->incredible,
+    # back->back nine) use word-boundary regex via _WD_REGEX below.
     WD_KEYWORDS = [
-        'withdraw', 'withdrawn', 'WD', 'pulls out', 'pulled out',
+        'withdraw', 'withdrawn', 'pulls out', 'pulled out',
         'injur', 'out indefinitely', 'sidelined', 'surgery',
-        'wrist', 'back', 'knee', 'ankle', 'shoulder', 'neck',
-        'rib', 'hip', 'elbow', 'illness', 'virus',
+        'wrist', 'knee', 'ankle', 'shoulder', 'neck',
+        'elbow', 'illness', 'virus',
         'questionable', 'day-to-day', 'miss ', 'misses ',
     ]
+
+    # Regex patterns for short/ambiguous body-part keywords that need
+    # word-boundary matching to avoid false positives.
+    _WD_REGEX = re.compile(
+        r'\b(?:hip|rib|back)\s+(?:injury|issue|problem|strain|spasm|surgery|pain|soreness)'
+        r'|\b(?:WD)\b',
+        re.IGNORECASE,
+    )
 
     def __init__(self):
         self.cache = GolfWDCache()
@@ -108,7 +120,7 @@ class GolfWDFetcher:
             wd_articles = []
             for a in articles:
                 text = (a.get('headline', '') + ' ' + a.get('description', '')).lower()
-                if any(kw.lower() in text for kw in self.WD_KEYWORDS):
+                if any(kw.lower() in text for kw in self.WD_KEYWORDS) or self._WD_REGEX.search(text):
                     wd_articles.append({
                         'headline': a.get('headline', ''),
                         'description': a.get('description', ''),
@@ -423,7 +435,12 @@ class GolfWDAnalyzer:
             # Only call Claude for players with relevant news hits
             name_lower = player_name.lower()
             last_name = player_name.split()[-1].lower() if player_name.split() else ''
-            if name_lower in news_text_combined or last_name in news_text_combined:
+            # Use word-boundary regex for last names to avoid false positives
+            # (e.g. "Day" matching "today", "Kim" matching "skimmed")
+            last_name_match = bool(
+                last_name and re.search(r'\b' + re.escape(last_name) + r'\b', news_text_combined)
+            )
+            if name_lower in news_text_combined or last_name_match:
                 statuses[player_name] = self.analyze_player_status(player_name)
             else:
                 # No news = assume active
