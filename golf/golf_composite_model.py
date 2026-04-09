@@ -293,11 +293,12 @@ def model_course_fit(player_stats, course_profile, weather=None):
     sg_total = player_stats.get("sg_total", 0.0)
     total_fit = fit.get("total_fit", 0.0)
 
-    # 3. Course history bonus (already in fit as history_adj, add extra weight)
+    # 3. Course history bonus: history_adj is already included once in total_fit,
+    #    but we add 50% extra weight to reward proven course form
     history_adj = fit.get("history_adj", 0.0)
 
-    # Combined adjusted SG
-    sg_combined = sg_total + total_fit
+    # Combined adjusted SG (extra history weight on top of total_fit)
+    sg_combined = sg_total + total_fit + history_adj * 0.5
 
     # 4. Convert to finish position (slightly different coefficient than Model 1
     #    to reflect course-specific nature)
