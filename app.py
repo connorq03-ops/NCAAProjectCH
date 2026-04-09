@@ -1383,9 +1383,8 @@ def index():
 @app.route('/golf')
 def golf_redirect():
     """Redirect to the golf analytics dashboard (runs on port 5002)."""
-    # Build redirect URL dynamically from request host to work for non-localhost access
-    host = request.host.rsplit(':', 1)[0]  # strip port if present
-    return redirect(f'http://{host}:5002/golf')
+    golf_url = os.getenv('GOLF_APP_URL', 'http://localhost:5002/golf')
+    return redirect(golf_url)
 
 
 if __name__ == '__main__':
