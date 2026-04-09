@@ -179,7 +179,6 @@ def golf_cached_call(endpoint, params, fetch_fn, ttl=None):
 @app.route('/api/golf/rankings', methods=['GET'])
 def get_rankings():
     """Get player rankings with SG splits."""
-    tour = request.args.get('tour', 'pga')
     try:
         params = {}
         data = golf_cached_call('rankings', params,
