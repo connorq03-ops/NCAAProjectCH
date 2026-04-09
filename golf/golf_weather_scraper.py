@@ -77,7 +77,7 @@ class WeatherFetcher:
         self.session = requests.Session()
         self.cache = WeatherCache()
         # Use WeatherAPI.com (free tier: 1M calls/month)
-        self.base_url = "http://api.weatherapi.com/v1"
+        self.base_url = "https://api.weatherapi.com/v1"
 
     def fetch_forecast(self, lat: float, lon: float, days: int = 5) -> dict:
         """Fetch multi-day forecast for coordinates."""
@@ -99,12 +99,18 @@ class WeatherFetcher:
         return data
 
     def fetch_tournament_weather(self, course_id: str) -> Optional[dict]:
-        """Look up course lat/lon from golf_course_profiles, fetch forecast."""
+        """Look up course lat/lon from golf_course_profiles, fetch forecast.
+
+        Returns the raw forecast dict with an added '_altitude_ft' key
+        so callers can pass it to calc_weather_impact().
+        """
         from golf.golf_course_profiles import get_course_profile
         course = get_course_profile(course_id)
         if not course or 'lat' not in course:
             return None
-        return self.fetch_forecast(course['lat'], course['lon'])
+        forecast = self.fetch_forecast(course['lat'], course['lon'])
+        forecast['_altitude_ft'] = course.get('elevation_ft', 0)
+        return forecast
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -426,18 +426,17 @@ ELITE_PLAYERS = {
         "weaknesses": ["sg_ott", "birdie_rate"],
         "note": "Smart, consistent player",
     },
+    # ── RISING (6) ── Emerging talent, recent breakout performers
     "Nick Dunlap": {
         "owgr_rank": 40,
-        "tier": "solid",
-        "impact": 7,
+        "tier": "rising",
+        "impact": 6,
         "majors_won": 0,
         "career_wins": 2,
         "strengths": ["sg_app", "sg_putt", "birdie_rate"],
         "weaknesses": ["sg_ott", "consistency"],
         "note": "Won as amateur on tour, youngest winner in decades",
     },
-
-    # ── RISING (6) ── Emerging talent, recent breakout performers
     "Matthieu Pavon": {
         "owgr_rank": 42,
         "tier": "rising",
