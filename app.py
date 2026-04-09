@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect
 from flask_cors import CORS
 from dotenv import load_dotenv
 import requests as ext_requests
@@ -1378,6 +1378,12 @@ def update_kp_blend_ratio():
 def index():
     """Serve the main HTML page."""
     return send_from_directory('static', 'index.html')
+
+
+@app.route('/golf')
+def golf_redirect():
+    """Redirect to the golf analytics dashboard (runs on port 5002)."""
+    return redirect('http://localhost:5002/golf')
 
 
 if __name__ == '__main__':
