@@ -371,7 +371,7 @@ self.onmessage = function(e) {
     // Initialize accumulators
     const accum = {};
     for (const p of players) {
-        const name = p._player_name || p.playerName || 'Unknown';
+        const name = p._player_name || p.playerName || ('Player_' + Math.random().toString(36).slice(2, 8));
         accum[name] = {
             wins: 0, top5: 0, top10: 0, top20: 0, cutsMade: 0,
             totalFinish: 0, totalScoreToPar: 0, totalBirdies: 0, totalBogeys: 0,
