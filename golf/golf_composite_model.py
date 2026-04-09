@@ -368,10 +368,14 @@ def model_golf_rat(player_stats, course_profile):
 
 def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
                            player_stats, course_profile,
-                           weight_overrides=None, context=None):
-    """Blend 4 model outputs with dynamic weights, apply finish calibration.
+                           weight_overrides=None, context=None,
+                           dg_preds=None):
+    """Blend up to 5 model outputs with dynamic weights, apply finish calibration.
 
     Analogous to compute_composite() in basketball (composite_model.py lines 504-540).
+    When DataGolf's pre-tournament predictions are available they replace the
+    placeholder MC slot, turning the former 3-model echo chamber into a true
+    4-model (or 5-model) blend with an independent industry-grade anchor.
 
     Args:
         sg_eff: dict from model_sg_efficiency()
@@ -381,25 +385,38 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
         player_stats: raw player stats dict
         course_profile: dict from COURSES
         weight_overrides: optional dict {'sg_efficiency': float, 'course_fit': float,
-                          'golf_rat': float, 'mc': float}
+                          'golf_rat': float, 'mc': float, 'dg_preds': float}
         context: optional string ('major', 'windy', 'signature', etc.)
+        dg_preds: optional dict with DataGolf pre-tournament predictions
+                  (predicted_finish, win_prob, top5_prob, etc.)
 
     Returns:
         dict with predicted_finish, win_prob, top5_prob, top10_prob,
               top20_prob, make_cut_prob, weights_used, golf_rat_score,
               model_details
     """
+    has_dg = dg_preds is not None
+
     # ── Base weights ──
     if weight_overrides:
-        w_sg = weight_overrides.get('sg_efficiency', 0.25)
-        w_fit = weight_overrides.get('course_fit', 0.25)
-        w_rat = weight_overrides.get('golf_rat', 0.25)
-        w_mc = weight_overrides.get('mc', 0.25)
+        w_sg = weight_overrides.get('sg_efficiency', 0.20 if has_dg else 0.25)
+        w_fit = weight_overrides.get('course_fit', 0.20 if has_dg else 0.25)
+        w_rat = weight_overrides.get('golf_rat', 0.20 if has_dg else 0.25)
+        w_mc = weight_overrides.get('mc', 0.15 if has_dg else 0.25)
+        w_dg = weight_overrides.get('dg_preds', 0.25 if has_dg else 0.0)
+    elif has_dg:
+        # 5-model blend: DataGolf gets 25% as a strong independent anchor
+        w_sg = 0.20
+        w_fit = 0.20
+        w_rat = 0.20
+        w_mc = 0.15
+        w_dg = 0.25
     else:
         w_sg = 0.25
         w_fit = 0.25
         w_rat = 0.25
         w_mc = 0.25
+        w_dg = 0.0
 
     # ── Dynamic weight adjustments based on data quality ──
     # (same pattern as basketball: shift weights based on available data)
@@ -460,17 +477,25 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
         w_rat -= 0.03
 
     # ── Normalize weights to sum to 1.0 ──
-    w_total = w_sg + w_fit + w_rat + w_mc
+    w_total = w_sg + w_fit + w_rat + w_mc + w_dg
     w_sg /= w_total
     w_fit /= w_total
     w_rat /= w_total
     w_mc /= w_total
+    w_dg /= w_total
+
+    # Use zero-contribution dict when DataGolf preds absent
+    dg = dg_preds if has_dg else {
+        'predicted_finish': 0.0, 'win_prob': 0.0, 'top5_prob': 0.0,
+        'top10_prob': 0.0, 'top20_prob': 0.0, 'make_cut_prob': 0.0,
+    }
 
     # ── Blend predicted finish positions ──
     raw_finish = (w_sg * sg_eff['predicted_finish']
                   + w_fit * course_fit['predicted_finish']
                   + w_rat * golf_rat['predicted_finish']
-                  + w_mc * mc['predicted_finish'])
+                  + w_mc * mc['predicted_finish']
+                  + w_dg * dg['predicted_finish'])
 
     # Apply calibration to compress extremes
     composite_finish = calibrate_finish(raw_finish)
@@ -479,23 +504,28 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
     composite_win = (w_sg * sg_eff['win_prob']
                      + w_fit * course_fit['win_prob']
                      + w_rat * golf_rat['win_prob']
-                     + w_mc * mc['win_prob'])
+                     + w_mc * mc['win_prob']
+                     + w_dg * dg['win_prob'])
     composite_top5 = (w_sg * sg_eff['top5_prob']
                       + w_fit * course_fit['top5_prob']
                       + w_rat * golf_rat['top5_prob']
-                      + w_mc * mc['top5_prob'])
+                      + w_mc * mc['top5_prob']
+                      + w_dg * dg['top5_prob'])
     composite_top10 = (w_sg * sg_eff['top10_prob']
                        + w_fit * course_fit['top10_prob']
                        + w_rat * golf_rat['top10_prob']
-                       + w_mc * mc['top10_prob'])
+                       + w_mc * mc['top10_prob']
+                       + w_dg * dg['top10_prob'])
     composite_top20 = (w_sg * sg_eff['top20_prob']
                        + w_fit * course_fit['top20_prob']
                        + w_rat * golf_rat['top20_prob']
-                       + w_mc * mc['top20_prob'])
+                       + w_mc * mc['top20_prob']
+                       + w_dg * dg['top20_prob'])
     composite_cut = (w_sg * sg_eff['make_cut_prob']
                      + w_fit * course_fit['make_cut_prob']
                      + w_rat * golf_rat['make_cut_prob']
-                     + w_mc * mc['make_cut_prob'])
+                     + w_mc * mc['make_cut_prob']
+                     + w_dg * dg['make_cut_prob'])
 
     # ── Model agreement score (0-100%) ──
     # Same pattern as basketball composite (lines 609-619)
@@ -505,8 +535,11 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
         golf_rat['predicted_finish'],
         mc['predicted_finish'],
     ]
-    finish_mean = sum(model_finishes) / 4
-    finish_variance = sum((f - finish_mean) ** 2 for f in model_finishes) / 4
+    if has_dg:
+        model_finishes.append(dg['predicted_finish'])
+    n_models = len(model_finishes)
+    finish_mean = sum(model_finishes) / n_models
+    finish_variance = sum((f - finish_mean) ** 2 for f in model_finishes) / n_models
     # Normalize: max expected variance is ~400 (20-position spread)
     model_agreement = round(max(0, (1 - finish_variance / 400)) * 100)
     if model_agreement >= 85:
@@ -519,6 +552,22 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
     # Extract GolfRat score
     golf_rat_score = golf_rat.get('golf_rat_score', 5.0)
 
+    weights_used = {
+        'sg_efficiency': round(w_sg, 4),
+        'course_fit': round(w_fit, 4),
+        'golf_rat': round(w_rat, 4),
+        'mc': round(w_mc, 4),
+    }
+    model_details = {
+        'sg_efficiency': sg_eff,
+        'course_fit': course_fit,
+        'golf_rat': golf_rat,
+        'mc': mc,
+    }
+    if has_dg:
+        weights_used['dg_preds'] = round(w_dg, 4)
+        model_details['dg_preds'] = dg_preds
+
     return {
         'predicted_finish': round(composite_finish, 2),
         'win_prob': round(composite_win, 4),
@@ -526,31 +575,70 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
         'top10_prob': round(composite_top10, 4),
         'top20_prob': round(composite_top20, 4),
         'make_cut_prob': round(composite_cut, 4),
-        'weights_used': {
-            'sg_efficiency': round(w_sg, 4),
-            'course_fit': round(w_fit, 4),
-            'golf_rat': round(w_rat, 4),
-            'mc': round(w_mc, 4),
-        },
+        'weights_used': weights_used,
         'golf_rat_score': golf_rat_score,
         'model_agreement': model_agreement,
         'confidence': confidence,
-        'model_details': {
-            'sg_efficiency': sg_eff,
-            'course_fit': course_fit,
-            'golf_rat': golf_rat,
-            'mc': mc,
-        },
+        'model_details': model_details,
     }
 
 
 # ─── Field-Level Prediction ──────────────────────────────────────────────────
+
+def _build_dg_preds_model(player_stats):
+    """Convert DataGolf's pre-tournament predictions into a model-compatible dict.
+
+    DataGolf provides win_prob, top5_prob, top10_prob, top20_prob, make_cut_prob
+    as decimal probabilities. We convert win_prob to an approximate predicted
+    finish position so it can participate in finish-position blending.
+
+    Args:
+        player_stats: dict that may contain win_prob, top5_prob, etc.
+
+    Returns:
+        dict with predicted_finish, win_prob, etc. — or None if no DG preds
+    """
+    win_prob = player_stats.get("win_prob")
+    if win_prob is None or win_prob <= 0:
+        return None
+
+    top5_prob = player_stats.get("top5_prob", 0.0) or 0.0
+    top10_prob = player_stats.get("top10_prob", 0.0) or 0.0
+    top20_prob = player_stats.get("top20_prob", 0.0) or 0.0
+    make_cut_prob = player_stats.get("make_cut_prob", 0.0) or 0.0
+
+    # Convert probabilities to approximate predicted finish position.
+    # Use a weighted combination: higher top-N probs → lower finish position.
+    # This is a heuristic; the exact mapping isn't critical since it's blended
+    # with other models.
+    predicted_finish = clamp(
+        80.0
+        - win_prob * 500       # 10% win → −50 positions
+        - top5_prob * 80       # 30% top5 → −24 positions
+        - top10_prob * 30      # 50% top10 → −15 positions
+        - top20_prob * 15      # 70% top20 → −10.5 positions
+        - make_cut_prob * 5,   # 90% cut → −4.5 positions
+        1.0, 80.0
+    )
+
+    return {
+        'predicted_finish': round(predicted_finish, 2),
+        'win_prob': round(win_prob, 4),
+        'top5_prob': round(top5_prob, 4),
+        'top10_prob': round(top10_prob, 4),
+        'top20_prob': round(top20_prob, 4),
+        'make_cut_prob': round(make_cut_prob, 4),
+    }
+
 
 def predict_field(players, course_profile, mc_results=None, weather=None,
                   weight_overrides=None, context=None):
     """Run composite prediction for an entire tournament field.
 
     Analogous to running compute_composite() across all matchups in basketball.
+    When DataGolf's pre-tournament predictions are present in player_stats
+    (win_prob, top5_prob, etc.), they are passed as a 5th independent model
+    to the composite blender.
 
     Args:
         players: list of player stat dicts (from prefetch_all_player_data or similar)
@@ -600,12 +688,16 @@ def predict_field(players, course_profile, mc_results=None, weather=None,
                 'iterations': 0,
             }
 
+        # Build DataGolf predictions model (5th model) if available
+        dg_preds = _build_dg_preds_model(player_stats)
+
         # Composite blend
         composite = compute_golf_composite(
             sg_eff, cf, gr, mc,
             player_stats, course_profile,
             weight_overrides=weight_overrides,
             context=context,
+            dg_preds=dg_preds,
         )
 
         results.append({

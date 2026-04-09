@@ -198,12 +198,16 @@ def calc_birdie_rate(player_stats, par, course_profile):
     sg_putt = player_stats.get("sg_putt", 0.0)
     sg_total_adj = player_stats.get("sg_total_adj", 0.0)
 
+    # Coefficients tuned to produce ~8-10 point birdie rate gap between
+    # elite (SG +2.0) and average (SG 0.0) players, matching real PGA Tour
+    # data. Previous coefficients (0.03-0.04) only produced ~3% gaps.
     if par == 3:
-        base = 0.12 + sg_app * 0.03 + sg_putt * 0.02
+        base = 0.12 + sg_app * 0.05 + sg_putt * 0.035
     elif par == 4:
-        base = 0.18 + sg_total_adj * 0.04
+        # Par 4s: use SG splits for richer differentiation
+        base = 0.18 + sg_ott * 0.02 + sg_app * 0.03 + sg_putt * 0.02
     elif par == 5:
-        base = 0.45 + sg_ott * 0.04 + sg_app * 0.03
+        base = 0.45 + sg_ott * 0.07 + sg_app * 0.05
     else:
         base = 0.18  # fallback for unusual pars
 
@@ -224,14 +228,18 @@ def calc_bogey_rate(player_stats, par, course_profile):
     sg_ott = player_stats.get("sg_ott", 0.0)
     sg_app = player_stats.get("sg_app", 0.0)
     sg_arg = player_stats.get("sg_arg", 0.0)
+    sg_putt = player_stats.get("sg_putt", 0.0)
     sg_total_adj = player_stats.get("sg_total_adj", 0.0)
 
+    # Wider coefficients mirror birdie rate changes: elite players avoid
+    # bogeys at significantly higher rates than average players.
     if par == 3:
-        base = 0.22 - sg_app * 0.02 - sg_arg * 0.02
+        base = 0.22 - sg_app * 0.04 - sg_arg * 0.03
     elif par == 4:
-        base = 0.20 - sg_total_adj * 0.03
+        # Par 4s: use splits for richer differentiation
+        base = 0.20 - sg_ott * 0.015 - sg_app * 0.025 - sg_putt * 0.015
     elif par == 5:
-        base = 0.12 - sg_ott * 0.02 - sg_app * 0.02
+        base = 0.12 - sg_ott * 0.04 - sg_app * 0.03
     else:
         base = 0.20
 
@@ -248,11 +256,14 @@ def calc_double_bogey_rate(player_stats, course_profile):
     Returns:
         float: double bogey+ probability (clamped 0.01-0.15)
     """
-    base = 0.03 - player_stats.get("sg_total_adj", 0) * 0.005
+    sg_total_adj = player_stats.get("sg_total_adj", 0)
+    sg_arg = player_stats.get("sg_arg", 0.0)
+    # Use both overall skill and short-game ability to differentiate
+    base = 0.03 - sg_total_adj * 0.008 - sg_arg * 0.005
     # Harder courses increase double rate
     if course_profile.get("historical_scoring_avg", 0) > 0:  # over par = hard
         base += 0.01
-    return clamp(base, 0.01, 0.15)
+    return clamp(base, 0.005, 0.15)
 
 
 def calc_eagle_rate(player_stats, course_profile):
@@ -265,8 +276,12 @@ def calc_eagle_rate(player_stats, course_profile):
     Returns:
         float: eagle probability (clamped 0.005-0.12)
     """
-    base = 0.04 + player_stats.get("sg_ott", 0) * 0.01 + player_stats.get("sg_app", 0) * 0.008
-    return clamp(base, 0.005, 0.12)
+    sg_ott = player_stats.get("sg_ott", 0)
+    sg_app = player_stats.get("sg_app", 0)
+    # Long hitters who are also accurate on approach have much higher
+    # eagle rates (reaching par 5s in two)
+    base = 0.04 + sg_ott * 0.02 + sg_app * 0.015
+    return clamp(base, 0.005, 0.15)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -278,12 +293,21 @@ def calc_round_volatility(player_stats):
     Analogous to t1_vol_mod in matchup_params.py.
     PGA Tour avg round std dev is ~2.8 strokes.
 
+    When DataGolf's per-player std_deviation is available (from the player
+    decompositions endpoint), use it directly as it's based on actual
+    round-level data. Otherwise fall back to estimating from sg_total_adj.
+
     Args:
-        player_stats: dict with sg_total_adj
+        player_stats: dict with sg_total_adj, optional std_deviation
 
     Returns:
         float: round volatility (clamped 1.5-4.5)
     """
+    # Prefer DataGolf's per-player std_deviation when available
+    dg_std = player_stats.get("std_deviation")
+    if dg_std is not None and dg_std > 0:
+        return clamp(dg_std, 1.5, 4.5)
+
     base = 2.8
     # Better players are slightly more consistent
     sg_adj = -player_stats.get("sg_total_adj", 0) * 0.15
