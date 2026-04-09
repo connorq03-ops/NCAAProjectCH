@@ -110,7 +110,7 @@ COURSES = {
             {"hole": 1,  "par": 4, "yardage": 404, "difficulty_rank": 14, "key_stat": "sg_app", "water": False, "bunkers": 4},
             {"hole": 2,  "par": 4, "yardage": 487, "difficulty_rank": 3,  "key_stat": "sg_ott", "water": False, "bunkers": 3},
             {"hole": 3,  "par": 4, "yardage": 384, "difficulty_rank": 13, "key_stat": "sg_arg", "water": False, "bunkers": 3},
-            {"hole": 4,  "par": 4, "yardage": 564, "difficulty_rank": 1,  "key_stat": "sg_ott", "water": False, "bunkers": 5},
+            {"hole": 4,  "par": 5, "yardage": 564, "difficulty_rank": 1,  "key_stat": "sg_ott", "water": False, "bunkers": 5},
             {"hole": 5,  "par": 4, "yardage": 482, "difficulty_rank": 5,  "key_stat": "sg_app", "water": False, "bunkers": 6},
             {"hole": 6,  "par": 3, "yardage": 222, "difficulty_rank": 10, "key_stat": "sg_app", "water": False, "bunkers": 4},
             {"hole": 7,  "par": 4, "yardage": 416, "difficulty_rank": 9,  "key_stat": "sg_arg", "water": False, "bunkers": 4},
@@ -200,7 +200,7 @@ COURSES = {
         "is_major": True,
         "holes": [
             {"hole": 1,  "par": 4, "yardage": 448, "difficulty_rank": 10, "key_stat": "sg_app", "water": False, "bunkers": 3},
-            {"hole": 2,  "par": 4, "yardage": 510, "difficulty_rank": 3,  "key_stat": "sg_ott", "water": True,  "bunkers": 3},
+            {"hole": 2,  "par": 5, "yardage": 510, "difficulty_rank": 3,  "key_stat": "sg_ott", "water": True,  "bunkers": 3},
             {"hole": 3,  "par": 3, "yardage": 206, "difficulty_rank": 14, "key_stat": "sg_app", "water": False, "bunkers": 4},
             {"hole": 4,  "par": 4, "yardage": 375, "difficulty_rank": 16, "key_stat": "sg_app", "water": False, "bunkers": 2},
             {"hole": 5,  "par": 4, "yardage": 466, "difficulty_rank": 7,  "key_stat": "sg_ott", "water": False, "bunkers": 3},

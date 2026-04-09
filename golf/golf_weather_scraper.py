@@ -57,7 +57,7 @@ class WeatherCache:
             return None
 
     def set(self, identifier: str, data: dict):
-        data['_cached_at'] = datetime.now().isoformat()
+        data = {**data, '_cached_at': datetime.now().isoformat()}
         os.makedirs(self.cache_dir, exist_ok=True)
         path = os.path.join(self.cache_dir, f"{self._key(identifier)}.json")
         with open(path, 'w') as f:
