@@ -161,6 +161,7 @@ except ValueError:
     print("[golf-app] ANTHROPIC_API_KEY not set — WD features disabled")
 
 form_tracker = FormTracker(client=dg_client)
+GOLF_PREDICTIONS_FILE = os.path.join(os.path.dirname(__file__), 'golf_predictions.json')
 golf_backtester = GolfBacktester(predictions_file=GOLF_PREDICTIONS_FILE)
 
 
@@ -761,8 +762,6 @@ def get_form():
 # ═══════════════════════════════════════════════════════════════
 # G. Predictions Tracking (mirror app.py prediction endpoints)
 # ═══════════════════════════════════════════════════════════════
-
-GOLF_PREDICTIONS_FILE = os.path.join(os.path.dirname(__file__), 'golf_predictions.json')
 
 
 def _load_golf_predictions():
