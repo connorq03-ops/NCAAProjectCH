@@ -181,7 +181,7 @@ def get_rankings():
     """Get player rankings with SG splits."""
     tour = request.args.get('tour', 'pga')
     try:
-        params = {'tour': tour}
+        params = {}
         data = golf_cached_call('rankings', params,
             lambda: dg_client.get_rankings())
         return jsonify(data)
