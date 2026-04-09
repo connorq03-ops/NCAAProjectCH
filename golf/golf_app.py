@@ -478,6 +478,7 @@ def _run_golf_sim(course_id, tournament_id, num_tournaments, num_workers):
 def start_simulation():
     """Trigger tournament simulation (runs in background thread).
     Mirror app.py lines 1123-1165."""
+    # Atomically check-and-set running status to prevent TOCTOU race
     with _golf_sim_lock:
         if _golf_sim_state['status'] == 'running':
             return jsonify({
@@ -485,6 +486,11 @@ def start_simulation():
                 'progress': _golf_sim_state['progress'],
                 'message': _golf_sim_state['message'],
             }), 409
+        _golf_sim_state['status'] = 'running'
+        _golf_sim_state['progress'] = 0
+        _golf_sim_state['message'] = 'Initializing...'
+        _golf_sim_state['results'] = None
+        _golf_sim_state['error'] = None
 
     body = request.get_json(force=True, silent=True) or {}
     course_id = body.get('course_id', 'augusta_national')
@@ -497,16 +503,12 @@ def start_simulation():
         except (ValueError, TypeError):
             num_workers = None
 
-    # Validate course
+    # Validate course — reset to idle if invalid
     if get_course_profile(course_id) is None:
+        with _golf_sim_lock:
+            _golf_sim_state['status'] = 'idle'
+            _golf_sim_state['message'] = ''
         return jsonify({'error': f'Unknown course_id: {course_id}'}), 400
-
-    with _golf_sim_lock:
-        _golf_sim_state['status'] = 'running'
-        _golf_sim_state['progress'] = 0
-        _golf_sim_state['message'] = 'Initializing...'
-        _golf_sim_state['results'] = None
-        _golf_sim_state['error'] = None
 
     thread = threading.Thread(
         target=_run_golf_sim,
