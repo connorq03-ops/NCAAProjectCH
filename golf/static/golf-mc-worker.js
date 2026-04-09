@@ -195,7 +195,7 @@ function simRound(playerParams, holes, roundNumber, roundConfig) {
         const keyStat = hole.keyStat || hole.key_stat || 'sgApp';
 
         const fatigueAdj = fatigueBase + (i >= 13 ? 0.5 : 0.0) * (playerParams.fatigueFactor || 0.5) * 0.01;
-        const playerSgForKey = playerParams[keyStat] || playerParams[keyStat.replace('sg_', 'sg')] || 0.0;
+        const playerSgForKey = playerParams[keyStat] || playerParams[keyStat.replace(/_([a-z])/g, (_, c) => c.toUpperCase())] || 0.0;
 
         const result = simHole({
             par,
