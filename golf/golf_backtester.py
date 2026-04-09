@@ -782,7 +782,8 @@ class GolfBacktester:
         tier_stats = defaultdict(lambda: {'errors': [], 'top10_pred': 0, 'top10_hit': 0, 'total': 0})
         for r in results:
             tier = _classify_tier(r.get('player_name', ''))
-            tier_stats[tier]['errors'].append(r.get('finish_error', 0))
+            if r.get('finish_error') is not None:
+                tier_stats[tier]['errors'].append(r['finish_error'])
             tier_stats[tier]['total'] += 1
             if r.get('predicted_top10_pct', 0) >= 0.10:
                 tier_stats[tier]['top10_pred'] += 1
@@ -804,7 +805,8 @@ class GolfBacktester:
         type_stats = defaultdict(lambda: {'errors': [], 'top10_pred': 0, 'top10_hit': 0, 'total': 0})
         for r in results:
             ctype = _classify_course_type(r.get('course_id', ''))
-            type_stats[ctype]['errors'].append(r.get('finish_error', 0))
+            if r.get('finish_error') is not None:
+                type_stats[ctype]['errors'].append(r['finish_error'])
             type_stats[ctype]['total'] += 1
             if r.get('predicted_top10_pct', 0) >= 0.10:
                 type_stats[ctype]['top10_pred'] += 1
@@ -826,7 +828,8 @@ class GolfBacktester:
         strength_stats = defaultdict(lambda: {'errors': [], 'top10_pred': 0, 'top10_hit': 0, 'total': 0})
         for r in results:
             strength = _classify_field_strength(r.get('tournament_name', ''))
-            strength_stats[strength]['errors'].append(r.get('finish_error', 0))
+            if r.get('finish_error') is not None:
+                strength_stats[strength]['errors'].append(r['finish_error'])
             strength_stats[strength]['total'] += 1
             if r.get('predicted_top10_pct', 0) >= 0.10:
                 strength_stats[strength]['top10_pred'] += 1
