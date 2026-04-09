@@ -327,7 +327,7 @@ def build_player_sim_params(player_stats, course_profile, weather=None,
 
     # Full course fit
     fit = calc_full_course_fit(adjusted_stats, course_profile, weather)
-    sg_total_adj = fit["total_fit"]
+    sg_total_adj = fit["total_fit"] + form_delta
     adjusted_stats["sg_total_adj"] = sg_total_adj
 
     # Field strength multiplier
