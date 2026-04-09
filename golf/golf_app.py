@@ -431,6 +431,7 @@ def _run_golf_sim(course_id, tournament_id, num_tournaments, num_workers):
             _golf_sim_state['progress'] = 0
             _golf_sim_state['message'] = 'Prefetching DataGolf data...'
             _golf_sim_state['started_at'] = time.time()
+            _golf_sim_state['completed_at'] = None
 
         # Prefetch all player data
         num_players = _golf_sim.prefetch_data(course_id, tournament_id)
@@ -491,6 +492,8 @@ def start_simulation():
         _golf_sim_state['message'] = 'Initializing...'
         _golf_sim_state['results'] = None
         _golf_sim_state['error'] = None
+        _golf_sim_state['started_at'] = None
+        _golf_sim_state['completed_at'] = None
 
     body = request.get_json(force=True, silent=True) or {}
     course_id = body.get('course_id', 'augusta_national')
