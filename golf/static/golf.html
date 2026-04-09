@@ -821,7 +821,7 @@
                 html += '</div>';
             }
             html += `<div class="mt-4 text-center">
-                <button onclick="savePredictionFromMatchup('${data.p1}','${data.p2}','${courseId}',${JSON.stringify(m).replace(/"/g,'&quot;')})"
+                <button onclick="savePredictionFromMatchup('${data.p1.replace(/'/g,"\\'")}','${data.p2.replace(/'/g,"\\'")}','${courseId}',${JSON.stringify(m).replace(/"/g,'&quot;')})"
                     class="bg-green-700 hover:bg-green-600 px-4 py-1.5 rounded text-sm">
                     <i class="fas fa-save mr-1"></i>Save Prediction
                 </button>
