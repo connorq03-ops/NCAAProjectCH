@@ -693,6 +693,14 @@ def get_injuries():
         return jsonify({'error': 'WD features not available (ANTHROPIC_API_KEY not set)', 'statuses': {}}), 200
     force = request.args.get('force', '').lower() == 'true'
     try:
+        if force:
+            # Invalidate the WD cache so analyze_tournament_field re-fetches
+            cache_key = "tournament_field_PGA Tour"
+            cache_path = os.path.join(
+                wd_analyzer.cache.cache_dir,
+                f"{wd_analyzer.cache._key(cache_key)}.json")
+            if os.path.exists(cache_path):
+                os.remove(cache_path)
         data = wd_analyzer.analyze_tournament_field('PGA Tour')
         return jsonify({'statuses': data})
     except Exception as e:
