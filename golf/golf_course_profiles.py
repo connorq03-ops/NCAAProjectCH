@@ -644,7 +644,7 @@ def normalize_player_name(name: str) -> str:
     # Title-case
     name = name.title()
     # Fix common suffixes
-    name = name.replace(" Jr.", " Jr.").replace(" Iii", " III").replace(" Ii", " II")
+    name = name.replace(" Jr", " Jr.").replace(" Iii", " III").replace(" Ii", " II")
     return name
 
 
