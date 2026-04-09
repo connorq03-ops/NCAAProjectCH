@@ -72,7 +72,9 @@ class WeatherFetcher:
     """Fetches weather forecasts for golf tournament venues."""
 
     def __init__(self, api_key: Optional[str] = None):
-        load_dotenv()
+        _golf_env_path = os.path.join(os.path.dirname(__file__), '.env')
+        load_dotenv(_golf_env_path)
+        load_dotenv()  # also try root .env as fallback
         self.api_key = api_key or os.getenv('WEATHER_API_KEY')
         self.session = requests.Session()
         self.cache = WeatherCache()

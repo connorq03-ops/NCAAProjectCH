@@ -25,6 +25,12 @@ from golf.golf_course_fit import (
 )
 from golf.golf_weather_scraper import calc_weather_impact, calc_player_weather_resilience
 from golf.golf_elite_players import get_player_info, get_player_strengths
+from golf.api_field_map import (
+    extract_list, get_field,
+    RANKINGS_FIELDS, SKILL_FIELDS, FIELD_FIELDS,
+    PLAYER_DECOMP_FIELDS, PRED_FIELDS,
+    american_odds_to_probability,
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -37,6 +43,9 @@ def prefetch_all_player_data(client, tournament_id=None):
     Analogous to prefetch_all_team_data() in matchup_params.py.
     Makes multiple API calls and indexes results by player name.
 
+    Uses centralized field mappings from api_field_map.py to handle
+    actual DataGolf API response structures.
+
     Args:
         client: DataGolfClient instance
         tournament_id: optional, to get field-specific data
@@ -47,52 +56,55 @@ def prefetch_all_player_data(client, tournament_id=None):
     players = {}
 
     # 1. Rankings -> index by player name, extract dg_skill_estimate + owgr_rank
-    rankings = client.get_rankings()
-    if isinstance(rankings, dict):
-        rankings = rankings.get("rankings", [])
-    for entry in (rankings or []):
-        name = entry.get("player_name", "")
+    #    Response: { "rankings": [ { "player_name", "dg_skill_estimate", "owgr_rank", "dg_id", ... } ] }
+    rankings_response = client.get_rankings()
+    rankings_list = extract_list(rankings_response, 'rankings')
+    for entry in rankings_list:
+        name = get_field(entry, 'player_name', RANKINGS_FIELDS, "")
         if not name:
             continue
         players[name] = {
-            "dg_skill_estimate": entry.get("dg_skill_estimate", 0.0),
-            "owgr_rank": entry.get("owgr_rank", 999),
-            "sg_total": entry.get("dg_skill_estimate", 0.0),
+            "dg_skill_estimate": get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
+            "owgr_rank": get_field(entry, 'owgr_rank', RANKINGS_FIELDS, 999),
+            "sg_total": get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
             "_player_name": name,
-            "_player_id": entry.get("dg_id", name),
+            "_player_id": get_field(entry, 'dg_id', RANKINGS_FIELDS, name),
         }
 
-    # 2. Skill decompositions -> merge SG splits
-    decomps = client.get_skill_decompositions()
-    if isinstance(decomps, dict):
-        decomps = decomps.get("decompositions", decomps.get("players", []))
-    for entry in (decomps or []):
-        name = entry.get("player_name", "")
+    # 2. Skill ratings (was "skill decompositions") -> merge SG splits
+    #    Endpoint: preds/skill-ratings (preds/skill-decompositions returns 404)
+    #    Response: { "players": [ { "player_name", "sg_ott", "sg_app", "sg_arg",
+    #               "sg_putt", "sg_total", "driving_dist", "driving_acc" } ] }
+    #    NOTE: driving_dist/driving_acc (not driving_distance/driving_accuracy)
+    #    NOTE: gir_pct, scrambling_pct, putts_per_round are NOT in this endpoint
+    decomps_response = client.get_skill_decompositions()
+    decomps_list = extract_list(decomps_response, 'skill_ratings')
+    for entry in decomps_list:
+        name = get_field(entry, 'player_name', SKILL_FIELDS, "")
         if name in players:
-            players[name]["sg_ott"] = entry.get("sg_ott", 0.0)
-            players[name]["sg_app"] = entry.get("sg_app", 0.0)
-            players[name]["sg_arg"] = entry.get("sg_arg", 0.0)
-            players[name]["sg_putt"] = entry.get("sg_putt", 0.0)
-            players[name]["driving_distance"] = entry.get(
-                "driving_distance", AVG_DRIVING_DIST
+            players[name]["sg_ott"] = get_field(entry, 'sg_ott', SKILL_FIELDS, 0.0)
+            players[name]["sg_app"] = get_field(entry, 'sg_app', SKILL_FIELDS, 0.0)
+            players[name]["sg_arg"] = get_field(entry, 'sg_arg', SKILL_FIELDS, 0.0)
+            players[name]["sg_putt"] = get_field(entry, 'sg_putt', SKILL_FIELDS, 0.0)
+            players[name]["driving_distance"] = get_field(
+                entry, 'driving_distance', SKILL_FIELDS, AVG_DRIVING_DIST
             )
-            players[name]["driving_accuracy"] = entry.get(
-                "driving_accuracy", AVG_DRIVING_ACC
+            players[name]["driving_accuracy"] = get_field(
+                entry, 'driving_accuracy', SKILL_FIELDS, AVG_DRIVING_ACC
             )
-            players[name]["gir_pct"] = entry.get("gir_pct", 66.0)
-            players[name]["scrambling_pct"] = entry.get(
-                "scrambling_pct", AVG_SCRAMBLING
-            )
-            players[name]["putts_per_round"] = entry.get("putts_per_round", 29.0)
+            # These fields are not available from skill-ratings; use defaults
+            players[name]["gir_pct"] = 66.0
+            players[name]["scrambling_pct"] = AVG_SCRAMBLING
+            players[name]["putts_per_round"] = 29.0
 
     if tournament_id:
         # 3. Field updates -> filter to players in the field
-        field = client.get_field_updates()
-        if isinstance(field, dict):
-            field = field.get("field", [])
+        #    Response: { "field": [ { "player_name", "dg_id", ... } ] }
+        field_response = client.get_field_updates()
+        field_list = extract_list(field_response, 'field_updates')
         field_names = set()
-        for entry in (field or []):
-            name = entry.get("player_name", "")
+        for entry in field_list:
+            name = get_field(entry, 'player_name', FIELD_FIELDS, "")
             if name:
                 field_names.add(name)
                 # Ensure player exists even if not in rankings
@@ -102,35 +114,57 @@ def prefetch_all_player_data(client, tournament_id=None):
                         "owgr_rank": 999,
                         "sg_total": 0.0,
                         "_player_name": name,
-                        "_player_id": entry.get("dg_id", name),
+                        "_player_id": get_field(entry, 'dg_id', FIELD_FIELDS, name),
                     }
 
-        # 4. Player decompositions -> course-specific data
-        player_decomps = client.get_player_decompositions()
-        if isinstance(player_decomps, dict):
-            player_decomps = player_decomps.get("decompositions",
-                                                 player_decomps.get("players", []))
-        for entry in (player_decomps or []):
-            name = entry.get("player_name", "")
+        # 4. Player decompositions -> course-specific adjustment data
+        #    Response: { "players": [ { "player_name", "baseline_pred", "final_pred",
+        #               "total_fit_adjustment", "strokes_gained_category_adjustment", ... } ] }
+        #    NOTE: This endpoint does NOT have sg_ott/sg_app/sg_arg/sg_putt.
+        #    It has course-fit adjustments instead.
+        player_decomps_response = client.get_player_decompositions()
+        player_decomps_list = extract_list(player_decomps_response, 'player_decompositions')
+        for entry in player_decomps_list:
+            name = get_field(entry, 'player_name', PLAYER_DECOMP_FIELDS, "")
             if name in players:
-                # Merge course-specific decompositions
-                players[name]["course_sg_ott"] = entry.get("sg_ott", None)
-                players[name]["course_sg_app"] = entry.get("sg_app", None)
-                players[name]["course_sg_arg"] = entry.get("sg_arg", None)
-                players[name]["course_sg_putt"] = entry.get("sg_putt", None)
+                # Store course-specific adjustment data (not raw SG splits)
+                players[name]["course_baseline_pred"] = get_field(
+                    entry, 'baseline_pred', PLAYER_DECOMP_FIELDS, None)
+                players[name]["course_final_pred"] = get_field(
+                    entry, 'final_pred', PLAYER_DECOMP_FIELDS, None)
+                players[name]["course_fit_adj"] = get_field(
+                    entry, 'total_fit_adjustment', PLAYER_DECOMP_FIELDS, None)
+                players[name]["course_history_adj"] = get_field(
+                    entry, 'total_course_history_adjustment', PLAYER_DECOMP_FIELDS, None)
+                players[name]["course_sg_cat_adj"] = get_field(
+                    entry, 'strokes_gained_category_adjustment', PLAYER_DECOMP_FIELDS, None)
+                players[name]["course_driving_dist_adj"] = get_field(
+                    entry, 'driving_distance_adjustment', PLAYER_DECOMP_FIELDS, None)
+                players[name]["course_driving_acc_adj"] = get_field(
+                    entry, 'driving_accuracy_adjustment', PLAYER_DECOMP_FIELDS, None)
+                players[name]["std_deviation"] = get_field(
+                    entry, 'std_deviation', PLAYER_DECOMP_FIELDS, None)
 
         # 5. Pre-tournament predictions -> win/top5/top10/cut probabilities
-        preds = client.get_pre_tournament_preds()
-        if isinstance(preds, dict):
-            preds = preds.get("predictions", preds.get("players", []))
-        for entry in (preds or []):
-            name = entry.get("player_name", "")
+        #    Response: { "baseline": [ { "player_name", "win", "top_5", "top_10",
+        #               "top_20", "make_cut" } ] }
+        #    NOTE: Values are American odds STRINGS (e.g., "+878", "-894"),
+        #    not decimal probabilities. Must convert with american_odds_to_probability().
+        preds_response = client.get_pre_tournament_preds()
+        preds_list = extract_list(preds_response, 'pre_tournament_preds')
+        for entry in preds_list:
+            name = get_field(entry, 'player_name', PRED_FIELDS, "")
             if name in players:
-                players[name]["win_prob"] = entry.get("win_prob", 0.0)
-                players[name]["top5_prob"] = entry.get("top_5", 0.0)
-                players[name]["top10_prob"] = entry.get("top_10", 0.0)
-                players[name]["top20_prob"] = entry.get("top_20", 0.0)
-                players[name]["make_cut_prob"] = entry.get("make_cut", 0.0)
+                players[name]["win_prob"] = american_odds_to_probability(
+                    get_field(entry, 'win', PRED_FIELDS))
+                players[name]["top5_prob"] = american_odds_to_probability(
+                    get_field(entry, 'top_5', PRED_FIELDS))
+                players[name]["top10_prob"] = american_odds_to_probability(
+                    get_field(entry, 'top_10', PRED_FIELDS))
+                players[name]["top20_prob"] = american_odds_to_probability(
+                    get_field(entry, 'top_20', PRED_FIELDS))
+                players[name]["make_cut_prob"] = american_odds_to_probability(
+                    get_field(entry, 'make_cut', PRED_FIELDS))
 
         # Filter to field players only
         if field_names:

@@ -38,6 +38,11 @@ from golf.golf_sim_params import prefetch_all_player_data, build_player_sim_para
 from golf.golf_course_profiles import get_course_profile, COURSES
 from golf.golf_mc_engine import simulate_tournament
 from golf.golf_weight_optimizer import compute_per_model_accuracy, compute_optimal_weights
+from golf.api_field_map import (
+    extract_list, get_field,
+    RANKINGS_FIELDS, SKILL_FIELDS, HISTORICAL_EVENT_FIELDS,
+    PRED_ARCHIVE_FIELDS, archive_value_to_probability,
+)
 
 
 # ─── Player tier classification (for by-tier breakdown) ─────────────────────
@@ -259,10 +264,13 @@ class GolfBacktester:
         if use_historical:
             try:
                 archive = dg_client.get_pre_tournament_pred_archive(event_id=tournament_id)
-                archive_preds = archive if isinstance(archive, list) else archive.get('predictions', archive.get('players', []))
+                archive_preds = extract_list(archive, 'pre_tournament_pred_archive')
                 for pred in archive_preds:
-                    pname = pred.get('player_name', pred.get('name', ''))
+                    pname = get_field(pred, 'player_name', PRED_ARCHIVE_FIELDS, '')
                     if pname:
+                        # Archive preds have win/top_5/etc as decimal implied
+                        # probabilities (not American odds). Convert via
+                        # archive_value_to_probability.
                         player_stats_list.append({
                             '_player_name': pname,
                             'sg_total': pred.get('sg_total', pred.get('dg_skill_estimate', 0.0)),
@@ -271,12 +279,22 @@ class GolfBacktester:
                             'sg_arg': pred.get('sg_arg', 0.0),
                             'sg_putt': pred.get('sg_putt', 0.0),
                             'driving_accuracy': pred.get('driving_accuracy', 60.0),
-                            'scrambling_pct': pred.get('scrambling_pct', 58.0),
-                            'cuts_made_pct': pred.get('cuts_made_pct', 70.0),
-                            'consistency_score': pred.get('consistency_score', 0.5),
-                            'fatigue_factor': pred.get('fatigue_factor', 0.5),
-                            'recent_form': pred.get('recent_form', {}),
-                            'course_history': pred.get('course_history'),
+                            'scrambling_pct': 58.0,  # not available from archive
+                            'cuts_made_pct': 70.0,   # not available from archive
+                            'consistency_score': 0.5, # not available from archive
+                            'fatigue_factor': 0.5,    # not available from archive
+                            'recent_form': {},
+                            'course_history': None,
+                            'win_prob': archive_value_to_probability(
+                                get_field(pred, 'win', PRED_ARCHIVE_FIELDS)),
+                            'top5_prob': archive_value_to_probability(
+                                get_field(pred, 'top_5', PRED_ARCHIVE_FIELDS)),
+                            'top10_prob': archive_value_to_probability(
+                                get_field(pred, 'top_10', PRED_ARCHIVE_FIELDS)),
+                            'top20_prob': archive_value_to_probability(
+                                get_field(pred, 'top_20', PRED_ARCHIVE_FIELDS)),
+                            'make_cut_prob': archive_value_to_probability(
+                                get_field(pred, 'make_cut', PRED_ARCHIVE_FIELDS)),
                         })
             except Exception as e:
                 print(f"[backtest] Historical archive not available for {tournament_id}: {e}")
@@ -286,25 +304,25 @@ class GolfBacktester:
         if not player_stats_list:
             # Use current rankings (legacy mode, introduces lookahead bias)
             try:
-                rankings = dg_client.get_rankings()
-                rankings_list = rankings.get('rankings', []) if isinstance(rankings, dict) else rankings or []
+                rankings_response = dg_client.get_rankings()
+                rankings_list = extract_list(rankings_response, 'rankings')
                 for entry in rankings_list:
-                    pname = entry.get('player_name', '')
+                    pname = get_field(entry, 'player_name', RANKINGS_FIELDS, '')
                     if pname and pname in actual_results:
                         player_stats_list.append({
                             '_player_name': pname,
-                            'sg_total': entry.get('dg_skill_estimate', 0.0),
-                            'sg_ott': entry.get('sg_ott', 0.0),
-                            'sg_app': entry.get('sg_app', 0.0),
-                            'sg_arg': entry.get('sg_arg', 0.0),
-                            'sg_putt': entry.get('sg_putt', 0.0),
-                            'driving_accuracy': entry.get('driving_accuracy', 60.0),
-                            'scrambling_pct': entry.get('scrambling_pct', 58.0),
-                            'cuts_made_pct': entry.get('cuts_made_pct', 70.0),
-                            'consistency_score': entry.get('consistency_score', 0.5),
-                            'fatigue_factor': entry.get('fatigue_factor', 0.5),
-                            'recent_form': entry.get('recent_form', {}),
-                            'course_history': entry.get('course_history'),
+                            'sg_total': get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
+                            'sg_ott': 0.0,   # not in rankings endpoint; needs skill_ratings
+                            'sg_app': 0.0,
+                            'sg_arg': 0.0,
+                            'sg_putt': 0.0,
+                            'driving_accuracy': 60.0,
+                            'scrambling_pct': 58.0,
+                            'cuts_made_pct': 70.0,
+                            'consistency_score': 0.5,
+                            'fatigue_factor': 0.5,
+                            'recent_form': {},
+                            'course_history': None,
                         })
             except Exception as e:
                 print(f"[backtest] Failed to get rankings: {e}")
@@ -482,7 +500,8 @@ class GolfBacktester:
         # 2. Fetch list of tournaments in date range
         try:
             events = dg_client.get_historical_events()
-            event_list = events if isinstance(events, list) else events.get('events', events.get('tournaments', []))
+            # historical_events returns a bare list (no wrapper key)
+            event_list = extract_list(events, 'historical_events')
         except Exception as e:
             print(f"[backtest] Failed to get event list: {e}")
             return {'error': str(e), 'results': []}
