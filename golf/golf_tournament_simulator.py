@@ -193,19 +193,33 @@ class GolfTournamentSimulator:
         else:
             self.weather = None
 
-        # 4. Compute field average SG for field-strength adjustment
+        # 4. Process raw weather forecast into weather impact dict
+        # self.weather is the raw API forecast; build_player_sim_params and
+        # predict_field expect the processed output of calc_weather_impact()
+        # with keys like combined_adj, wind_adj, etc.
+        weather_impact = None
+        if self.weather is not None:
+            try:
+                altitude = self.course_profile.get("elevation_ft", 0)
+                weather_impact = calc_weather_impact(
+                    self.weather, 1, altitude_ft=altitude)
+            except Exception as e:
+                print(f"[golf-sim] Weather impact calc failed: {e}", flush=True)
+                weather_impact = None
+
+        # 5. Compute field average SG for field-strength adjustment
         sg_values = [
             p.get("sg_total", 0.0) for p in self.player_data.values()
             if p.get("sg_total") is not None
         ]
         field_avg_sg = sum(sg_values) / len(sg_values) if sg_values else 0.0
 
-        # 5. Build sim params for each player
+        # 6. Build sim params for each player (using processed weather impact)
         params_list = []
         for name, stats in self.player_data.items():
             params = build_player_sim_params(
                 stats, self.course_profile,
-                weather=self.weather, field_strength=field_avg_sg,
+                weather=weather_impact, field_strength=field_avg_sg,
             )
             params_list.append(params)
 
@@ -213,11 +227,11 @@ class GolfTournamentSimulator:
         params_list.sort(key=lambda p: p["sg_total_adj"], reverse=True)
         self.player_params = params_list
 
-        # 6. Run composite model predictions
+        # 7. Run composite model predictions (using processed weather impact)
         self.composite_predictions = predict_field(
             list(self.player_data.values()),
             self.course_profile,
-            weather=self.weather,
+            weather=weather_impact,
         )
 
         # 7. Clear matchup cache
