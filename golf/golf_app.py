@@ -687,9 +687,13 @@ def get_matchup():
         holes = course.get('holes', [])
         matchup_result = simulate_matchup(p1_params, p2_params, holes, num_sims=num_sims)
 
-        # Composite model predictions
-        p1_composite = compute_golf_composite(p1_stats, course)
-        p2_composite = compute_golf_composite(p2_stats, course)
+        # Composite model predictions — use predict_field which handles
+        # running all sub-models (sg_eff, course_fit, golf_rat, MC, dg_preds)
+        p1_stats['_player_name'] = p1
+        p2_stats['_player_name'] = p2
+        field_preds = predict_field([p1_stats, p2_stats], course)
+        p1_composite = next((r for r in field_preds if r['player_name'] == p1), {})
+        p2_composite = next((r for r in field_preds if r['player_name'] == p2), {})
 
         return jsonify({
             'p1': p1,
