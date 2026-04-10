@@ -407,7 +407,7 @@ def compute_golf_composite(sg_eff, course_fit, golf_rat, mc,
         w_fit = weight_overrides.get('course_fit', 0.20 if has_dg else 0.25)
         w_rat = weight_overrides.get('golf_rat', 0.20 if has_dg else 0.25)
         w_mc = weight_overrides.get('mc', 0.15 if has_dg else 0.25)
-        w_dg = weight_overrides.get('dg_preds', 0.25 if has_dg else 0.0)
+        w_dg = weight_overrides.get('dg_preds', 0.25) if has_dg else 0.0
     elif has_dg:
         # 5-model blend: DataGolf gets 25% as a strong independent anchor
         w_sg = 0.20
