@@ -302,10 +302,11 @@ def analyze_historical_predictions(client, course_id: str,
             "n_finishers": baseline_score['n_scored'],
             "baseline_mae": baseline_score['mae'],
             "baseline_hf_mae": hf_score['mae'] if hf_score else None,
-            "hf_improvement": (
-                round(baseline_score['mae'] - hf_score['mae'], 4)
-                if hf_score else None
-            ),
+                "hf_improvement": (
+                    round(baseline_score['mae'] - hf_score['mae'], 4)
+                    if hf_score and hf_score['mae'] is not None
+                    and baseline_score['mae'] is not None else None
+                ),
         }
 
     # Aggregate across years
