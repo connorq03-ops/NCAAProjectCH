@@ -652,7 +652,8 @@ def normalize_player_name(name: str) -> str:
 # Course Fit Scoring Function
 # ═══════════════════════════════════════════════════════════════
 
-def calc_course_fit_score(player_sg: dict, course_profile: dict) -> float:
+def calc_course_fit_score(player_sg: dict, course_profile: dict,
+                         sg_weight_overrides: dict = None) -> float:
     """Calculate how well a player's SG splits fit a course.
 
     Analogous to asymmetric_matchup() in matchup_params.py (lines 44-73).
@@ -660,11 +661,14 @@ def calc_course_fit_score(player_sg: dict, course_profile: dict) -> float:
     Args:
         player_sg: dict with keys 'sg_ott', 'sg_app', 'sg_arg', 'sg_putt'
         course_profile: dict from COURSES
+        sg_weight_overrides: optional dict of data-driven SG weights from
+            historical analysis. If provided, these replace the static
+            weights in the course profile.
 
     Returns:
         float: course-adjusted SG projection
     """
-    weights = course_profile.get("sg_weights", {})
+    weights = sg_weight_overrides or course_profile.get("sg_weights", {})
     categories = ["sg_ott", "sg_app", "sg_arg", "sg_putt"]
 
     # Step 1: Compute base weighted SG

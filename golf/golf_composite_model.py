@@ -268,7 +268,8 @@ def model_sg_efficiency(player_stats, course_profile):
 # ─── Model 2: Course Fit ─────────────────────────────────────────────────────
 # Analogous to model_similar_opponents() in basketball (composite_model.py lines 421-463)
 
-def model_course_fit(player_stats, course_profile, weather=None):
+def model_course_fit(player_stats, course_profile, weather=None,
+                     sg_weight_overrides=None):
     """Course-specific projection. Analogous to model_similar_opponents() in basketball.
 
     Steps:
@@ -281,13 +282,16 @@ def model_course_fit(player_stats, course_profile, weather=None):
         player_stats: dict with SG splits, course_history, etc.
         course_profile: dict from COURSES
         weather: optional weather impact dict
+        sg_weight_overrides: optional dict of data-driven SG weights from
+            historical analysis. Passed through to calc_full_course_fit.
 
     Returns:
         dict with predicted_finish, win_prob, top5_prob, top10_prob,
               top20_prob, make_cut_prob, details
     """
-    # 1. Full course fit
-    fit = calc_full_course_fit(player_stats, course_profile, weather)
+    # 1. Full course fit (using dynamic SG weights when available)
+    fit = calc_full_course_fit(player_stats, course_profile, weather,
+                               sg_weight_overrides=sg_weight_overrides)
 
     # 2. Baseline SG + total fit adjustment
     sg_total = player_stats.get("sg_total", 0.0)
@@ -632,7 +636,8 @@ def _build_dg_preds_model(player_stats):
 
 
 def predict_field(players, course_profile, mc_results=None, weather=None,
-                  weight_overrides=None, context=None):
+                  weight_overrides=None, context=None,
+                  sg_weight_overrides=None):
     """Run composite prediction for an entire tournament field.
 
     Analogous to running compute_composite() across all matchups in basketball.
@@ -646,8 +651,12 @@ def predict_field(players, course_profile, mc_results=None, weather=None,
         mc_results: optional dict keyed by player name -> MC result dict.
                     If None, a placeholder MC result is used.
         weather: optional weather impact dict
-        weight_overrides: optional dict passed to compute_golf_composite()
+        weight_overrides: optional dict of composite model weight overrides
+            (sg_efficiency, course_fit, golf_rat, mc, dg_preds)
         context: optional string ('major', 'windy', 'signature', etc.)
+        sg_weight_overrides: optional dict of data-driven SG category weights
+            from historical analysis (sg_ott, sg_app, sg_arg, sg_putt).
+            Passed through to model_course_fit and model_sg_efficiency.
 
     Returns:
         list of dicts sorted by predicted_finish (best first), each containing:
@@ -660,9 +669,10 @@ def predict_field(players, course_profile, mc_results=None, weather=None,
     for player_stats in players:
         player_name = player_stats.get("_player_name", "Unknown")
 
-        # Run 3 internal models
+        # Run 3 internal models (course fit uses dynamic SG weights)
         sg_eff = model_sg_efficiency(player_stats, course_profile)
-        cf = model_course_fit(player_stats, course_profile, weather)
+        cf = model_course_fit(player_stats, course_profile, weather,
+                              sg_weight_overrides=sg_weight_overrides)
         gr = model_golf_rat(player_stats, course_profile)
 
         # Get MC results or use placeholder

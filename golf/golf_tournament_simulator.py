@@ -45,6 +45,10 @@ from golf.golf_composite_model import (
     model_golf_rat,
 )
 from golf.golf_weather_scraper import WeatherFetcher, calc_weather_impact
+from golf.golf_historical_analysis import (
+    get_dynamic_sg_weights,
+    get_dynamic_model_weights,
+)
 
 
 # ─── Top-level helpers (must be picklable for ProcessPoolExecutor) ───────────
@@ -227,11 +231,35 @@ class GolfTournamentSimulator:
         params_list.sort(key=lambda p: p["sg_total_adj"], reverse=True)
         self.player_params = params_list
 
-        # 7. Run composite model predictions (using processed weather impact)
+        # 7. Compute data-driven weights from historical analysis
+        #    These replace static SG weights with correlations derived from
+        #    actual tournament results at this course/archetype.
+        sg_weight_overrides = None
+        model_weight_overrides = None
+        try:
+            dyn = get_dynamic_sg_weights(self.client, self.course_profile)
+            if dyn and dyn.get('confidence', 0) > 0.3:
+                sg_weight_overrides = dyn.get('sg_weights')
+                self._dynamic_weight_info = dyn
+                print(f"[golf-sim] Dynamic SG weights (confidence={dyn['confidence']:.2f}): "
+                      f"{sg_weight_overrides}", flush=True)
+            model_weight_overrides = get_dynamic_model_weights(
+                self.client, self.course_profile)
+            if model_weight_overrides:
+                print(f"[golf-sim] Dynamic model weights: {model_weight_overrides}",
+                      flush=True)
+        except Exception as e:
+            print(f"[golf-sim] Dynamic weight computation failed, using static: {e}",
+                  flush=True)
+
+        # 8. Run composite model predictions (using processed weather impact
+        #    and data-driven weights)
         self.composite_predictions = predict_field(
             list(self.player_data.values()),
             self.course_profile,
             weather=weather_impact,
+            weight_overrides=model_weight_overrides,
+            sg_weight_overrides=sg_weight_overrides,
         )
 
         # 7. Clear matchup cache

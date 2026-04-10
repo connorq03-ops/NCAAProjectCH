@@ -32,7 +32,8 @@ def clamp(val, lo, hi):
 # Full Course-Fit Projection
 # ═══════════════════════════════════════════════════════════════
 
-def calc_full_course_fit(player_stats, course_profile, weather=None):
+def calc_full_course_fit(player_stats, course_profile, weather=None,
+                        sg_weight_overrides=None):
     """Full course-fit projection combining SG weights, course history,
     driving interactions, green type, and weather.
 
@@ -46,19 +47,24 @@ def calc_full_course_fit(player_stats, course_profile, weather=None):
                       recent_form (optional dict with last_4, last_8, last_12, trend)
         course_profile: dict from COURSES in golf_course_profiles.py
         weather: optional dict from calc_weather_impact()
+        sg_weight_overrides: optional dict of data-driven SG weights from
+            historical analysis (e.g. {"sg_ott": 0.32, "sg_app": 0.29, ...}).
+            If provided, replaces static weights in the course profile.
 
     Returns:
         dict with: base_fit, history_adj, length_adj, accuracy_adj,
                    green_adj, scramble_adj, weather_adj, total_fit
     """
     # 1. Base fit: weighted SG from golf_course_profiles
+    #    Use data-driven weights when available, else static course profile weights
     player_sg = {
         "sg_ott": player_stats.get("sg_ott", 0.0),
         "sg_app": player_stats.get("sg_app", 0.0),
         "sg_arg": player_stats.get("sg_arg", 0.0),
         "sg_putt": player_stats.get("sg_putt", 0.0),
     }
-    base_fit = calc_course_fit_score(player_sg, course_profile)
+    base_fit = calc_course_fit_score(player_sg, course_profile,
+                                     sg_weight_overrides=sg_weight_overrides)
 
     # 2. Course history adjustment
     #    Prefer DataGolf's course_history_adj when available (based on years

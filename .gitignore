@@ -27,3 +27,4 @@ Thumbs.db
 *.log
 .injury_cache/
 golf/.api_response_cache/
+golf/.historical_cache/
