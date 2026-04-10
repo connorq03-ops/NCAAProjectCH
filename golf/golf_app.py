@@ -512,7 +512,7 @@ def start_simulation():
     try:
         body = request.get_json(force=True, silent=True) or {}
         course_id = body.get('course_id', 'augusta_national')
-        tournament_id = body.get('tournament_id', None)
+        tournament_id = body.get('tournament_id', 'current')
         num_tournaments = min(int(body.get('num_tournaments', 1000)), 10000)
         num_workers = body.get('num_workers', None)
         if num_workers is not None:
