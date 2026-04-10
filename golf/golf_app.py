@@ -349,8 +349,10 @@ def get_course_fit(course_id):
                 'sg_arg': map_get_field(d, 'sg_arg', SKILL_FIELDS, 0.0),
                 'sg_putt': map_get_field(d, 'sg_putt', SKILL_FIELDS, 0.0),
                 'sg_total': map_get_field(entry, 'dg_skill_estimate', RANKINGS_FIELDS, 0.0),
-                'driving_distance': map_get_field(d, 'driving_distance', SKILL_FIELDS, 295.0),
-                'driving_accuracy': map_get_field(d, 'driving_accuracy', SKILL_FIELDS, 60.0),
+                # DataGolf returns driving stats as relative values (delta from
+                # tour avg). Convert to absolute for calc_full_course_fit().
+                'driving_distance': 295.0 + map_get_field(d, 'driving_distance', SKILL_FIELDS, 0.0),
+                'driving_accuracy': 60.0 + map_get_field(d, 'driving_accuracy', SKILL_FIELDS, 0.0),
                 'scrambling_pct': 58.0,  # not available from skill-ratings endpoint
             }
             fit = calc_full_course_fit(player_stats, course)
@@ -510,7 +512,7 @@ def start_simulation():
     try:
         body = request.get_json(force=True, silent=True) or {}
         course_id = body.get('course_id', 'augusta_national')
-        tournament_id = body.get('tournament_id', None)
+        tournament_id = body.get('tournament_id', 'current')
         num_tournaments = min(int(body.get('num_tournaments', 1000)), 10000)
         num_workers = body.get('num_workers', None)
         if num_workers is not None:
@@ -666,8 +668,10 @@ def get_matchup():
                 'sg_app': map_get_field(d, 'sg_app', SKILL_FIELDS, 0.0),
                 'sg_arg': map_get_field(d, 'sg_arg', SKILL_FIELDS, 0.0),
                 'sg_putt': map_get_field(d, 'sg_putt', SKILL_FIELDS, 0.0),
-                'driving_distance': map_get_field(d, 'driving_distance', SKILL_FIELDS, 295.0),
-                'driving_accuracy': map_get_field(d, 'driving_accuracy', SKILL_FIELDS, 60.0),
+                # DataGolf returns driving stats as relative values (delta from
+                # tour avg). Convert to absolute for calc_full_course_fit().
+                'driving_distance': 295.0 + map_get_field(d, 'driving_distance', SKILL_FIELDS, 0.0),
+                'driving_accuracy': 60.0 + map_get_field(d, 'driving_accuracy', SKILL_FIELDS, 0.0),
                 'scrambling_pct': 58.0,  # not available from skill-ratings endpoint
                 'owgr_rank': map_get_field(r, 'owgr_rank', RANKINGS_FIELDS, 999),
             }
@@ -683,9 +687,13 @@ def get_matchup():
         holes = course.get('holes', [])
         matchup_result = simulate_matchup(p1_params, p2_params, holes, num_sims=num_sims)
 
-        # Composite model predictions
-        p1_composite = compute_golf_composite(p1_stats, course)
-        p2_composite = compute_golf_composite(p2_stats, course)
+        # Composite model predictions — use predict_field which handles
+        # running all sub-models (sg_eff, course_fit, golf_rat, MC, dg_preds)
+        p1_stats['_player_name'] = p1
+        p2_stats['_player_name'] = p2
+        field_preds = predict_field([p1_stats, p2_stats], course)
+        p1_composite = next((r for r in field_preds if r['player_name'] == p1), {})
+        p2_composite = next((r for r in field_preds if r['player_name'] == p2), {})
 
         return jsonify({
             'p1': p1,

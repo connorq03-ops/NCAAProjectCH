@@ -75,7 +75,8 @@ class TestCalcFullCourseFit:
         result = calc_full_course_fit(good_player, augusta)
         expected_keys = {
             "base_fit", "history_adj", "length_adj", "accuracy_adj",
-            "green_adj", "scramble_adj", "weather_adj", "total_fit",
+            "green_adj", "scramble_adj", "weather_adj", "dg_fit_adj",
+            "total_fit",
         }
         assert set(result.keys()) == expected_keys
 

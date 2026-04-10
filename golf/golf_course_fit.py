@@ -32,7 +32,8 @@ def clamp(val, lo, hi):
 # Full Course-Fit Projection
 # ═══════════════════════════════════════════════════════════════
 
-def calc_full_course_fit(player_stats, course_profile, weather=None):
+def calc_full_course_fit(player_stats, course_profile, weather=None,
+                        sg_weight_overrides=None):
     """Full course-fit projection combining SG weights, course history,
     driving interactions, green type, and weather.
 
@@ -46,28 +47,39 @@ def calc_full_course_fit(player_stats, course_profile, weather=None):
                       recent_form (optional dict with last_4, last_8, last_12, trend)
         course_profile: dict from COURSES in golf_course_profiles.py
         weather: optional dict from calc_weather_impact()
+        sg_weight_overrides: optional dict of data-driven SG weights from
+            historical analysis (e.g. {"sg_ott": 0.32, "sg_app": 0.29, ...}).
+            If provided, replaces static weights in the course profile.
 
     Returns:
         dict with: base_fit, history_adj, length_adj, accuracy_adj,
                    green_adj, scramble_adj, weather_adj, total_fit
     """
     # 1. Base fit: weighted SG from golf_course_profiles
+    #    Use data-driven weights when available, else static course profile weights
     player_sg = {
         "sg_ott": player_stats.get("sg_ott", 0.0),
         "sg_app": player_stats.get("sg_app", 0.0),
         "sg_arg": player_stats.get("sg_arg", 0.0),
         "sg_putt": player_stats.get("sg_putt", 0.0),
     }
-    base_fit = calc_course_fit_score(player_sg, course_profile)
+    base_fit = calc_course_fit_score(player_sg, course_profile,
+                                     sg_weight_overrides=sg_weight_overrides)
 
     # 2. Course history adjustment
+    #    Prefer DataGolf's course_history_adj when available (based on years
+    #    of historical data); fall back to our local calculation.
     history_adj = 0.0
-    course_history = player_stats.get("course_history")
-    if course_history and "avg_finish_vs_field" in course_history:
-        # Negative finish_vs_field means player does well here -> positive adj
-        history_adj = clamp(
-            course_history["avg_finish_vs_field"] * -0.15, -0.5, 0.5
-        )
+    dg_history_adj = player_stats.get("course_history_adj")
+    if dg_history_adj is not None:
+        history_adj = clamp(dg_history_adj, -0.8, 0.8)
+    else:
+        course_history = player_stats.get("course_history")
+        if course_history and "avg_finish_vs_field" in course_history:
+            # Negative finish_vs_field means player does well here -> positive adj
+            history_adj = clamp(
+                course_history["avg_finish_vs_field"] * -0.15, -0.5, 0.5
+            )
 
     # 3. Driving distance x course length
     length_adj = 0.0
@@ -108,12 +120,18 @@ def calc_full_course_fit(player_stats, course_profile, weather=None):
     if weather is not None:
         weather_adj = -calc_player_weather_resilience(player_stats, weather)
 
-    # 8. Total: sum all adjustments, clamp to (-3.0, 3.0)
-    total_fit = clamp(
-        base_fit + history_adj + length_adj + accuracy_adj
-        + green_adj + scramble_adj + weather_adj,
-        -3.0, 3.0,
-    )
+    # 8. Blend with DataGolf's precomputed course_fit_adj when available.
+    #    DataGolf's adjustment is based on years of course-specific data and
+    #    is one of the most accurate components of their model.  We use a
+    #    40/60 blend (40% DataGolf anchor, 60% our calculation) so we benefit
+    #    from their data without completely overriding our own signals.
+    our_total = (base_fit + history_adj + length_adj + accuracy_adj
+                 + green_adj + scramble_adj + weather_adj)
+    dg_fit_adj = player_stats.get("course_fit_adj")
+    if dg_fit_adj is not None:
+        total_fit = clamp(our_total * 0.60 + dg_fit_adj * 0.40, -3.0, 3.0)
+    else:
+        total_fit = clamp(our_total, -3.0, 3.0)
 
     return {
         "base_fit": round(base_fit, 4),
@@ -123,6 +141,7 @@ def calc_full_course_fit(player_stats, course_profile, weather=None):
         "green_adj": round(green_adj, 4),
         "scramble_adj": round(scramble_adj, 4),
         "weather_adj": round(weather_adj, 4),
+        "dg_fit_adj": round(dg_fit_adj, 4) if dg_fit_adj is not None else None,
         "total_fit": round(total_fit, 4),
     }
 
